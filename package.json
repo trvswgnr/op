@@ -1,0 +1,46 @@
+{
+  "name": "simple-effect",
+  "description": "a much simpler effect system",
+  "keywords": [],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test",
+    "clean": "rm -rf dist",
+    "fix": "npm run lint:fix && npm run fmt",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "prepublishOnly": "npm run check",
+    "test": "vitest run",
+    "test:e2e": "vitest run **/*.e2e.test.ts",
+    "test:integration": "vitest run **/*.integration.test.ts",
+    "test:unit": "vitest run --exclude '**/*.e2e.test.ts' --exclude '**/*.integration.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.37",
+    "oxfmt": "^0.40.0",
+    "oxlint": "^1.55.0",
+    "tsdown": "^0.21.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
