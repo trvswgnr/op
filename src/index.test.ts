@@ -156,15 +156,17 @@ describe("gen", () => {
   });
 
   test("fail short-circuits before subsequent effects", async () => {
+    let firstRan = false;
     let secondRan = false;
     const result = await run(
       gen(function* () {
-        yield* succeed(1);
+        yield* succeed(void (firstRan = true));
         yield* fail("oops");
         secondRan = true;
         return yield* succeed(2);
       }),
     );
+    expect(firstRan).toBe(true);
     assert(result.ok === false, "result.ok should be true");
     expect(result.error).toBe("oops");
     expect(secondRan).toBe(false);

@@ -51,10 +51,10 @@ export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
 type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
-export const succeed = <T>(a: T): Op<T, never, []> => {
+export const succeed = <T>(value: T): Op<T, never, []> => {
   const self = {
     *[Symbol.iterator]() {
-      return a;
+      return value;
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runImpl(self as never),
@@ -65,10 +65,10 @@ export const succeed = <T>(a: T): Op<T, never, []> => {
   return Object.assign(op, self) as never;
 };
 
-export const fail = <E>(e: E): Op<never, E, []> => {
+export const fail = <E>(value: E): Op<never, E, []> => {
   const self = {
     *[Symbol.iterator]() {
-      yield err(e);
+      yield err(value);
       throw "unreachable";
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
