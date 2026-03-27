@@ -1,4 +1,4 @@
-import { describe, expect, test, assert } from "vitest";
+import { describe, expect, test } from "vitest";
 import { fail, gen, run, succeed, tryPromise, UnexpectedError } from "./index.js";
 
 describe("UnexpectedError", () => {
@@ -138,11 +138,12 @@ describe("tryPromise", () => {
   });
 
   test("UnexpectedError when onError throws", async () => {
+    const error = new Error("onError threw");
     const result = await run(
       tryPromise(
         () => Promise.reject("boom"),
         () => {
-          throw new Error("onError threw");
+          throw error;
         },
       ),
     );
@@ -150,7 +151,7 @@ describe("tryPromise", () => {
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(UnexpectedError);
       expect(result.error.cause).toBeInstanceOf(Error);
-      expect((result.error.cause as Error).message).toBe("onError threw");
+      expect(result.error.cause).toBe(error);
     }
   });
 });
@@ -257,12 +258,13 @@ describe("run", () => {
   });
 
   test("UnexpectedError propagates from rejecting promise", async () => {
+    const error = new Error("unhandled");
     const result = await run(
       gen(function* () {
         yield* succeed(1);
         const x = yield {
           type: "Suspended" as const,
-          promise: Promise.reject(new Error("unhandled")),
+          promise: Promise.reject(error),
         };
         return x;
       }),
@@ -271,7 +273,7 @@ describe("run", () => {
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(UnexpectedError);
       expect(result.error.cause).toBeInstanceOf(Error);
-      expect((result.error.cause as Error).message).toBe("unhandled");
+      expect(result.error.cause).toBe(error);
     }
   });
 });
