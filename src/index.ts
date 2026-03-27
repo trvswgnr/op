@@ -1,4 +1,6 @@
-import { Typed } from "./types";
+export interface Typed<Type> {
+  readonly type: Type;
+}
 
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   readonly type = "UnexpectedError";
@@ -20,21 +22,15 @@ type Result<T, E> = Ok<T> | Err<E>;
 
 const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
 const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
-const isErr = (input: unknown): input is Err<unknown> =>
-  typeof input === "object" &&
-  input !== null &&
-  "type" in input &&
-  input.type === "Err" &&
-  "error" in input;
 
-type Suspended = { readonly type: "Suspended"; readonly promise: Promise<any> };
+type Suspended = { readonly type: "Suspended"; readonly promise: Promise<unknown> };
 type Instruction<E> = Err<E> | Suspended;
 
-export interface Op<A, E> {
-  [Symbol.iterator](): Generator<Instruction<E>, A, unknown>;
+export interface Op<T, E> {
+  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
-export const succeed = <A>(a: A): Op<A, never> => ({
+export const succeed = <T>(a: T): Op<T, never> => ({
   // oxlint-disable-next-line require-yield
   *[Symbol.iterator]() {
     return a;
@@ -78,11 +74,9 @@ export const tryPromise = <A, E>(f: () => Promise<A>, onError: (e: unknown) => E
 // ---- composer ----
 type ExtractErr<Y> = Y extends Err<infer E> ? E : never;
 
-export const gen = <Y extends Instruction<any>, A>(
+export const gen = <Y extends Instruction<unknown>, A>(
   f: () => Generator<Y, A, unknown>,
-): Op<A, ExtractErr<Y>> => ({
-  [Symbol.iterator]: f,
-});
+): Op<A, ExtractErr<Y>> => ({ [Symbol.iterator]: f });
 
 // ---- runners ----
 const runSync = <E, A>(effect: Op<A, E>): Result<A, E> => {
@@ -100,8 +94,13 @@ export const run = async <E, A>(effect: Op<A, E>): Promise<Result<A, E | Unexpec
   let step = iter.next();
   while (!step.done) {
     if (step.value.type === "Err") return err(step.value.error);
-    const resolved = await step.value.promise.catch((e) => err(e));
-    if (isErr(resolved)) return err(new UnexpectedError({ cause: resolved.error }));
+    let resolved: Result<A, E>;
+    try {
+      // we know
+      resolved = (await step.value.promise) as Result<A, E>;
+    } catch (e) {
+      return err(new UnexpectedError({ cause: e }));
+    }
     step = iter.next(resolved);
   }
   return ok(step.value);
