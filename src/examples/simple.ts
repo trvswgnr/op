@@ -1,4 +1,4 @@
-import { fail, gen, tryPromise, UnexpectedError } from "..";
+import { fail, gen, tryPromise, UnexpectedError } from "../lib";
 {
   class DivisionByZeroError extends Error {
     readonly type = "DivisionByZeroError";
