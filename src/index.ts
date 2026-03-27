@@ -1,4 +1,4 @@
-export interface Typed<Type> {
+export interface Typed<Type extends string> {
   readonly type: Type;
 }
 
@@ -44,20 +44,11 @@ export const fail = <E>(e: E): Op<never, E> => ({
   },
 });
 
-const fromResult = <E, A>(r: Result<A, E>): Op<A, E> => ({
-  *[Symbol.iterator]() {
-    if (r.type === "Err") {
-      yield r;
-      throw "unreachable";
-    }
-    return r.value;
-  },
-});
-
 export const tryPromise = <A, E>(f: () => Promise<A>, onError: (e: unknown) => E): Op<A, E> => ({
   *[Symbol.iterator]() {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
-      type: "Suspended" as const,
+      type: "Suspended",
       promise: f().then(
         (a) => ok(a),
         (e) => err(onError(e)),
@@ -71,15 +62,14 @@ export const tryPromise = <A, E>(f: () => Promise<A>, onError: (e: unknown) => E
   },
 });
 
-// ---- composer ----
 type ExtractErr<Y> = Y extends Err<infer E> ? E : never;
 
 export const gen = <Y extends Instruction<unknown>, A>(
   f: () => Generator<Y, A, unknown>,
-): Op<A, ExtractErr<Y>> => ({ [Symbol.iterator]: f });
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+): Op<A, ExtractErr<Y>> => ({ [Symbol.iterator]: f as never });
 
-// ---- runners ----
-const runSync = <E, A>(effect: Op<A, E>): Result<A, E> => {
+export const runSync = <E, A>(effect: Op<A, E>): Result<A, E> => {
   const iter = effect[Symbol.iterator]();
   let step = iter.next();
   while (!step.done) {
@@ -96,7 +86,7 @@ export const run = async <E, A>(effect: Op<A, E>): Promise<Result<A, E | Unexpec
     if (step.value.type === "Err") return err(step.value.error);
     let resolved: Result<A, E>;
     try {
-      // we know
+      // oxlint-disable-next-line typescript/consistent-type-assertions
       resolved = (await step.value.promise) as Result<A, E>;
     } catch (e) {
       return err(new UnexpectedError({ cause: e }));
