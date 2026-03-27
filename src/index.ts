@@ -1,5 +1,5 @@
-export interface Typed<Type extends string> {
-  readonly type: Type;
+export interface Typed<TypeName extends string> {
+  readonly type: TypeName;
 }
 
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
