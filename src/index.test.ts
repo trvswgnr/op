@@ -380,9 +380,9 @@ describe("type inference", () => {
     });
     expectTypeOf(p2).toEqualTypeOf<Op<number, never, [number]>>();
     const p3 = succeed(1);
-    expectTypeOf(p3).toEqualTypeOf<Op<number, never, never>>();
+    expectTypeOf(p3).toEqualTypeOf<Op<number, never>>();
     const p4 = fail("error");
-    expectTypeOf(p4).toEqualTypeOf<Op<never, string, never>>();
+    expectTypeOf(p4).toEqualTypeOf<Op<never, string>>();
   });
   test("infers the correct type from the run", () => {
     const p1 = gen(function* () {
@@ -393,5 +393,24 @@ describe("type inference", () => {
       return yield* succeed(a);
     }).run("hello");
     expectTypeOf(p2).toEqualTypeOf<Promise<Result<string, UnexpectedError>>>();
+  });
+  test("op.run() arity is enforced by the type checker", async () => {
+    const p1 = gen(function* () {
+      return yield* succeed(1);
+    });
+    expect((await p1.run()).ok).toBe(true);
+    // @ts-expect-error - nullary run does not accept arguments
+    p1.run(1);
+
+    const p2 = gen(function* (a: number) {
+      return yield* succeed(a);
+    });
+    // @ts-expect-error - missing required argument
+    p2.run();
+    // @ts-expect-error - too many arguments
+    p2.run(1, 2);
+    const r2 = await p2.run(42);
+    assert(r2.ok === true, "r2.ok should be true");
+    expect(r2.value).toBe(42);
   });
 });
