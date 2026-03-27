@@ -1,4 +1,6 @@
-type Eq<A, B> = (<T>() => T extends A ? 1 : 0) extends <T>() => T extends B ? 1 : 0 ? true : false;
+declare const None: unique symbol;
+type None = typeof None & { readonly [None]: true };
+
 export interface Typed<Type extends string> {
   readonly type: Type;
 }
@@ -19,16 +21,26 @@ interface Err<E> extends Typed<"Err"> {
   readonly ok: false;
   readonly error: E;
 }
+
 export type Result<T, E> = Ok<T> | Err<E>;
 
 const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
 const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
 
-type Suspended = { readonly type: "Suspended"; readonly promise: Promise<unknown> };
+interface Suspended {
+  readonly type: "Suspended";
+  readonly promise: Promise<unknown>;
+}
+
 type Instruction<E> = Err<E> | Suspended;
+
+type OpBase<T, E> = {
+  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
+};
 
 type OpGen<T, E> = {
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
+  (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 };
 
@@ -37,19 +49,16 @@ type OpFn<T, E, A extends readonly unknown[]> = {
   run(...args: A): Promise<Result<T, E | UnexpectedError>>;
 };
 
-/**
- * Effect: success `T`, failure `E`, argument tuple `A` (default `readonly []` = built op).
- * Factories call / `run(…args)` into `Op<T, E, readonly []>` — spelled only as `Op`, no other public shape names.
- */
-type _Op<T, E, A extends readonly unknown[] = readonly []> =
-  Eq<A, never> extends true ? OpGen<T, E> : OpFn<T, E, A>;
+type _Op<T, E, A extends readonly unknown[]> = [] extends A
+  ? OpFn<T, E, A> & OpBase<T, E>
+  : OpFn<T, E, A>;
 
-export type Op<T, E, A extends readonly unknown[] = readonly []> = _Op<T, E, A> & Typed<"Op">;
+export type Op<T, E, A extends readonly unknown[] = []> = _Op<T, E, A> & Typed<"Op">;
 
 type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
-export const succeed = <T>(a: T): Op<T, never, never> => {
-  const self: Op<T, never, never> = {
+export const succeed = <T>(a: T): Op<T, never> => {
+  const self = {
     // oxlint-disable-next-line require-yield
     *[Symbol.iterator]() {
       return a;
@@ -58,12 +67,13 @@ export const succeed = <T>(a: T): Op<T, never, never> => {
     run: () => runImpl(self as never),
     type: "Op",
   };
+  const op = () => self;
   // oxlint-disable-next-line typescript/consistent-type-assertions
-  return self as never;
+  return Object.assign(op, self) as never;
 };
 
-export const fail = <E>(e: E): Op<never, E, never> => {
-  const self: Op<never, E, never> = {
+export const fail = <E>(e: E): Op<never, E> => {
+  const self = {
     *[Symbol.iterator]() {
       yield err(e);
       throw "unreachable";
@@ -72,15 +82,16 @@ export const fail = <E>(e: E): Op<never, E, never> => {
     run: () => runImpl(self as never),
     type: "Op",
   };
+  const op = () => self;
   // oxlint-disable-next-line typescript/consistent-type-assertions
-  return self as never;
+  return Object.assign(op, self) as never;
 };
 
 export const tryPromise = <T, E = UnexpectedError>(
   f: () => Promise<T>,
   onError?: (e: unknown) => E,
-): Op<T, E, never> => {
-  const self: Op<T, E, never> = {
+): Op<T, E> => {
+  const self = {
     *[Symbol.iterator]() {
       // oxlint-disable-next-line typescript/consistent-type-assertions
       const result = (yield {
@@ -100,13 +111,16 @@ export const tryPromise = <T, E = UnexpectedError>(
     run: () => runImpl(self as never),
     type: "Op",
   };
+  const op = () => self;
   // oxlint-disable-next-line typescript/consistent-type-assertions
-  return self as never;
+  return Object.assign(op, self) as never;
 };
 
-export const runSync = <E, T>(effect: Op<T, E, never>): Result<T, E | UnexpectedError> => {
+export const runSync = <E, T>(effect: Op<T, E, readonly []>): Result<T, E | UnexpectedError> => {
   try {
-    const iter = effect[Symbol.iterator]();
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    const ef = typeof effect === "function" ? (effect as Function)() : effect;
+    const iter = ef[Symbol.iterator]();
     let step = iter.next();
     while (!step.done) {
       if (step.value.type === "Suspended") throw new Error("Cannot runSync an async effect");
@@ -118,8 +132,8 @@ export const runSync = <E, T>(effect: Op<T, E, never>): Result<T, E | Unexpected
   }
 };
 
-async function runImpl<E, T, A extends readonly []>(
-  effect: Op<T, E, A>,
+async function runImpl<E, T>(
+  effect: Op<T, E, readonly []>,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
     // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -151,16 +165,17 @@ export function gen<Y extends Instruction<unknown>, T, A extends readonly unknow
 ): Op<T, ExtractErr<Y>, A>;
 export function gen(
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
-): Op<unknown, unknown, readonly []> | Op<unknown, unknown, readonly unknown[]> {
+): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> {
   if (f.length === 0) {
     const g = () => {
-      const inner: Op<unknown, unknown, never> = {
+      const inner = {
         [Symbol.iterator]: () => f(),
         // oxlint-disable-next-line typescript/consistent-type-assertions
         run: () => runImpl(inner as never),
         type: "Op",
       };
-      return inner;
+      const op = () => inner;
+      return Object.assign(op, inner);
     };
     // oxlint-disable-next-line typescript/consistent-type-assertions
     const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
@@ -171,13 +186,14 @@ export function gen(
     return out;
   }
   const g = (...args: unknown[]) => {
-    const inner: Op<unknown, unknown, never> = {
+    const inner = {
       [Symbol.iterator]: () => f(...args),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runImpl(inner as never),
       type: "Op",
     };
-    return inner;
+    const op = () => inner;
+    return Object.assign(op, inner);
   };
   // oxlint-disable-next-line typescript/consistent-type-assertions
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
