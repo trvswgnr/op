@@ -1,5 +1,5 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import { fail, gen, Op, Result, run, succeed, tryPromise, UnexpectedError } from "./index.js";
+import { fail, gen, Op, Result, run, succeed, tryPromise, UnexpectedError } from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -190,7 +190,7 @@ describe("gen", () => {
       yield* succeed(1);
       return yield* tryPromise(
         () => Promise.reject("async fail"),
-        (e) => ({ mapped: String(e) }),
+        (e) => ({ mapped: e }),
       );
     });
     const result = await run(p);
@@ -208,24 +208,18 @@ describe("gen", () => {
   });
 
   test("parameterized gen - run passes args into the generator", async () => {
-    const add = gen(
-      // oxlint-disable-next-line require-yield
-      function* (a: number, b: number) {
-        return a + b;
-      },
-    );
+    const add = gen(function* (a: number, b: number) {
+      return a + b;
+    });
     const result = await add.run(2, 3);
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(5);
   });
 
   test("parameterized gen composes via yield* and callable op", async () => {
-    const add = gen(
-      // oxlint-disable-next-line require-yield
-      function* (a: number, b: number) {
-        return a + b;
-      },
-    );
+    const add = gen(function* (a: number, b: number) {
+      return a + b;
+    });
     const program = gen(function* () {
       return yield* add(1, 2);
     });
@@ -288,7 +282,6 @@ describe("run", () => {
 
   test("UnexpectedError propagates from rejecting promise", async () => {
     const error = new Error("unhandled");
-    // oxlint-disable-next-line require-yield
     const makeNumber = gen(function* (n: number) {
       return n;
     });
@@ -346,7 +339,6 @@ describe("edge cases and invariants", () => {
   test("returns UnexpectedError when throw in generator", async () => {
     const error = new Error("unhandled");
     const result = await run(
-      // oxlint-disable-next-line require-yield
       gen(function* () {
         throw error;
       }),
@@ -358,7 +350,6 @@ describe("edge cases and invariants", () => {
   test("returns UnexpectedError when unhandled Promise rejection in gen", async () => {
     const error = new Error("unhandled");
     const result = await run(
-      // oxlint-disable-next-line require-yield
       gen(function* () {
         return Promise.reject(error);
       }),
@@ -378,11 +369,18 @@ describe("type inference", () => {
     const p2 = gen(function* (a: number) {
       return yield* succeed(a);
     });
-    expectTypeOf(p2).toEqualTypeOf<Op<number, never, [number]>>();
+    expectTypeOf(p2).toEqualTypeOf<Op<number, never, [a: number]>>();
     const p3 = succeed(1);
-    expectTypeOf(p3).toEqualTypeOf<Op<number, never>>();
+    expectTypeOf(p3).toEqualTypeOf<Op<number, never, []>>();
     const p4 = fail("error");
-    expectTypeOf(p4).toEqualTypeOf<Op<never, string>>();
+    expectTypeOf(p4).toEqualTypeOf<Op<never, string, []>>();
+    const p5 = tryPromise(() => Promise.resolve(1));
+    expectTypeOf(p5).toEqualTypeOf<Op<number, UnexpectedError, []>>();
+    const p6 = tryPromise(
+      () => Promise.resolve(1),
+      () => "error",
+    );
+    expectTypeOf(p6).toEqualTypeOf<Op<number, string, []>>();
   });
   test("infers the correct type from the run", () => {
     const p1 = gen(function* () {
@@ -406,11 +404,11 @@ describe("type inference", () => {
       return yield* succeed(a);
     });
     // @ts-expect-error - missing required argument
-    p2.run();
+    p2.run(); // note: not enforced at runtime
     // @ts-expect-error - too many arguments
-    p2.run(1, 2);
-    const r2 = await p2.run(42);
+    p2.run(1, 2); // note: not enforced at runtime
+    const r2 = await p2.run(69);
     assert(r2.ok === true, "r2.ok should be true");
-    expect(r2.value).toBe(42);
+    expect(r2.value).toBe(69);
   });
 });
