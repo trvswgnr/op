@@ -1,4 +1,4 @@
-import { fail, gen, run, tryPromise } from "..";
+import { fail, gen, run, tryPromise, UnexpectedError } from "..";
 {
   class DivisionByZeroError extends Error {
     readonly type = "DivisionByZeroError";
@@ -28,12 +28,12 @@ import { fail, gen, run, tryPromise } from "..";
   // TypeScript infers: Effect<DivByZero | Negative, number>
   const program = gen(function* () {
     const a = yield* divide(10, 3); // unwraps or short-circuits
-    const b = yield* sqrt(a - 4); // same — different error type
+    const b = yield* sqrt(a - 4); // same - different error type
     return b * 2;
   });
 
   const result = await run(program);
-  // Result<DivByZero | Negative, number>
+  // Result<number, DivByZero | Negative>
 }
 {
   class FetchError extends Error {
@@ -53,7 +53,6 @@ import { fail, gen, run, tryPromise } from "..";
       this.statusText = statusText;
     }
   }
-  // class ParseError extends TypedError("ParseError")<{ raw: unknown }> {}
   class ParseError extends Error {
     readonly type = "ParseError";
     readonly raw: unknown;
@@ -94,22 +93,32 @@ import { fail, gen, run, tryPromise } from "..";
       );
       return json;
     });
-  // Inferred: Effect<HttpErr | ParseErr, any>
 
-  const getUser = (id: string) =>
-    gen(function* () {
-      const data = yield* fetchData(`/api/users/${id}`);
-      const user = yield* parseUser(data);
-      return user;
-    });
+  const program = gen(function* () {
+    const data = yield* fetchData("/api/users/123");
+    const user = yield* parseUser(data);
+    return user;
+  });
   // Errors accumulate through the union automatically
 
   // At the edge
-  const result = await run(getUser("123"));
+  const result = await run(program);
   if (!result.ok) {
-    switch (result.error.type) {
-      case "FetchError": // handle
-      case "ParseError": // handle
+    handleError(result.error);
+  }
+
+  function handleError(error: FetchError | ParseError | UnexpectedError) {
+    switch (error.type) {
+      case "FetchError":
+        console.error(error.cause);
+        return;
+      case "ParseError":
+        console.error(error.raw);
+        return;
+      case "UnexpectedError":
+        console.error(error.cause);
+        return;
     }
+    const _ = error satisfies never;
   }
 }
