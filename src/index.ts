@@ -1,6 +1,3 @@
-declare const None: unique symbol;
-type None = typeof None & { readonly [None]: true };
-
 export interface Typed<Type extends string> {
   readonly type: Type;
 }
