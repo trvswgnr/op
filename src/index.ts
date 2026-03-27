@@ -44,14 +44,17 @@ export const fail = <E>(e: E): Op<never, E> => ({
   },
 });
 
-export const tryPromise = <A, E>(f: () => Promise<A>, onError: (e: unknown) => E): Op<A, E> => ({
+export const tryPromise = <A, E = UnexpectedError>(
+  f: () => Promise<A>,
+  onError?: (e: unknown) => E,
+): Op<A, E> => ({
   *[Symbol.iterator]() {
     // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended",
       promise: f().then(
         (a) => ok(a),
-        (e) => err(onError(e)),
+        (e) => (onError ? err(onError(e)) : err(new UnexpectedError({ cause: e }))),
       ),
     }) as Result<A, E>;
     if (result.type === "Err") {
