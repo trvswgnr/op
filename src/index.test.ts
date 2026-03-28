@@ -1,5 +1,15 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import { fail, gen, Op, Result, run, succeed, fromPromise, UnexpectedError } from "./lib.js";
+import {
+  fail,
+  gen,
+  Op,
+  Result,
+  run,
+  succeed,
+  fromPromise,
+  UnexpectedError,
+  TypedError,
+} from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -22,6 +32,84 @@ describe("UnexpectedError", () => {
     const err = new UnexpectedError({ cause: "x" });
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(UnexpectedError);
+  });
+});
+
+describe("TypedError", () => {
+  test("default message uses the type name", () => {
+    const NetworkError = TypedError("NetworkError", "A network error occurred");
+    const err = new NetworkError();
+    expect(err.message).toBe("A network error occurred");
+    expect(err.type).toBe("NetworkError");
+    expect(err.data).toEqual({});
+  });
+
+  test("subclass with no extra data can be constructed with no arguments", () => {
+    class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
+    const err = new DivisionByZeroError();
+    expect(err.message).toBe("");
+    expect(err.data).toEqual({});
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(DivisionByZeroError);
+  });
+
+  test("custom message overrides default and is not left on data", () => {
+    const ValidationError = TypedError("ValidationError");
+    const err = new ValidationError({ message: "field required" });
+    expect(err.message).toBe("field required");
+    expect(err.data).toEqual({});
+    expect("message" in err.data).toBe(false);
+  });
+
+  test("message key with undefined falls back to default text", () => {
+    const E = TypedError("E", "An E error occurred");
+    const err = new E({ message: undefined });
+    expect(err.message).toBe("An E error occurred");
+    expect(err.data).toEqual({});
+  });
+
+  test("cause is passed to Error and stripped from data", () => {
+    const E = TypedError("E");
+    const cause = new Error("root");
+    const err = new E({ cause });
+    expect(err.cause).toBe(cause);
+    expect(err.data).toEqual({});
+    expect("cause" in err.data).toBe(false);
+  });
+
+  test("preserves arbitrary payload fields on data", () => {
+    class NotFound extends TypedError("NotFound")<{
+      resource: string;
+      id: number;
+    }> {}
+    const err = new NotFound({ resource: "user", id: 42, message: "gone", cause: "db" });
+    expect(err.message).toBe("gone");
+    expect(err.cause).toBe("db");
+    expect(err.data).toEqual({ resource: "user", id: 42 });
+  });
+
+  test("does not mutate the passed data object, creates a new object without message and cause", () => {
+    const E = TypedError("E");
+    const payload = Object.freeze({ message: "m", cause: 1, extra: true });
+    const err = new E(payload);
+    expect(err.data).toEqual({ extra: true });
+  });
+
+  test("type narrowing: distinct factories produce distinct classes", () => {
+    const A = TypedError("A");
+    const B = TypedError("B");
+    const a = new A();
+    const b = new B();
+    expect(a).toBeInstanceOf(A);
+    expect(a).not.toBeInstanceOf(B);
+    expect(b).toBeInstanceOf(B);
+    expect(b).not.toBeInstanceOf(A);
+  });
+
+  test("expectTypeOf: default data allows zero-arg constructor", () => {
+    const E = TypedError("E");
+    const e = new E();
+    expectTypeOf(e).toEqualTypeOf<TypedError<"E">>();
   });
 });
 
@@ -84,7 +172,7 @@ describe("fail", () => {
   });
 });
 
-describe("tryPromise", () => {
+describe("fromPromise", () => {
   test("success path returns Ok with resolved value", async () => {
     const result = await run(
       fromPromise(
@@ -172,7 +260,7 @@ describe("gen", () => {
     expect(secondRan).toBe(false);
   });
 
-  test("tryPromise in gen - success path", async () => {
+  test("fromPromise in gen - success path", async () => {
     const result = await run(
       gen(function* () {
         const a = yield* succeed(10);
@@ -187,7 +275,7 @@ describe("gen", () => {
     expect(result.value).toBe(20);
   });
 
-  test("tryPromise in gen - error path", async () => {
+  test("fromPromise in gen - error path", async () => {
     const p = gen(function* () {
       yield* succeed(1);
       return yield* fromPromise(
@@ -200,7 +288,7 @@ describe("gen", () => {
     expect(result.error).toEqual({ mapped: "async fail" });
   });
 
-  test("tryPromise in gen - onError is optional", async () => {
+  test("fromPromise in gen - onError is optional", async () => {
     const p = gen(function* () {
       return yield* fromPromise(() => Promise.reject("async fail"));
     });
@@ -422,6 +510,7 @@ describe("type inference", () => {
     class CustomError2 extends Error {
       readonly alsoUnique = "CustomError2";
     }
+    class CustomError3 extends TypedError("CustomError3") {}
     const alwaysFails1 = gen(function* () {
       if (Math.random() < 0) {
         return yield* succeed(1);
@@ -434,12 +523,19 @@ describe("type inference", () => {
       }
       return yield* fail(new CustomError2("error2"));
     });
+    const alwaysFails3 = gen(function* () {
+      if (Math.random() < 0) {
+        return yield* succeed(1);
+      }
+      return yield* fail(new CustomError3());
+    });
     const program = gen(function* () {
       const a = yield* alwaysFails1();
       const b = yield* alwaysFails2();
-      return a + b;
+      const c = yield* alwaysFails3();
+      return a + b + c;
     });
-    const result = await run(program());
+    const result = await run(program);
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(CustomError1);
   });
