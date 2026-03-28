@@ -2,6 +2,30 @@ export interface Typed<TypeName extends string> {
   readonly type: TypeName;
 }
 
+/**
+ * Built-in typed error for failures that are not mapped to a domain-specific error.
+ *
+ * The message is always `"An unexpected error occurred"`. The original failure is preserved on
+ * `cause` (see {@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause Error#cause}).
+ *
+ * `Op.run`, `suspend`, and `fromPromise` wrap unhandled rejections and similar cases in this type
+ * when no custom error mapping is supplied.
+ *
+ * Implements {@link Typed} with `type: "UnexpectedError"` so it can be narrowed in `switch` or
+ * `if` on `error.type`.
+ *
+ * @param cause The underlying reason for the error (often the value a promise rejected with).
+ *
+ * @example
+ * const e = new UnexpectedError({ cause: original });
+ *
+ * @example
+ * // produced by `fromPromise` when the promise rejects and no `onError` is given
+ * const result = await fromPromise(Promise.reject("oops"));
+ * if (!result.ok && result.error.type === "UnexpectedError") {
+ *   console.error(result.error.cause);
+ * }
+ */
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   readonly type = "UnexpectedError";
   constructor({ cause }: { cause: unknown }) {
@@ -46,22 +70,55 @@ export type Result<T, E> = Ok<T> | Err<E>;
 const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
 const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
 
-export function TypedError<TypeName extends string>(
-  typeName: TypeName,
+/**
+ * Creates a new typed error class with the given type name and optional default message.
+ *
+ * Data can be defined as a generic type parameter to the error class.
+ * This data is passed to the error constructor and can be accessed via the `data` property.
+ *
+ * The "message" and "cause" properties are always allowed to be passed to the constructor
+ * and are excluded from the `data` property.
+ *
+ * Implements the `[Symbol.iterator]` method to allow it to be used in a `yield*` expression.
+ *
+ * @param type The name of the error type
+ * @param defaultMessage Optional default message for the error
+ * @returns A new typed error class that extends the global Error class
+ * @example
+ * // basic
+ * const NetworkError = TypedError("NetworkError");
+ * const op = Op(function* () {
+ *   yield* new NetworkError();
+ * });
+ *
+ * // with default message
+ * const ValidationError = TypedError("ValidationError", "A validation error occurred");
+ * const op = Op(function* () {
+ *   yield* new ValidationError();
+ * });
+ *
+ * // with data
+ * const NotFoundError = TypedError("NotFoundError")<{ resource: string }>();
+ * const op = Op(function* () {
+ *   yield* new NotFoundError({ resource: "user" });
+ * });
+ */
+export function TypedError<TType extends string>(
+  type: TType,
   defaultMessage?: string,
-): TypedErrorConstructor<TypeName> {
+): TypedErrorConstructor<TType> {
   return class<Data extends Record<string, unknown> & { message?: never; cause?: never } = {}>
     extends Error
-    implements Typed<TypeName>
+    implements Typed<TType>
   {
-    readonly type = typeName;
+    readonly type = type;
     readonly data: Omit<Data, "cause" | "message">;
     constructor(...args: TypedErrorCtorParams<Data>) {
       // oxlint-disable-next-line typescript/consistent-type-assertions
       const _data = args[0] ?? ({} as Data);
       const { message, cause, ...data } = _data;
       super(message ?? defaultMessage, { cause });
-      this.name = typeName;
+      this.name = type;
       // oxlint-disable-next-line typescript/consistent-type-assertions
       this.data = Object.freeze(data) as Omit<Data, "cause" | "message">;
     }
@@ -78,7 +135,7 @@ interface Suspended {
   readonly promise: Promise<unknown>;
 }
 
-type Instruction<E> = Err<E> | Suspended;
+export type Instruction<E> = Err<E> | Suspended;
 
 export interface OpBase<T, E> {
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
@@ -98,7 +155,7 @@ type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : 
 
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
-type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
+export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
 export const succeed = <T>(value: T): Op<T, never, []> => {
   const self = {
