@@ -9,6 +9,48 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
+export interface TypedError<
+  TypeName extends string,
+  Data extends { message?: string | undefined; cause?: unknown } = {},
+> extends Error {
+  readonly type: TypeName;
+  readonly data: Omit<Data, "cause" | "message">;
+}
+
+type TypedErrorCtorParams<
+  Data extends Record<string, unknown> & { message?: never; cause?: never },
+> = {} extends Data
+  ? [data?: { message?: string | undefined; cause?: unknown }]
+  : [data: Data & { message?: string | undefined; cause?: unknown }];
+
+export interface TypedErrorConstructor<TypeName extends string> {
+  new <Data extends Record<string, unknown> & { message?: never; cause?: never } = {}>(
+    ...args: TypedErrorCtorParams<Data>
+  ): TypedError<TypeName, Data>;
+}
+
+export function TypedError<TypeName extends string>(
+  typeName: TypeName,
+  defaultMessage?: string,
+): TypedErrorConstructor<TypeName> {
+  return class<Data extends Record<string, unknown> & { message?: never; cause?: never } = {}>
+    extends Error
+    implements Typed<TypeName>
+  {
+    readonly type = typeName;
+    readonly data: Omit<Data, "cause" | "message">;
+    constructor(...args: TypedErrorCtorParams<Data>) {
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      const _data = args[0] ?? ({} as Data);
+      const { message, cause, ...data } = _data;
+      super(message ?? defaultMessage, { cause });
+      this.name = typeName;
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      this.data = data as Omit<Data, "cause" | "message">;
+    }
+  };
+}
+
 interface Ok<T> extends Typed<"Ok"> {
   readonly ok: true;
   readonly value: T;
