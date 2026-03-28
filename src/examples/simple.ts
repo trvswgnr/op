@@ -31,7 +31,7 @@ export const sqrt = gen(function* (n: number) {
 });
 
 // Errors compose automatically through yield*
-// TypeScript infers: Effect<DivByZero | Negative, number>
+// TypeScript infers: Op<number, DivByZero | Negative>
 export const mathComposeProgram = gen(function* () {
   const a = yield* divide(10, 3); // unwraps or short-circuits
   const b = yield* sqrt(a - 4); // same - different error type

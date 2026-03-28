@@ -1,7 +1,13 @@
 {
-  "name": "simple-effect",
-  "description": "a much simpler effect system",
-  "keywords": [],
+  "name": "@travvy/op",
+  "description": "a typescript library for composing operations",
+  "keywords": [
+    "composition",
+    "effect",
+    "error handling",
+    "operations",
+    "typescript"
+  ],
   "license": "MIT",
   "files": [
     "dist",

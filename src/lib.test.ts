@@ -235,7 +235,7 @@ describe("gen", () => {
     expect(result.value).toBe(3);
   });
 
-  test("fail short-circuits before subsequent effects", async () => {
+  test("fail short-circuits before subsequent ops", async () => {
     let firstRan = false;
     let secondRan = false;
     const result = await gen(function* () {
@@ -309,7 +309,7 @@ describe("gen", () => {
     expect(viaFreeRun.value).toBe(3);
   });
 
-  test("nullary gen - run() matches run(effect)", async () => {
+  test("nullary gen - run() matches run(op)", async () => {
     const program = gen(function* () {
       return yield* succeed(69);
     });
@@ -323,13 +323,13 @@ describe("gen", () => {
 });
 
 describe("op.run", () => {
-  test("sync effect completes without awaiting", async () => {
+  test("sync op completes without awaiting", async () => {
     const result = await succeed("sync").run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe("sync");
   });
 
-  test("async effect suspends and resumes correctly", async () => {
+  test("async op suspends and resumes correctly", async () => {
     const result = await fromPromise(
       () => Promise.resolve("async"),
       () => "err",
@@ -338,7 +338,7 @@ describe("op.run", () => {
     expect(result.value).toBe("async");
   });
 
-  test("chained async effects", async () => {
+  test("chained async ops", async () => {
     const program = gen(function* () {
       const first = yield* fromPromise(
         () => Promise.resolve({ data: "raw" }),
