@@ -95,7 +95,7 @@ type OpArity<T, E, A extends readonly unknown[]> = {
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
 
-export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
+export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
 type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
