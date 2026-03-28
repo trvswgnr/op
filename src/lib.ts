@@ -25,8 +25,9 @@ type TypedErrorCtorParams<
   : [data: Data & { message?: string | undefined; cause?: unknown }];
 
 export interface TypedErrorConstructor<TypeName extends string> {
-  new <Data extends Record<string, unknown> & { message?: never; cause?: never } = {}>(
-    ...args: TypedErrorCtorParams<Data>
+  new(data?: { message?: string | undefined; cause?: unknown }): TypedError<TypeName, {}>;
+  new <Data extends Record<string, unknown> & { message?: never; cause?: never }>(
+    data: Data & { message?: string | undefined; cause?: unknown },
   ): TypedError<TypeName, Data>;
 }
 
