@@ -80,7 +80,7 @@ export const fail = <E>(value: E): Op<never, E, []> => {
   return Object.assign(op, self) as never;
 };
 
-export const tryPromise = <T, E = UnexpectedError>(
+export const fromPromise = <T, E = UnexpectedError>(
   f: () => Promise<T>,
   onError?: (e: unknown) => E,
 ): Op<T, E, []> => {
@@ -108,28 +108,11 @@ export const tryPromise = <T, E = UnexpectedError>(
   return Object.assign(op, self) as never;
 };
 
-export const runSync = <E, T>(effect: Op<T, E, readonly []>): Result<T, E | UnexpectedError> => {
-  try {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
-    const ef = typeof effect === "function" ? (effect as Function)() : effect;
-    const iter = ef[Symbol.iterator]();
-    let step = iter.next();
-    while (!step.done) {
-      if (step.value.type === "Suspended") throw new Error("Cannot runSync an async effect");
-      return err(step.value.error);
-    }
-    return ok(step.value);
-  } catch (cause) {
-    return err(new UnexpectedError({ cause }));
-  }
-};
-
 async function runImpl<E, T>(
-  effect: Op<T, E, readonly []>,
+  effect: Op<T, E, readonly []> | OpBase<T, E>,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
-    const ef = typeof effect === "function" ? (effect as Function)() : effect;
+    const ef = typeof effect === "function" ? effect() : effect;
     const iter = ef[Symbol.iterator]();
     let step = iter.next();
     while (!step.done) {
