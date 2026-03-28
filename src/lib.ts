@@ -83,7 +83,7 @@ export interface OpBase<T, E> {
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
-interface OpNullary<T, E> extends OpBase<T, E> {
+export interface OpNullary<T, E> extends OpBase<T, E> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
