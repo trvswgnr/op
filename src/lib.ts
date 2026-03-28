@@ -25,7 +25,7 @@ type TypedErrorCtorParams<
   : [data: Data & { message?: string | undefined; cause?: unknown }];
 
 export interface TypedErrorConstructor<TypeName extends string> {
-  new(data?: { message?: string | undefined; cause?: unknown }): TypedError<TypeName, {}>;
+  new (data?: { message?: string | undefined; cause?: unknown }): TypedError<TypeName, {}>;
   new <Data extends Record<string, unknown> & { message?: never; cause?: never }>(
     data: Data & { message?: string | undefined; cause?: unknown },
   ): TypedError<TypeName, Data>;
@@ -63,7 +63,7 @@ export function TypedError<TypeName extends string>(
       super(message ?? defaultMessage, { cause });
       this.name = typeName;
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      this.data = data as Omit<Data, "cause" | "message">;
+      this.data = Object.freeze(data) as Omit<Data, "cause" | "message">;
     }
 
     *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
@@ -158,10 +158,10 @@ export const fromPromise = <T, E = UnexpectedError>(
 };
 
 async function runImpl<E, T>(
-  effect: Op<T, E, readonly []> | OpBase<T, E>,
+  op: Op<T, E, readonly []> | OpBase<T, E>,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
-    const ef = typeof effect === "function" ? effect() : effect;
+    const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
     let step = iter.next();
     while (!step.done) {
