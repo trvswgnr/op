@@ -1,1 +1,1 @@
-export { type Typed, UnexpectedError, succeed, fail, fromPromise, run, gen } from "./lib.js";
+export { type Typed, UnexpectedError, TypedError, succeed, fail, fromPromise, gen } from "./lib.js";

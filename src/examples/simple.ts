@@ -1,7 +1,7 @@
 // oxlint-disable no-console
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, gen, fromPromise, UnexpectedError } from "../lib.js";
+import { fail, gen, fromPromise, UnexpectedError, TypedError } from "../lib.js";
 
 function isMainModule(): boolean {
   const entry = typeof process !== "undefined" ? process.argv[1] : undefined;
@@ -10,9 +10,7 @@ function isMainModule(): boolean {
   return path.resolve(thisFile) === path.resolve(entry);
 }
 
-export class DivisionByZeroError extends Error {
-  readonly type = "DivisionByZeroError";
-}
+export class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
 export class NegativeError extends Error {
   readonly type = "NegativeError";
   readonly n: number;
