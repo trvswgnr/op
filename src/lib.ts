@@ -15,6 +15,7 @@ export interface TypedError<
 > extends Error {
   readonly type: TypeName;
   readonly data: Omit<Data, "cause" | "message">;
+  [Symbol.iterator](): Generator<Err<this>, never, unknown>;
 }
 
 type TypedErrorCtorParams<
@@ -28,6 +29,21 @@ export interface TypedErrorConstructor<TypeName extends string> {
     ...args: TypedErrorCtorParams<Data>
   ): TypedError<TypeName, Data>;
 }
+
+interface Ok<T> extends Typed<"Ok"> {
+  readonly ok: true;
+  readonly value: T;
+}
+
+interface Err<E> extends Typed<"Err"> {
+  readonly ok: false;
+  readonly error: E;
+}
+
+export type Result<T, E> = Ok<T> | Err<E>;
+
+const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
+const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
 
 export function TypedError<TypeName extends string>(
   typeName: TypeName,
@@ -48,23 +64,13 @@ export function TypedError<TypeName extends string>(
       // oxlint-disable-next-line typescript/consistent-type-assertions
       this.data = data as Omit<Data, "cause" | "message">;
     }
+
+    *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
+      yield err(this);
+      throw "unreachable";
+    }
   };
 }
-
-interface Ok<T> extends Typed<"Ok"> {
-  readonly ok: true;
-  readonly value: T;
-}
-
-interface Err<E> extends Typed<"Err"> {
-  readonly ok: false;
-  readonly error: E;
-}
-
-export type Result<T, E> = Ok<T> | Err<E>;
-
-const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
-const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
 
 interface Suspended {
   readonly type: "Suspended";
@@ -73,7 +79,7 @@ interface Suspended {
 
 type Instruction<E> = Err<E> | Suspended;
 
-interface OpBase<T, E> {
+export interface OpBase<T, E> {
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
@@ -183,25 +189,6 @@ export function gen<Y extends Instruction<unknown>, T, A extends readonly unknow
 export function gen(
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
 ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> {
-  if (f.length === 0) {
-    const g = () => {
-      const inner = {
-        [Symbol.iterator]: () => f(),
-        // oxlint-disable-next-line typescript/consistent-type-assertions
-        run: () => runImpl(inner as never),
-        type: "Op",
-      };
-      const op = () => inner;
-      return Object.assign(op, inner);
-    };
-    // oxlint-disable-next-line typescript/consistent-type-assertions
-    const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
-      // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: () => runImpl(g() as never),
-      type: "Op" as const,
-    }) as never;
-    return out;
-  }
   const g = (...args: unknown[]) => {
     const inner = {
       [Symbol.iterator]: () => f(...args),
@@ -209,8 +196,8 @@ export function gen(
       run: () => runImpl(inner as never),
       type: "Op",
     };
-    const op = () => inner;
-    return Object.assign(op, inner);
+    const _op = () => inner;
+    return Object.assign(_op, inner);
   };
   // oxlint-disable-next-line typescript/consistent-type-assertions
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
