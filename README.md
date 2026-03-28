@@ -1,3 +1,3 @@
-# simple-effect
+# @travvy/op
 
-a much simpler effect system
+a simple library for composing operations
