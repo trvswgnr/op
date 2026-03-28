@@ -16,6 +16,7 @@ describe("public API (index)", () => {
     test("factory produces typed errors", () => {
       const E = TypedError("SmokeError", "default smoke");
       const e = new E({ message: "x" });
+      expectTypeOf(e).toEqualTypeOf<TypedError<"SmokeError", {}>>();
       expect(e.type).toBe("SmokeError");
       expect(e.message).toBe("x");
       expect(e.data).toEqual({});
