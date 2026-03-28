@@ -1,15 +1,5 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import {
-  fail,
-  gen,
-  Op,
-  Result,
-  run,
-  succeed,
-  fromPromise,
-  UnexpectedError,
-  TypedError,
-} from "./lib.js";
+import { fail, gen, Op, Result, succeed, fromPromise, UnexpectedError, TypedError } from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -111,33 +101,45 @@ describe("TypedError", () => {
     const e = new E();
     expectTypeOf(e).toEqualTypeOf<TypedError<"E">>();
   });
+
+  test("can be used directly in gen", async () => {
+    class CustomError extends TypedError("CustomError") {}
+    const customError = new CustomError();
+    const e = gen(function* () {
+      return yield* customError;
+    });
+    expectTypeOf(e).toEqualTypeOf<Op<never, CustomError, []>>();
+    const result = await e.run();
+    assert(result.ok === false, "result.ok should be false");
+    expect(result.error).toBe(customError);
+  });
 });
 
 describe("succeed", () => {
   test("run returns Ok with value", async () => {
-    const result = await run(succeed(69));
+    const result = await succeed(69).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(69);
   });
 
   test("handles various value types", async () => {
-    const r1 = await run(succeed(0));
+    const r1 = await succeed(0).run();
     assert(r1.ok === true, "r1.ok should be true");
     expect(r1.value).toBe(0);
 
-    const r2 = await run(succeed(""));
+    const r2 = await succeed("").run();
     assert(r2.ok === true, "r2.ok should be true");
     expect(r2.value).toBe("");
 
-    const r3 = await run(succeed(null));
+    const r3 = await succeed(null).run();
     assert(r3.ok === true, "r3.ok should be true");
     expect(r3.value).toBe(null);
 
-    const r4 = await run(succeed({ foo: "bar" }));
+    const r4 = await succeed({ foo: "bar" }).run();
     assert(r4.ok === true, "r4.ok should be true");
     expect(r4.value).toEqual({ foo: "bar" });
 
-    const r5 = await run(succeed([1, 2, 3]));
+    const r5 = await succeed([1, 2, 3]).run();
     assert(r5.ok === true, "r5.ok should be true");
     expect(r5.value).toEqual([1, 2, 3]);
   });
@@ -145,14 +147,14 @@ describe("succeed", () => {
 
 describe("fail", () => {
   test("run returns Err with error", async () => {
-    const result = await run(fail("error"));
+    const result = await fail("error").run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBe("error");
   });
 
   test("preserves custom error objects", async () => {
     const customErr = new Error("custom message");
-    const result = await run(fail(customErr));
+    const result = await fail(customErr).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBe(customErr);
     expect(result.error.message).toBe("custom message");
@@ -160,13 +162,12 @@ describe("fail", () => {
 
   test("short-circuits immediately", async () => {
     let executed = false;
-    const result = await run(
-      gen(function* () {
-        yield* fail("stop");
-        executed = true;
-        return yield* succeed(1);
-      }),
-    );
+    const program = gen(function* () {
+      yield* fail("stop");
+      executed = true;
+      return yield* succeed(1);
+    });
+    const result = await program.run();
     expect(result.ok).toBe(false);
     expect(executed).toBe(false);
   });
@@ -174,40 +175,35 @@ describe("fail", () => {
 
 describe("fromPromise", () => {
   test("success path returns Ok with resolved value", async () => {
-    const result = await run(
-      fromPromise(
-        () => Promise.resolve(1),
-        () => "err",
-      ),
+    const program = fromPromise(
+      () => Promise.resolve(1),
+      () => "err",
     );
+    const result = await program.run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(1);
   });
 
   test("rejection maps to Err via onError", async () => {
-    const result = await run(
-      fromPromise(
-        () => Promise.reject(new Error("failed")),
-        (e) => (e instanceof Error ? e.message : String(e)),
-      ),
-    );
+    const result = await fromPromise(
+      () => Promise.reject(new Error("failed")),
+      (e) => (e instanceof Error ? e.message : String(e)),
+    ).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBe("failed");
   });
 
   test("UnexpectedError when promise rejects without proper handling", async () => {
     const testError = new TypeError("whoops");
-    const result = await run(
-      gen(function* () {
-        const x = yield* fromPromise(
-          () => Promise.reject("raw rejection"),
-          () => {
-            throw testError;
-          },
-        );
-        return x;
-      }),
-    );
+    const result = await gen(function* () {
+      const x = yield* fromPromise(
+        () => Promise.reject("raw rejection"),
+        () => {
+          throw testError;
+        },
+      );
+      return x;
+    }).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(result.error.cause).toBe(testError);
@@ -215,14 +211,12 @@ describe("fromPromise", () => {
 
   test("UnexpectedError when onError throws", async () => {
     const error = new Error("onError threw");
-    const result = await run(
-      fromPromise(
-        () => Promise.reject("boom"),
-        () => {
-          throw error;
-        },
-      ),
-    );
+    const result = await fromPromise(
+      () => Promise.reject("boom"),
+      () => {
+        throw error;
+      },
+    ).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(result.error.cause).toBeInstanceOf(Error);
@@ -232,13 +226,11 @@ describe("fromPromise", () => {
 
 describe("gen", () => {
   test("sequential succeed composes values", async () => {
-    const result = await run(
-      gen(function* () {
-        const a = yield* succeed(1);
-        const b = yield* succeed(2);
-        return a + b;
-      }),
-    );
+    const result = await gen(function* () {
+      const a = yield* succeed(1);
+      const b = yield* succeed(2);
+      return a + b;
+    }).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(3);
   });
@@ -246,14 +238,12 @@ describe("gen", () => {
   test("fail short-circuits before subsequent effects", async () => {
     let firstRan = false;
     let secondRan = false;
-    const result = await run(
-      gen(function* () {
-        yield* succeed(void (firstRan = true));
-        yield* fail("oops");
-        secondRan = true;
-        return yield* succeed(2);
-      }),
-    );
+    const result = await gen(function* () {
+      yield* succeed(void (firstRan = true));
+      yield* fail("oops");
+      secondRan = true;
+      return yield* succeed(2);
+    }).run();
     expect(firstRan).toBe(true);
     assert(result.ok === false, "result.ok should be true");
     expect(result.error).toBe("oops");
@@ -261,16 +251,14 @@ describe("gen", () => {
   });
 
   test("fromPromise in gen - success path", async () => {
-    const result = await run(
-      gen(function* () {
-        const a = yield* succeed(10);
-        const b = yield* fromPromise(
-          () => Promise.resolve(a * 2),
-          () => "err",
-        );
-        return b;
-      }),
-    );
+    const result = await gen(function* () {
+      const a = yield* succeed(10);
+      const b = yield* fromPromise(
+        () => Promise.resolve(a * 2),
+        () => "err",
+      );
+      return b;
+    }).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(20);
   });
@@ -283,7 +271,7 @@ describe("gen", () => {
         (e) => ({ mapped: e }),
       );
     });
-    const result = await run(p);
+    const result = await p.run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toEqual({ mapped: "async fail" });
   });
@@ -292,7 +280,7 @@ describe("gen", () => {
     const p = gen(function* () {
       return yield* fromPromise(() => Promise.reject("async fail"));
     });
-    const result = await run(p);
+    const result = await p.run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
   });
@@ -301,7 +289,7 @@ describe("gen", () => {
     const add = gen(function* (a: number, b: number) {
       return a + b;
     });
-    const result = await add.run(2, 3);
+    const result = await add(2, 3).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(5);
   });
@@ -314,7 +302,7 @@ describe("gen", () => {
       return yield* add(1, 2);
     });
     const viaRun = await program.run();
-    const viaFreeRun = await run(program);
+    const viaFreeRun = await program.run();
     assert(viaRun.ok === true, "viaRun.ok should be true");
     assert(viaFreeRun.ok === true, "viaFreeRun.ok should be true");
     expect(viaRun.value).toBe(3);
@@ -326,7 +314,7 @@ describe("gen", () => {
       return yield* succeed(69);
     });
     const a = await program.run();
-    const b = await run(program);
+    const b = await program.run();
     assert(a.ok === true, "a.ok should be true");
     assert(b.ok === true, "b.ok should be true");
     expect(a.value).toBe(69);
@@ -334,20 +322,18 @@ describe("gen", () => {
   });
 });
 
-describe("run", () => {
+describe("op.run", () => {
   test("sync effect completes without awaiting", async () => {
-    const result = await run(succeed("sync"));
+    const result = await succeed("sync").run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe("sync");
   });
 
   test("async effect suspends and resumes correctly", async () => {
-    const result = await run(
-      fromPromise(
-        () => Promise.resolve("async"),
-        () => "err",
-      ),
-    );
+    const result = await fromPromise(
+      () => Promise.resolve("async"),
+      () => "err",
+    ).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe("async");
   });
@@ -364,7 +350,7 @@ describe("run", () => {
       );
       return { first, second };
     });
-    const result = await run(program);
+    const result = await program.run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value.first).toEqual({ data: "raw" });
     expect(result.value.second).toEqual({ n: 69 });
@@ -383,7 +369,7 @@ describe("run", () => {
       const x = yield* alwaysFails();
       return x;
     });
-    const result = await run(program);
+    const result = await program.run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(result.error.cause).toBeInstanceOf(Error);
@@ -393,57 +379,53 @@ describe("run", () => {
 
 describe("edge cases and invariants", () => {
   test("Ok result has correct shape", async () => {
-    const result = await run(succeed(1));
+    const result = await succeed(1).run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.type).toBe("Ok");
     expect(result.value).toBe(1);
   });
 
   test("Err result has correct shape", async () => {
-    const result = await run(fail("e"));
+    const result = await fail("e").run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.type).toBe("Err");
     expect(result.error).toBe("e");
   });
 
   test("result from run is frozen", async () => {
-    const okResult = await run(succeed(1));
+    const okResult = await succeed(1).run();
     expect(okResult.ok).toBe(true);
     expect(Object.isFrozen(okResult)).toBe(true);
 
-    const errResult = await run(fail("e"));
+    const errResult = await fail("e").run();
     assert(errResult.ok === false, "errResult.ok should be false");
     expect(Object.isFrozen(errResult)).toBe(true);
   });
 
   test("empty and zero values work correctly", async () => {
-    const r0 = await run(succeed(0));
+    const r0 = await succeed(0).run();
     assert(r0.ok === true, "r0.ok should be true");
     expect(r0.value).toBe(0);
 
-    const rEmpty = await run(succeed(""));
+    const rEmpty = await succeed("").run();
     assert(rEmpty.ok === true, "rEmpty.ok should be true");
     expect(rEmpty.value).toBe("");
   });
 
   test("returns UnexpectedError when throw in generator", async () => {
     const error = new Error("unhandled");
-    const result = await run(
-      gen(function* () {
-        throw error;
-      }),
-    );
+    const result = await gen(function* () {
+      throw error;
+    }).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(result.error.cause).toBe(error);
   });
   test("returns UnexpectedError when unhandled Promise rejection in gen", async () => {
     const error = new Error("unhandled");
-    const result = await run(
-      gen(function* () {
-        return Promise.reject(error);
-      }),
-    );
+    const result = await gen(function* () {
+      return Promise.reject(error);
+    }).run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(result.error.cause).toBe(error);
@@ -535,7 +517,7 @@ describe("type inference", () => {
       const c = yield* alwaysFails3();
       return a + b + c;
     });
-    const result = await run(program);
+    const result = await program.run();
     assert(result.ok === false, "result.ok should be false");
     expect(result.error).toBeInstanceOf(CustomError1);
   });
