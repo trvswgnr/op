@@ -11,7 +11,7 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
 
 export interface TypedError<
   TypeName extends string,
-  Data extends { message?: string | undefined; cause?: unknown } = {},
+  Data extends Record<string, unknown> & { message?: string | undefined; cause?: unknown } = {},
 > extends Error {
   readonly type: TypeName;
   readonly data: Omit<Data, "cause" | "message">;
@@ -95,7 +95,7 @@ type OpArity<T, E, A extends readonly unknown[]> = {
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
 
-export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
+export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
 type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
