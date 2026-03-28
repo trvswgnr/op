@@ -1,5 +1,5 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import { fail, gen, Op, Result, run, succeed, tryPromise, UnexpectedError } from "./lib.js";
+import { fail, gen, Op, Result, run, succeed, fromPromise, UnexpectedError } from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -87,7 +87,7 @@ describe("fail", () => {
 describe("tryPromise", () => {
   test("success path returns Ok with resolved value", async () => {
     const result = await run(
-      tryPromise(
+      fromPromise(
         () => Promise.resolve(1),
         () => "err",
       ),
@@ -98,7 +98,7 @@ describe("tryPromise", () => {
 
   test("rejection maps to Err via onError", async () => {
     const result = await run(
-      tryPromise(
+      fromPromise(
         () => Promise.reject(new Error("failed")),
         (e) => (e instanceof Error ? e.message : String(e)),
       ),
@@ -111,7 +111,7 @@ describe("tryPromise", () => {
     const testError = new TypeError("whoops");
     const result = await run(
       gen(function* () {
-        const x = yield* tryPromise(
+        const x = yield* fromPromise(
           () => Promise.reject("raw rejection"),
           () => {
             throw testError;
@@ -128,7 +128,7 @@ describe("tryPromise", () => {
   test("UnexpectedError when onError throws", async () => {
     const error = new Error("onError threw");
     const result = await run(
-      tryPromise(
+      fromPromise(
         () => Promise.reject("boom"),
         () => {
           throw error;
@@ -176,7 +176,7 @@ describe("gen", () => {
     const result = await run(
       gen(function* () {
         const a = yield* succeed(10);
-        const b = yield* tryPromise(
+        const b = yield* fromPromise(
           () => Promise.resolve(a * 2),
           () => "err",
         );
@@ -190,7 +190,7 @@ describe("gen", () => {
   test("tryPromise in gen - error path", async () => {
     const p = gen(function* () {
       yield* succeed(1);
-      return yield* tryPromise(
+      return yield* fromPromise(
         () => Promise.reject("async fail"),
         (e) => ({ mapped: e }),
       );
@@ -202,7 +202,7 @@ describe("gen", () => {
 
   test("tryPromise in gen - onError is optional", async () => {
     const p = gen(function* () {
-      return yield* tryPromise(() => Promise.reject("async fail"));
+      return yield* fromPromise(() => Promise.reject("async fail"));
     });
     const result = await run(p);
     assert(result.ok === false, "result.ok should be false");
@@ -255,7 +255,7 @@ describe("run", () => {
 
   test("async effect suspends and resumes correctly", async () => {
     const result = await run(
-      tryPromise(
+      fromPromise(
         () => Promise.resolve("async"),
         () => "err",
       ),
@@ -266,11 +266,11 @@ describe("run", () => {
 
   test("chained async effects", async () => {
     const program = gen(function* () {
-      const first = yield* tryPromise(
+      const first = yield* fromPromise(
         () => Promise.resolve({ data: "raw" }),
         () => "fetch err",
       );
-      const second = yield* tryPromise(
+      const second = yield* fromPromise(
         () => Promise.resolve(JSON.parse(`{"n": 69}`)),
         () => "parse err",
       );
@@ -288,7 +288,7 @@ describe("run", () => {
       return n;
     });
     const alwaysFails = gen(function* () {
-      return yield* tryPromise(() => Promise.reject(error));
+      return yield* fromPromise(() => Promise.reject(error));
     });
     const program = gen(function* () {
       yield* makeNumber(1);
@@ -376,9 +376,9 @@ describe("type inference", () => {
     expectTypeOf(p3).toEqualTypeOf<Op<number, never, []>>();
     const p4 = fail("error");
     expectTypeOf(p4).toEqualTypeOf<Op<never, string, []>>();
-    const p5 = tryPromise(() => Promise.resolve(1));
+    const p5 = fromPromise(() => Promise.resolve(1));
     expectTypeOf(p5).toEqualTypeOf<Op<number, UnexpectedError, []>>();
-    const p6 = tryPromise(
+    const p6 = fromPromise(
       () => Promise.resolve(1),
       () => "error",
     );
@@ -412,5 +412,35 @@ describe("type inference", () => {
     const r2 = await p2.run(69);
     assert(r2.ok === true, "r2.ok should be true");
     expect(r2.value).toBe(69);
+  });
+
+  test("disguishes between multiple error types", async () => {
+    // note: requires that the types returned are distinct
+    class CustomError1 extends Error {
+      readonly unique = "CustomError1";
+    }
+    class CustomError2 extends Error {
+      readonly alsoUnique = "CustomError2";
+    }
+    const alwaysFails1 = gen(function* () {
+      if (Math.random() < 0) {
+        return yield* succeed(1);
+      }
+      return yield* fail(new CustomError1("error1"));
+    });
+    const alwaysFails2 = gen(function* () {
+      if (Math.random() < 0) {
+        return yield* succeed(1);
+      }
+      return yield* fail(new CustomError2("error2"));
+    });
+    const program = gen(function* () {
+      const a = yield* alwaysFails1();
+      const b = yield* alwaysFails2();
+      return a + b;
+    });
+    const result = await run(program());
+    assert(result.ok === false, "result.ok should be false");
+    expect(result.error).toBeInstanceOf(CustomError1);
   });
 });

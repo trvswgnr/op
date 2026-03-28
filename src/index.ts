@@ -1,10 +1,1 @@
-export {
-  type Typed,
-  UnexpectedError,
-  succeed,
-  fail,
-  tryPromise,
-  runSync,
-  run,
-  gen,
-} from "./lib.js";
+export { type Typed, UnexpectedError, succeed, fail, fromPromise, run, gen } from "./lib.js";
