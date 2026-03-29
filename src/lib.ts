@@ -8,12 +8,6 @@ export interface Typed<TypeName extends string> {
  * The message is always `"An unexpected error occurred"`. The original failure is preserved on
  * `cause` (see {@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/cause Error#cause}).
  *
- * `Op.run`, `suspend`, and `fromPromise` wrap unhandled rejections and similar cases in this type
- * when no custom error mapping is supplied.
- *
- * Implements {@link Typed} with `type: "UnexpectedError"` so it can be narrowed in `switch` or
- * `if` on `error.type`.
- *
  * @param cause The underlying reason for the error (often the value a promise rejected with).
  *
  * @example
@@ -21,9 +15,9 @@ export interface Typed<TypeName extends string> {
  *
  * @example
  * // produced by `fromPromise` when the promise rejects and no `onError` is given
- * const result = await fromPromise(Promise.reject("oops"));
+ * const result = await fromPromise(() => Promise.reject("oops"));
  * if (!result.ok && result.error.type === "UnexpectedError") {
- *   console.error(result.error.cause);
+ *   console.error(result.error.cause); // "oops"
  * }
  */
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
@@ -157,13 +151,17 @@ export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
 export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
-export const succeed = <T>(value: T): Op<T, never, []> => {
+export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
+  if (value instanceof Promise) {
+    return fromPromise(() => value);
+  }
+
   const self = {
     *[Symbol.iterator]() {
       return value;
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: () => runImpl(self as never),
+    run: () => runOp(self as never),
     type: "Op",
   };
   const op = () => self;
@@ -178,7 +176,7 @@ export const fail = <E>(value: E): Op<never, E, []> => {
       throw "unreachable";
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: () => runImpl(self as never),
+    run: () => runOp(self as never),
     type: "Op",
   };
   const op = () => self;
@@ -196,7 +194,7 @@ export const fromPromise = <T, E = UnexpectedError>(
         type: "Suspended" as const,
         promise: f().then(
           (a) => ok(a),
-          (e) => (onError ? err(onError(e)) : err(new UnexpectedError({ cause: e }))),
+          (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
         ),
       };
       if (result.type === "Err") {
@@ -206,7 +204,7 @@ export const fromPromise = <T, E = UnexpectedError>(
       return result.value;
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: () => runImpl(self as never),
+    run: () => runOp(self as never),
     type: "Op" as const,
   };
   const op = () => self;
@@ -214,8 +212,8 @@ export const fromPromise = <T, E = UnexpectedError>(
   return Object.assign(op, self) as never;
 };
 
-async function runImpl<E, T>(
-  op: Op<T, E, readonly []> | OpBase<T, E>,
+export async function runOp<E, T>(
+  op: Op<T, E, readonly []>,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
     const ef = typeof op === "function" ? op() : op;
@@ -229,29 +227,31 @@ async function runImpl<E, T>(
         return err(new UnexpectedError({ cause }));
       }
     }
-    const value = await Promise.resolve(step.value);
+    const value = await step.value;
     return ok(value);
   } catch (cause) {
     return err(new UnexpectedError({ cause }));
   }
 }
 
-export const run = runImpl;
+export interface FromGenFn {
+  <Y extends Instruction<unknown>, T>(f: () => Generator<Y, T, unknown>): Op<T, ExtractErr<Y>, []>;
+  <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
+    f: (...args: A) => Generator<Y, T, unknown>,
+  ): Op<T, ExtractErr<Y>, A>;
+  (
+    f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
+  ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
+}
 
-export function gen<Y extends Instruction<unknown>, T>(
-  f: () => Generator<Y, T, unknown>,
-): Op<T, ExtractErr<Y>, []>;
-export function gen<Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
-  f: (...args: A) => Generator<Y, T, unknown>,
-): Op<T, ExtractErr<Y>, A>;
-export function gen(
+export const fromGenFn: FromGenFn = (
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
-): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> {
+): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> => {
   const g = (...args: unknown[]) => {
     const inner = {
       [Symbol.iterator]: () => f(...args),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: () => runImpl(inner as never),
+      run: () => runOp(inner as never),
       type: "Op",
     };
     const _op = () => inner;
@@ -260,8 +260,8 @@ export function gen(
   // oxlint-disable-next-line typescript/consistent-type-assertions
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: (...args: unknown[]) => runImpl(g(...args) as never),
+    run: (...args: unknown[]) => runOp(g(...args) as never),
     type: "Op" as const,
   }) as never;
   return out;
-}
+};

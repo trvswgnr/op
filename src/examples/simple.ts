@@ -1,7 +1,7 @@
 // oxlint-disable no-console
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, gen, fromPromise, UnexpectedError, TypedError } from "../lib.js";
+import { fail, fromGenFn, fromPromise, UnexpectedError, TypedError } from "../lib.js";
 
 function isMainModule(): boolean {
   const entry = typeof process !== "undefined" ? process.argv[1] : undefined;
@@ -20,19 +20,19 @@ export class NegativeError extends Error {
   }
 }
 
-export const divide = gen(function* (a: number, b: number) {
+export const divide = fromGenFn(function* (a: number, b: number) {
   if (b === 0) return yield* fail(new DivisionByZeroError());
   return a / b;
 });
 
-export const sqrt = gen(function* (n: number) {
+export const sqrt = fromGenFn(function* (n: number) {
   if (n < 0) return yield* fail(new NegativeError(n));
   return Math.sqrt(n);
 });
 
 // Errors compose automatically through yield*
-// TypeScript infers: Op<number, DivByZero | Negative>
-export const mathComposeProgram = gen(function* () {
+// TypeScript infers: Op<number, DivByZero | Negative, []>
+export const mathComposeProgram = fromGenFn(function* () {
   const a = yield* divide(10, 3); // unwraps or short-circuits
   const b = yield* sqrt(a - 4); // same - different error type
   return b * 2;
@@ -41,6 +41,16 @@ export const mathComposeProgram = gen(function* () {
 if (isMainModule()) {
   const _result = await mathComposeProgram.run();
   void _result;
+  switch (_result.type) {
+    case "Ok":
+      console.log("is Ok");
+      console.log(_result.value);
+      break;
+    case "Err":
+      console.error("is Err");
+      console.error(_result.error);
+      break;
+  }
   // _result: Result<number, DivByZero | Negative>
 }
 
@@ -70,7 +80,7 @@ export class ParseError extends Error {
   }
 }
 
-export const parseUser = gen(function* (data: unknown) {
+export const parseUser = fromGenFn(function* (data: unknown) {
   if (
     typeof data !== "object" ||
     data === null ||
@@ -82,7 +92,7 @@ export const parseUser = gen(function* (data: unknown) {
   return { name: data.name };
 });
 
-export const fetchData = gen(function* (url: string) {
+export const fetchData = fromGenFn(function* (url: string) {
   const res = yield* fromPromise(
     async () => {
       const res_ = await fetch(url);
@@ -101,7 +111,7 @@ export const fetchData = gen(function* (url: string) {
 });
 
 // Errors accumulate through the union automatically
-export const userProgram = gen(function* (id: string) {
+export const userProgram = fromGenFn(function* (id: string) {
   const data = yield* fetchData(`/api/users/${id}`);
   const user = yield* parseUser(data);
   return user;

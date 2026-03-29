@@ -2,34 +2,16 @@ import {
   succeed,
   fail,
   fromPromise,
-  gen,
-  run,
+  fromGenFn,
+  runOp,
   UnexpectedError,
   TypedError,
   type Op as _Op,
-  type Instruction,
-  type OpBase,
-  type Result,
-  type ExtractErr,
-  type Typed,
 } from "./lib.js";
-interface OpFactory extends Typed<"OpFactory"> {
-  <Y extends Instruction<unknown>, T>(f: () => Generator<Y, T, unknown>): Op<T, ExtractErr<Y>, []>;
-  <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
-    f: (...args: A) => Generator<Y, T, unknown>,
-  ): Op<T, ExtractErr<Y>, A>;
-  run: <E, T>(op: Op<T, E, readonly []> | OpBase<T, E>) => Promise<Result<T, E | UnexpectedError>>;
-  pure: <T>(value: T) => Op<T, never, []>;
-  fail: <E>(value: E) => Op<never, E, []>;
-  suspend: <T, E = UnexpectedError>(
-    f: () => Promise<T>,
-    onError?: (e: unknown) => E,
-  ) => Op<T, E, []>;
-}
 
-export const Op: OpFactory = Object.assign(gen, {
+export const Op = Object.assign(fromGenFn, {
   type: "OpFactory" as const,
-  run,
+  run: runOp,
   pure: succeed,
   fail,
   suspend: fromPromise,
