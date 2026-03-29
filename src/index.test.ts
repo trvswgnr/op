@@ -2,6 +2,17 @@ import { assert, describe, expect, expectTypeOf, test } from "vitest";
 import { Op, UnexpectedError, TypedError, type Op as OpT } from "./index.js";
 
 describe("public API (index)", () => {
+  describe("OpFactory", () => {
+    test("type is 'OpFactory'", () => {
+      expect(Op.type).toBe("OpFactory");
+    });
+    test("run is a function", () => {
+      expect(Op.run).toBeInstanceOf(Function);
+    });
+    test("pure is a function", () => {
+      expect(Op.pure).toBeInstanceOf(Function);
+    });
+  });
   describe("UnexpectedError", () => {
     test("discriminant and cause", () => {
       const cause = new Error("root");
@@ -56,7 +67,7 @@ describe("public API (index)", () => {
   });
 
   describe("Op (generator)", () => {
-    test("yield* Op.ok composes", async () => {
+    test("yield* Op.pure composes", async () => {
       const program = Op(function* () {
         const a = yield* Op.pure(10);
         const b = yield* Op.pure(2);
@@ -65,6 +76,18 @@ describe("public API (index)", () => {
       const r = await program.run();
       assert(r.ok === true, "r.ok");
       expect(r.value).toBe(12);
+    });
+    test("yield* Op.fail composes", async () => {
+      const program = Op(function* () {
+        const a = yield* Op.fail("boom");
+        const b = yield* Op.pure(2);
+        const c = yield* Op.pure(Promise.resolve(3));
+        return a + b + c;
+      });
+      const r = await program.run();
+      assert(r.ok === false, "r.ok");
+      expect(r.error).toBe("boom");
+      expectTypeOf(r.error).toEqualTypeOf<UnexpectedError | string>();
     });
   });
 

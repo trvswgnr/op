@@ -1,5 +1,14 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import { fail, gen, Op, Result, succeed, fromPromise, UnexpectedError, TypedError } from "./lib.js";
+import {
+  fail,
+  fromGenFn,
+  Op,
+  Result,
+  succeed,
+  fromPromise,
+  UnexpectedError,
+  TypedError,
+} from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -105,7 +114,7 @@ describe("TypedError", () => {
   test("can be used directly in gen", async () => {
     class CustomError extends TypedError("CustomError") {}
     const customError = new CustomError();
-    const e = gen(function* () {
+    const e = fromGenFn(function* () {
       return yield* customError;
     });
     expectTypeOf(e).toEqualTypeOf<Op<never, CustomError, []>>();
@@ -143,6 +152,21 @@ describe("succeed", () => {
     assert(r5.ok === true, "r5.ok should be true");
     expect(r5.value).toEqual([1, 2, 3]);
   });
+
+  test("handles promises", async () => {
+    const result = await succeed(Promise.resolve(69)).run();
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toBe(69);
+
+    const program = fromGenFn(function* () {
+      const a = yield* succeed(Promise.resolve(1));
+      const b = yield* succeed(Promise.resolve(2));
+      return a + b;
+    });
+    const result2 = await program.run();
+    assert(result2.ok === true, "result2.ok should be true");
+    expect(result2.value).toBe(3);
+  });
 });
 
 describe("fail", () => {
@@ -162,7 +186,7 @@ describe("fail", () => {
 
   test("short-circuits immediately", async () => {
     let executed = false;
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       yield* fail("stop");
       executed = true;
       return yield* succeed(1);
@@ -195,7 +219,7 @@ describe("fromPromise", () => {
 
   test("UnexpectedError when promise rejects without proper handling", async () => {
     const testError = new TypeError("whoops");
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       const x = yield* fromPromise(
         () => Promise.reject("raw rejection"),
         () => {
@@ -226,7 +250,7 @@ describe("fromPromise", () => {
 
 describe("gen", () => {
   test("sequential succeed composes values", async () => {
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       const a = yield* succeed(1);
       const b = yield* succeed(2);
       return a + b;
@@ -238,7 +262,7 @@ describe("gen", () => {
   test("fail short-circuits before subsequent ops", async () => {
     let firstRan = false;
     let secondRan = false;
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       yield* succeed(void (firstRan = true));
       yield* fail("oops");
       secondRan = true;
@@ -251,7 +275,7 @@ describe("gen", () => {
   });
 
   test("fromPromise in gen - success path", async () => {
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       const a = yield* succeed(10);
       const b = yield* fromPromise(
         () => Promise.resolve(a * 2),
@@ -264,7 +288,7 @@ describe("gen", () => {
   });
 
   test("fromPromise in gen - error path", async () => {
-    const p = gen(function* () {
+    const p = fromGenFn(function* () {
       yield* succeed(1);
       return yield* fromPromise(
         () => Promise.reject("async fail"),
@@ -277,7 +301,7 @@ describe("gen", () => {
   });
 
   test("fromPromise in gen - onError is optional", async () => {
-    const p = gen(function* () {
+    const p = fromGenFn(function* () {
       return yield* fromPromise(() => Promise.reject("async fail"));
     });
     const result = await p.run();
@@ -286,7 +310,7 @@ describe("gen", () => {
   });
 
   test("parameterized gen - run passes args into the generator", async () => {
-    const add = gen(function* (a: number, b: number) {
+    const add = fromGenFn(function* (a: number, b: number) {
       return a + b;
     });
     const result = await add(2, 3).run();
@@ -295,10 +319,10 @@ describe("gen", () => {
   });
 
   test("parameterized gen composes via yield* and callable op", async () => {
-    const add = gen(function* (a: number, b: number) {
+    const add = fromGenFn(function* (a: number, b: number) {
       return a + b;
     });
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       return yield* add(1, 2);
     });
     const viaRun = await program.run();
@@ -310,7 +334,7 @@ describe("gen", () => {
   });
 
   test("nullary gen - run() matches run(op)", async () => {
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       return yield* succeed(69);
     });
     const a = await program.run();
@@ -339,7 +363,7 @@ describe("op.run", () => {
   });
 
   test("chained async ops", async () => {
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       const first = yield* fromPromise(
         () => Promise.resolve({ data: "raw" }),
         () => "fetch err",
@@ -358,13 +382,13 @@ describe("op.run", () => {
 
   test("UnexpectedError propagates from rejecting promise", async () => {
     const error = new Error("unhandled");
-    const makeNumber = gen(function* (n: number) {
+    const makeNumber = fromGenFn(function* (n: number) {
       return n;
     });
-    const alwaysFails = gen(function* () {
+    const alwaysFails = fromGenFn(function* () {
       return yield* fromPromise(() => Promise.reject(error));
     });
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       yield* makeNumber(1);
       const x = yield* alwaysFails();
       return x;
@@ -414,7 +438,7 @@ describe("edge cases and invariants", () => {
 
   test("returns UnexpectedError when throw in generator", async () => {
     const error = new Error("unhandled");
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       throw error;
     }).run();
     assert(result.ok === false, "result.ok should be false");
@@ -423,7 +447,7 @@ describe("edge cases and invariants", () => {
   });
   test("returns UnexpectedError when unhandled Promise rejection in gen", async () => {
     const error = new Error("unhandled");
-    const result = await gen(function* () {
+    const result = await fromGenFn(function* () {
       return Promise.reject(error);
     }).run();
     assert(result.ok === false, "result.ok should be false");
@@ -434,11 +458,11 @@ describe("edge cases and invariants", () => {
 
 describe("type inference", () => {
   test("infers the correct type from the generator", () => {
-    const p1 = gen(function* () {
+    const p1 = fromGenFn(function* () {
       return yield* succeed(1);
     });
     expectTypeOf(p1).toEqualTypeOf<Op<number, never, []>>();
-    const p2 = gen(function* (a: number) {
+    const p2 = fromGenFn(function* (a: number) {
       return yield* succeed(a);
     });
     expectTypeOf(p2).toEqualTypeOf<Op<number, never, [a: number]>>();
@@ -455,24 +479,24 @@ describe("type inference", () => {
     expectTypeOf(p6).toEqualTypeOf<Op<number, string, []>>();
   });
   test("infers the correct type from the run", () => {
-    const p1 = gen(function* () {
+    const p1 = fromGenFn(function* () {
       return yield* succeed(1);
     }).run();
     expectTypeOf(p1).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
-    const p2 = gen(function* (a: string) {
+    const p2 = fromGenFn(function* (a: string) {
       return yield* succeed(a);
     }).run("hello");
     expectTypeOf(p2).toEqualTypeOf<Promise<Result<string, UnexpectedError>>>();
   });
   test("op.run() arity is enforced by the type checker", async () => {
-    const p1 = gen(function* () {
+    const p1 = fromGenFn(function* () {
       return yield* succeed(1);
     });
     expect((await p1.run()).ok).toBe(true);
     // @ts-expect-error - nullary run does not accept arguments
     p1.run(1);
 
-    const p2 = gen(function* (a: number) {
+    const p2 = fromGenFn(function* (a: number) {
       return yield* succeed(a);
     });
     // @ts-expect-error - missing required argument
@@ -493,25 +517,25 @@ describe("type inference", () => {
       readonly alsoUnique = "CustomError2";
     }
     class CustomError3 extends TypedError("CustomError3") {}
-    const alwaysFails1 = gen(function* () {
+    const alwaysFails1 = fromGenFn(function* () {
       if (Math.random() < 0) {
         return yield* succeed(1);
       }
       return yield* fail(new CustomError1("error1"));
     });
-    const alwaysFails2 = gen(function* () {
+    const alwaysFails2 = fromGenFn(function* () {
       if (Math.random() < 0) {
         return yield* succeed(1);
       }
       return yield* fail(new CustomError2("error2"));
     });
-    const alwaysFails3 = gen(function* () {
+    const alwaysFails3 = fromGenFn(function* () {
       if (Math.random() < 0) {
         return yield* succeed(1);
       }
       return yield* fail(new CustomError3());
     });
-    const program = gen(function* () {
+    const program = fromGenFn(function* () {
       const a = yield* alwaysFails1();
       const b = yield* alwaysFails2();
       const c = yield* alwaysFails3();
