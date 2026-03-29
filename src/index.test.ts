@@ -48,46 +48,138 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("Op.suspend", () => {
+  describe("Op.try", () => {
     test("resolve and mapped reject", async () => {
-      const okR = await Op.suspend(
+      const okR = await Op.try(
         () => Promise.resolve(3),
         () => "mapped",
       ).run();
       assert(okR.ok === true, "okR.ok");
       expect(okR.value).toBe(3);
 
-      const errR = await Op.suspend(
+      const errR = await Op.try(
         () => (Math.random() > 1 ? Promise.resolve(3) : Promise.reject("boom")),
         (e) => ({ mappedError: String(e) }),
       ).run();
       assert(errR.ok === false, "errR.ok should be false");
       expect(errR.error).toEqual({ mappedError: "boom" });
     });
+
+    test("works synchronously", async () => {
+      // default maps to UnexpectedError
+      {
+        const result = await Op.try(async () => {
+          await Promise.reject("failed");
+        }).run();
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toBeInstanceOf(UnexpectedError);
+        expect(result.error.cause).toBe("failed");
+      }
+      // explicitly mapped
+      {
+        const result = await Op.try(
+          async () => {
+            await Promise.reject(69);
+          },
+          (e) => ({ mappedError: String(e) }),
+        ).run();
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toEqual({ mappedError: "69" });
+      }
+      // sync throw defaults maps to UnexpectedError
+      {
+        const result = await Op.try(async () => {
+          throw "failed";
+        }).run();
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toBeInstanceOf(UnexpectedError);
+        expect(result.error.cause).toBe("failed");
+      }
+      // explicitly mapped
+      {
+        const result = await Op.try(
+          async () => {
+            throw 69;
+          },
+          (e) => ({ mappedError: String(e) }),
+        ).run();
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toEqual({ mappedError: "69" });
+      }
+      // success path
+      {
+        const result = await Op.try(async () => {
+          return 69;
+        }).run();
+        assert(result.ok === true, "result.ok should be true");
+        expect(result.value).toBe(69);
+      }
+    });
   });
 
   describe("Op (generator)", () => {
     test("yield* Op.pure composes", async () => {
-      const program = Op(function* () {
-        const a = yield* Op.pure(10);
-        const b = yield* Op.pure(2);
-        return a + b;
-      });
-      const r = await program.run();
-      assert(r.ok === true, "r.ok");
-      expect(r.value).toBe(12);
+      {
+        const program = Op(function* () {
+          const a = yield* Op.pure(10);
+          const b = yield* Op.pure(2);
+          return a + b;
+        });
+        const r = await program.run();
+        assert(r.ok === true, "r.ok");
+        expect(r.value).toBe(12);
+      }
+      {
+        const program = Op(function* () {
+          const a = yield* Op.pure(10);
+          const b = yield* Op.pure((async () => 20)());
+          return a + b;
+        });
+        const r = await program.run();
+        assert(r.ok === true, "r.ok");
+        expect(r.value).toBe(30);
+      }
+      {
+        const program = Op(function* () {
+          const a = yield* Op.pure(10);
+          const b = yield* Op.pure<Promise<number>>(Promise.reject("boom"));
+          return a + b;
+        });
+        const r = await program.run();
+        assert(r.ok === false, "r.ok");
+        expect(r.error).toBeInstanceOf(UnexpectedError);
+        expectTypeOf(r.error).toEqualTypeOf<UnexpectedError>();
+        expect(r.error.cause).toBe("boom");
+      }
+      {
+        const error = new Error("boom");
+        const program = Op(function* () {
+          return yield* Op.pure(
+            (async () => {
+              throw error;
+            })(),
+          );
+        });
+        const r = await program.run();
+        assert(r.ok === false, "r.ok");
+        expect(r.error).toBeInstanceOf(UnexpectedError);
+        expectTypeOf(r.error).toEqualTypeOf<UnexpectedError>();
+        expect(r.error.cause).toBe(error);
+      }
     });
     test("yield* Op.fail composes", async () => {
-      const program = Op(function* () {
-        const a = yield* Op.fail("boom");
-        const b = yield* Op.pure(2);
-        const c = yield* Op.pure(Promise.resolve(3));
-        return a + b + c;
-      });
-      const r = await program.run();
-      assert(r.ok === false, "r.ok");
-      expect(r.error).toBe("boom");
-      expectTypeOf(r.error).toEqualTypeOf<UnexpectedError | string>();
+      {
+        const program = Op(function* () {
+          const a = yield* Op.fail("boom");
+          const b = yield* Op.pure(2);
+          const c = yield* Op.pure(Promise.resolve(3));
+          return a + b + c;
+        });
+        const r = await program.run();
+        assert(r.ok === false, "r.ok");
+        expect(r.error).toBe("boom");
+        expectTypeOf(r.error).toEqualTypeOf<UnexpectedError | string>();
+      }
     });
   });
 
@@ -154,7 +246,7 @@ describe("Op monad laws (via bind / run)", () => {
   });
 
   test("right identity (suspend)", async () => {
-    const m = Op.suspend(() => Promise.resolve(9));
+    const m = Op.try(() => Promise.resolve(9));
     await expectSameResult(bind(m, Op.pure), m);
   });
 

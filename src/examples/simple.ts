@@ -1,7 +1,7 @@
 // oxlint-disable no-console
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, fromGenFn, fromPromise, UnexpectedError, TypedError } from "../lib.js";
+import { fail, fromGenFn, _try, UnexpectedError, TypedError } from "../lib.js";
 
 function isMainModule(): boolean {
   const entry = typeof process !== "undefined" ? process.argv[1] : undefined;
@@ -93,7 +93,7 @@ export const parseUser = fromGenFn(function* (data: unknown) {
 });
 
 export const fetchData = fromGenFn(function* (url: string) {
-  const res = yield* fromPromise(
+  const res = yield* _try(
     async () => {
       const res_ = await fetch(url);
       if (!res_.ok) {
@@ -103,7 +103,7 @@ export const fetchData = fromGenFn(function* (url: string) {
     },
     (e): FetchError => new FetchError({ cause: e }),
   );
-  const json = yield* fromPromise(
+  const json = yield* _try(
     () => res.json(),
     (e): ParseError => new ParseError({ raw: e }),
   );

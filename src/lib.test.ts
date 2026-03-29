@@ -1,14 +1,5 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import {
-  fail,
-  fromGenFn,
-  Op,
-  Result,
-  succeed,
-  fromPromise,
-  UnexpectedError,
-  TypedError,
-} from "./lib.js";
+import { fail, fromGenFn, Op, Result, succeed, _try, UnexpectedError, TypedError } from "./lib.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
@@ -197,9 +188,9 @@ describe("fail", () => {
   });
 });
 
-describe("fromPromise", () => {
+describe("_try", () => {
   test("success path returns Ok with resolved value", async () => {
-    const program = fromPromise(
+    const program = _try(
       () => Promise.resolve(1),
       () => "err",
     );
@@ -209,18 +200,31 @@ describe("fromPromise", () => {
   });
 
   test("rejection maps to Err via onError", async () => {
-    const result = await fromPromise(
-      () => Promise.reject(new Error("failed")),
-      (e) => (e instanceof Error ? e.message : String(e)),
+    {
+      const result = await _try(
+        () => Promise.reject("failed"),
+        (e) => `mapped: ${e}`,
+      ).run();
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBe("mapped: failed");
+    }
+  });
+
+  test("works with sync throws", async () => {
+    const result = await _try(
+      () => {
+        throw "failed";
+      },
+      (e) => `mapped: ${e}`,
     ).run();
     assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBe("failed");
+    expect(result.error).toBe("mapped: failed");
   });
 
   test("UnexpectedError when promise rejects without proper handling", async () => {
     const testError = new TypeError("whoops");
     const result = await fromGenFn(function* () {
-      const x = yield* fromPromise(
+      const x = yield* _try(
         () => Promise.reject("raw rejection"),
         () => {
           throw testError;
@@ -235,7 +239,7 @@ describe("fromPromise", () => {
 
   test("UnexpectedError when onError throws", async () => {
     const error = new Error("onError threw");
-    const result = await fromPromise(
+    const result = await _try(
       () => Promise.reject("boom"),
       () => {
         throw error;
@@ -274,10 +278,10 @@ describe("gen", () => {
     expect(secondRan).toBe(false);
   });
 
-  test("fromPromise in gen - success path", async () => {
+  test("_try in gen - success path", async () => {
     const result = await fromGenFn(function* () {
       const a = yield* succeed(10);
-      const b = yield* fromPromise(
+      const b = yield* _try(
         () => Promise.resolve(a * 2),
         () => "err",
       );
@@ -287,10 +291,10 @@ describe("gen", () => {
     expect(result.value).toBe(20);
   });
 
-  test("fromPromise in gen - error path", async () => {
+  test("_try in gen - error path", async () => {
     const p = fromGenFn(function* () {
       yield* succeed(1);
-      return yield* fromPromise(
+      return yield* _try(
         () => Promise.reject("async fail"),
         (e) => ({ mapped: e }),
       );
@@ -300,9 +304,9 @@ describe("gen", () => {
     expect(result.error).toEqual({ mapped: "async fail" });
   });
 
-  test("fromPromise in gen - onError is optional", async () => {
+  test("_try in gen - onError is optional", async () => {
     const p = fromGenFn(function* () {
-      return yield* fromPromise(() => Promise.reject("async fail"));
+      return yield* _try(() => Promise.reject("async fail"));
     });
     const result = await p.run();
     assert(result.ok === false, "result.ok should be false");
@@ -354,7 +358,7 @@ describe("op.run", () => {
   });
 
   test("async op suspends and resumes correctly", async () => {
-    const result = await fromPromise(
+    const result = await _try(
       () => Promise.resolve("async"),
       () => "err",
     ).run();
@@ -364,11 +368,11 @@ describe("op.run", () => {
 
   test("chained async ops", async () => {
     const program = fromGenFn(function* () {
-      const first = yield* fromPromise(
+      const first = yield* _try(
         () => Promise.resolve({ data: "raw" }),
         () => "fetch err",
       );
-      const second = yield* fromPromise(
+      const second = yield* _try(
         () => Promise.resolve(JSON.parse(`{"n": 69}`)),
         () => "parse err",
       );
@@ -386,7 +390,7 @@ describe("op.run", () => {
       return n;
     });
     const alwaysFails = fromGenFn(function* () {
-      return yield* fromPromise(() => Promise.reject(error));
+      return yield* _try(() => Promise.reject(error));
     });
     const program = fromGenFn(function* () {
       yield* makeNumber(1);
@@ -470,9 +474,9 @@ describe("type inference", () => {
     expectTypeOf(p3).toEqualTypeOf<Op<number, never, []>>();
     const p4 = fail("error");
     expectTypeOf(p4).toEqualTypeOf<Op<never, string, []>>();
-    const p5 = fromPromise(() => Promise.resolve(1));
+    const p5 = _try(() => Promise.resolve(1));
     expectTypeOf(p5).toEqualTypeOf<Op<number, UnexpectedError, []>>();
-    const p6 = fromPromise(
+    const p6 = _try(
       () => Promise.resolve(1),
       () => "error",
     );
