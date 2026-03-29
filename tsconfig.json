@@ -14,7 +14,8 @@
     "noImplicitOverride": true,
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+    "noErrorTruncation": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
