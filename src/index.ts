@@ -42,7 +42,6 @@ export const Op = Object.assign(fromGenFn, {
   type: "OpFactory" as const,
   run: runOp,
   of: succeed,
-  pure: succeed,
   fail,
   try: _try,
 });

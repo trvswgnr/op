@@ -10,7 +10,7 @@ describe("public API (index)", () => {
       expect(Op.run).toBeInstanceOf(Function);
     });
     test("pure is a function", () => {
-      expect(Op.pure).toBeInstanceOf(Function);
+      expect(Op.of).toBeInstanceOf(Function);
     });
   });
   describe("UnexpectedError", () => {
@@ -36,9 +36,9 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("Op.pure / Op.fail", () => {
+  describe("Op.of / Op.fail", () => {
     test("pure does not yield errors; fail does not", async () => {
-      const okR = await Op.pure(7).run();
+      const okR = await Op.of(7).run();
       assert(okR.ok === true, "okR.ok");
       expect(okR.value).toBe(7);
 
@@ -121,8 +121,8 @@ describe("public API (index)", () => {
     test("yield* Op.pure composes", async () => {
       {
         const program = Op(function* () {
-          const a = yield* Op.pure(10);
-          const b = yield* Op.pure(2);
+          const a = yield* Op.of(10);
+          const b = yield* Op.of(2);
           return a + b;
         });
         const r = await program.run();
@@ -131,8 +131,8 @@ describe("public API (index)", () => {
       }
       {
         const program = Op(function* () {
-          const a = yield* Op.pure(10);
-          const b = yield* Op.pure((async () => 20)());
+          const a = yield* Op.of(10);
+          const b = yield* Op.of((async () => 20)());
           return a + b;
         });
         const r = await program.run();
@@ -141,8 +141,8 @@ describe("public API (index)", () => {
       }
       {
         const program = Op(function* () {
-          const a = yield* Op.pure(10);
-          const b = yield* Op.pure<Promise<number>>(Promise.reject("boom"));
+          const a = yield* Op.of(10);
+          const b = yield* Op.of<Promise<number>>(Promise.reject("boom"));
           return a + b;
         });
         const r = await program.run();
@@ -154,7 +154,7 @@ describe("public API (index)", () => {
       {
         const error = new Error("boom");
         const program = Op(function* () {
-          return yield* Op.pure(
+          return yield* Op.of(
             (async () => {
               throw error;
             })(),
@@ -171,8 +171,8 @@ describe("public API (index)", () => {
       {
         const program = Op(function* () {
           const a = yield* Op.fail("boom");
-          const b = yield* Op.pure(2);
-          const c = yield* Op.pure(Promise.resolve(3));
+          const b = yield* Op.of(2);
+          const c = yield* Op.of(Promise.resolve(3));
           return a + b + c;
         });
         const r = await program.run();
@@ -185,7 +185,7 @@ describe("public API (index)", () => {
 
   describe("Op.run", () => {
     test("free-function run executes nullary ops", async () => {
-      const r1 = await Op.run(Op.pure(69));
+      const r1 = await Op.run(Op.of(69));
       assert(r1.ok === true, "r1.ok");
       expect(r1.value).toBe(69);
 
@@ -204,7 +204,7 @@ describe("public API (index)", () => {
     });
     test('callable Op has type discriminant Typed<"Op">', () => {
       const p = Op(function* () {
-        return yield* Op.pure(1);
+        return yield* Op.of(1);
       });
       expect(p.type).toBe("Op");
     });
@@ -226,34 +226,34 @@ async function expectSameResult<T, E>(a: Op<T, E, []>, b: Op<T, E, []>) {
 describe("Op monad laws (via bind / run)", () => {
   test("left identity", async () => {
     const a = 7;
-    const f = (x: number) => Op.pure(x * 2);
-    await expectSameResult(bind(Op.pure(a), f), f(a));
+    const f = (x: number) => Op.of(x * 2);
+    await expectSameResult(bind(Op.of(a), f), f(a));
   });
 
   test("left identity (failure in f)", async () => {
     const f = (_x: number) => Op.fail("boom" as const);
-    await expectSameResult(bind(Op.pure(1), f), f(1));
+    await expectSameResult(bind(Op.of(1), f), f(1));
   });
 
   test("right identity (pure)", async () => {
-    const m = Op.pure(42);
-    await expectSameResult(bind(m, Op.pure), m);
+    const m = Op.of(42);
+    await expectSameResult(bind(m, Op.of), m);
   });
 
   test("right identity (fail)", async () => {
     const m = Op.fail("e");
-    await expectSameResult(bind(m, Op.pure), m);
+    await expectSameResult(bind(m, Op.of), m);
   });
 
   test("right identity (suspend)", async () => {
     const m = Op.try(() => Promise.resolve(9));
-    await expectSameResult(bind(m, Op.pure), m);
+    await expectSameResult(bind(m, Op.of), m);
   });
 
   test("associativity (success path)", async () => {
-    const m = Op.pure(1);
-    const f = (x: number) => Op.pure(x + 1);
-    const g = (y: number) => Op.pure(y * 2);
+    const m = Op.of(1);
+    const f = (x: number) => Op.of(x + 1);
+    const g = (y: number) => Op.of(y * 2);
     await expectSameResult(
       bind(bind(m, f), g),
       bind(m, (x) => bind(f(x), g)),
@@ -261,9 +261,9 @@ describe("Op monad laws (via bind / run)", () => {
   });
 
   test("associativity (failure in f)", async () => {
-    const m = Op.pure(1);
+    const m = Op.of(1);
     const f = (_x: number) => Op.fail("mid");
-    const g = (_y: number) => Op.pure(999);
+    const g = (_y: number) => Op.of(999);
     await expectSameResult(
       bind(bind(m, f), g),
       bind(m, (x) => bind(f(x), g)),
@@ -272,8 +272,8 @@ describe("Op monad laws (via bind / run)", () => {
 
   test("associativity (failure in m)", async () => {
     const m = Op.fail("start");
-    const f = (_x: number) => Op.pure(1);
-    const g = (_y: number) => Op.pure(2);
+    const f = (_x: number) => Op.of(1);
+    const g = (_y: number) => Op.of(2);
     await expectSameResult(
       bind(bind(m, f), g),
       bind(m, (x) => bind(f(x), g)),
