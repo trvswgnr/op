@@ -14,10 +14,9 @@ export interface Typed<TypeName extends string> {
  * const e = new UnexpectedError({ cause: original });
  *
  * @example
- * // produced by `fromPromise` when the promise rejects and no `onError` is given
- * const result = await fromPromise(() => Promise.reject("oops"));
+ * const result = await Op.suspend(() => Promise.reject("oops")).run();
  * if (!result.ok && result.error.type === "UnexpectedError") {
- *   console.error(result.error.cause); // "oops"
+ *   console.error(result.error.cause);
  * }
  */
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
@@ -27,6 +26,18 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
+/**
+ * Instance type for classes created by {@link TypedError}.
+ *
+ * `message` and `cause` are standard `Error` fields. Any other constructor fields are stored on
+ * {@link TypedError.data}.
+ *
+ * `[Symbol.iterator]` yields a single `Err` carrying this instance, so `yield*` on an instance
+ * inside an {@link Op} propagates the failure like a child operation.
+ *
+ * @template TypeName String discriminant; available as `error.type` and `error.name`.
+ * @template Data Constructor fields other than `message` and `cause`.
+ */
 export interface TypedError<
   TypeName extends string,
   Data extends Record<string, unknown> & { message?: string | undefined; cause?: unknown } = {},
@@ -59,6 +70,14 @@ interface Err<E> extends Typed<"Err"> {
   readonly error: E;
 }
 
+/**
+ * Discriminated result of {@link runOp} and {@link OpNullary.run}.
+ *
+ * When `ok` is `true`, read `value`. When `ok` is `false`, read `error`.
+ *
+ * @template T Success value.
+ * @template E Failure value (often a {@link TypedError} or domain error).
+ */
 export type Result<T, E> = Ok<T> | Err<E>;
 
 const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
@@ -78,20 +97,20 @@ const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, err
  * @param type The name of the error type
  * @param defaultMessage Optional default message for the error
  * @returns A new typed error class that extends the global Error class
+ *
  * @example
- * // basic
  * const NetworkError = TypedError("NetworkError");
  * const op = Op(function* () {
  *   yield* new NetworkError();
  * });
  *
- * // with default message
+ * @example
  * const ValidationError = TypedError("ValidationError", "A validation error occurred");
  * const op = Op(function* () {
  *   yield* new ValidationError();
  * });
  *
- * // with data
+ * @example
  * const NotFoundError = TypedError("NotFoundError")<{ resource: string }>();
  * const op = Op(function* () {
  *   yield* new NotFoundError({ resource: "user" });
@@ -151,9 +170,27 @@ export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
 export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
 
+/**
+ * Lifts a value into an operation that always completes successfully.
+ *
+ * If `value` is not a `Promise`, the generator returns it immediately. If `value` is a
+ * `Promise`, this uses the same suspension behavior as {@link _try}(`() => value`).
+ *
+ * @template T Value type, or `Promise` of a value.
+ * @param value Success value or promise to await.
+ * @returns An operation with success type `Awaited<T>` and no `Err` yields from this helper.
+ *
+ * @example
+ * const r = await succeed(69).run();
+ * if (r.ok) console.log(r.value);
+ *
+ * @example
+ * const r = await succeed(Promise.resolve("done")).run();
+ * if (r.ok) console.log(r.value);
+ */
 export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
   if (value instanceof Promise) {
-    return fromPromise(() => value);
+    return _try(() => value);
   }
 
   const self = {
@@ -169,6 +206,26 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
   return Object.assign(op, self) as never;
 };
 
+/**
+ * Lifts a value into an operation that always fails.
+ *
+ * When run or `yield*`ed, the generator yields `Err` with `value` and does not return a success
+ * value.
+ *
+ * @template E Error payload type.
+ * @param value Error to attach to the failure branch.
+ * @returns An operation with success type `never` and error type `E`.
+ *
+ * @example
+ * const r = await fail("not found").run();
+ * if (!r.ok) console.log(r.error);
+ *
+ * @example
+ * const op = Op(function* () {
+ *   yield* fail(new Error("abort"));
+ *   return 1;
+ * });
+ */
 export const fail = <E>(value: E): Op<never, E, []> => {
   const self = {
     *[Symbol.iterator]() {
@@ -177,25 +234,51 @@ export const fail = <E>(value: E): Op<never, E, []> => {
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
-    type: "Op",
+    type: "Op" as const,
   };
   const op = () => self;
   // oxlint-disable-next-line typescript/consistent-type-assertions
   return Object.assign(op, self) as never;
 };
 
-export const fromPromise = <T, E = UnexpectedError>(
-  f: () => Promise<T>,
+/**
+ * Suspends until a promise settles, then continues with its value or a mapped failure.
+ *
+ * `f` runs when the suspension runs (via a microtask so synchronous throws become rejections and
+ * use the same path as async failures). The returned promise is awaited. On fulfillment, the
+ * operation succeeds with that value. On rejection, if `onError` is provided, its return value is
+ * the failure; otherwise the failure is {@link UnexpectedError} with the rejection on `cause`.
+ *
+ * @template T Resolved value type.
+ * @template E Error type when `onError` is provided. Defaults to {@link UnexpectedError} when omitted.
+ * @param f Zero-arg function returning the promise to await.
+ * @param onError Maps a rejection reason to `E` when provided.
+ * @returns An operation that completes after the promise settles.
+ *
+ * @example
+ * const r = await _try(() => fetch("/api/x")).run();
+ *
+ * @example
+ * const r = await _try(
+ *   () => Promise.reject("bad"),
+ *   (e) => String(e),
+ * ).run();
+ */
+export const _try = <T, E = UnexpectedError>(
+  f: () => T,
   onError?: (e: unknown) => E,
-): Op<T, E, []> => {
+): Op<Awaited<T>, E, []> => {
   const self = {
     *[Symbol.iterator]() {
       const result: Result<T, E> = yield {
         type: "Suspended" as const,
-        promise: f().then(
-          (a) => ok(a),
-          (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
-        ),
+        promise: Promise.resolve()
+          .then(() => f())
+          .then(
+            (a) => ok(a),
+            (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
+            // oxlint-disable-next-line typescript/consistent-type-assertions
+          ) as Promise<Result<T, E>>,
       };
       if (result.type === "Err") {
         yield result;
@@ -212,6 +295,24 @@ export const fromPromise = <T, E = UnexpectedError>(
   return Object.assign(op, self) as never;
 };
 
+/**
+ * Drives a nullary operation to completion and returns a {@link Result} (this function does not
+ * throw; failures are `ok: false`).
+ *
+ * If `op` is a function, it is called once to get the iterable (same as `op()` before iterating).
+ * Each yielded `Err` becomes an error result. Each `Suspended` step awaits `promise` and resumes
+ * the generator. If the iterator throws, or awaiting the suspension promise throws, the result is
+ * `Err` with {@link UnexpectedError}.
+ *
+ * @template E Error type from yielded `Err` values.
+ * @template T Success return type from the generator.
+ * @param op Nullary {@link Op} or zero-arg callable that returns one.
+ * @returns A settled {@link Result}.
+ *
+ * @example
+ * const r = await runOp(succeed(7));
+ * if (r.ok) console.log(r.value);
+ */
 export async function runOp<E, T>(
   op: Op<T, E, readonly []>,
 ): Promise<Result<T, E | UnexpectedError>> {
@@ -244,6 +345,34 @@ export interface FromGenFn {
   ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
 }
 
+/**
+ * Turns a generator function into an {@link Op}. The generator may `yield*` {@link Instruction}
+ * values: failures (`Err`), async steps (`Suspended`, usually via {@link _try}), and sync
+ * throws wrapped with {@link trySync}.
+ *
+ * The generator `return` expression is the success value. TypeScript infers `E` from `Err` yields
+ * in the generator body ({@link ExtractErr}).
+ *
+ * Use a nullary generator for `fromGenFn(function* () { ... })`. Use a parameterized generator for
+ * `fromGenFn(function* (a, b) { ... })`; call the result with `(a, b)` to fix the arguments, then
+ * `.run()` on the inner op.
+ *
+ * @param f Generator implementing the operation.
+ * @returns An operation with inferred `T`, `E`, and `A`.
+ *
+ * @example
+ * const double = fromGenFn(function* () {
+ *   const n = yield* succeed(3);
+ *   return n * 2;
+ * });
+ * const r = await double.run();
+ *
+ * @example
+ * const greet = fromGenFn(function* (name: string) {
+ *   return `Hello, ${name}`;
+ * });
+ * const r = await greet("Ada").run();
+ */
 export const fromGenFn: FromGenFn = (
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
 ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> => {
