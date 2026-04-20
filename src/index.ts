@@ -9,9 +9,6 @@ import {
   type Op as _Op,
 } from "./lib.js";
 
-/**
- * The public API.
- */
 export const Op = Object.assign(fromGenFn, {
   type: "OpFactory" as const,
   run: runOp,
