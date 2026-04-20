@@ -531,8 +531,7 @@ describe("withRetry", () => {
       return "done";
     }), {
       maxAttempts: 3,
-      shouldRetry: (cause) =>
-        cause instanceof UnexpectedError && cause.cause === transient,
+      shouldRetry: (cause) => cause === transient,
       getDelay: () => 0,
     });
 
@@ -570,6 +569,53 @@ describe("withRetry", () => {
     const result = await parent.run();
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toBe(42);
+    expect(attempts).toBe(2);
+  });
+
+  test("accepts an async function directly", async () => {
+    let attempts = 0;
+    const transient = new Error("temporary");
+    const program = withRetry(
+      async (id: string) => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw transient;
+        }
+        return { url: `https://example.com/${id}` };
+      },
+      {
+        maxAttempts: 3,
+        shouldRetry: (cause) => cause === transient,
+        getDelay: () => 0,
+      },
+    );
+
+    const result = await program.run("123");
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toEqual({ url: "https://example.com/123" });
+    expect(attempts).toBe(2);
+  });
+
+  test("accepts a generator function directly", async () => {
+    let attempts = 0;
+    const program = withRetry(
+      function* (id: string) {
+        attempts += 1;
+        if (attempts === 1) {
+          return yield* fail(new FetchError("first attempt failed"));
+        }
+        return { url: `https://example.com/${id}` };
+      },
+      {
+        maxAttempts: 3,
+        shouldRetry: (cause) => cause instanceof FetchError,
+        getDelay: () => 0,
+      },
+    );
+
+    const result = await program.run("123");
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toEqual({ url: "https://example.com/123" });
     expect(attempts).toBe(2);
   });
 });
@@ -778,6 +824,23 @@ describe("type inference", () => {
     p3.run();
     // @ts-expect-error - parameterized retry op does not accept extra args
     p3.run("abc", "extra");
+  });
+
+  test("withRetry infers async and generator function inputs", async () => {
+    const p1 = withRetry(async (id: string) => id.length);
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, [id: string]>>();
+    expectTypeOf(p1.run("abc")).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+
+    const p2 = withRetry(function* (id: string) {
+      if (Math.random() < 0) {
+        return yield* fail("boom");
+      }
+      return id.length;
+    });
+    expectTypeOf(p2).toEqualTypeOf<Op<number, string, [id: string]>>();
+    expectTypeOf(p2.run("abc")).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
+
+    expect((await p1.run("abcd")).ok).toBe(true);
   });
 
   test("disguishes between multiple error types", async () => {
