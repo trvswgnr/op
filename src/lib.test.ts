@@ -221,14 +221,15 @@ describe("_try", () => {
   });
 
   test("works with sync throws", async () => {
+    const syncThrow = new Error("failed");
     const result = await _try(
       () => {
-        throw "failed";
+        throw syncThrow;
       },
       (e) => `mapped: ${e}`,
     ).run();
     assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBe("mapped: failed");
+    expect(result.error).toBe(`mapped: ${syncThrow}`);
   });
 
   test("UnexpectedError when promise rejects without proper handling", async () => {
@@ -805,7 +806,7 @@ describe("type inference", () => {
     expect((await p1.run("abcd")).ok).toBe(true);
   });
 
-  test("disguishes between multiple error types", async () => {
+  test("distinguishes between multiple error types", async () => {
     // note: requires that the types returned are distinct
     class CustomError1 extends Error {
       readonly unique = "CustomError1";

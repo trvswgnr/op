@@ -23,5 +23,5 @@ export default defineConfig({
     node: true,
   },
   globals: {},
-  ignorePatterns: ["examples/**"],
+  ignorePatterns: ["src/examples/**"],
 });
