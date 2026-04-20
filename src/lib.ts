@@ -403,16 +403,12 @@ export const fromGenFn: FromGenFn = (
   return out;
 };
 
-export class RetryableError extends Error implements Typed<"RetryableError"> {
-  readonly type = "RetryableError";
-  constructor(cause: unknown) {
-    super("Retryable error", { cause });
-  }
-  static isRetryable(cause: unknown): cause is RetryableError {
-    return cause instanceof RetryableError;
-  }
-}
-
+/**
+ * Retry strategy: maximum number of attempts, whether to retry a given error, and how long to wait between attempts.
+ * @template T Value returned when the operation succeeds.
+ * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
+ * @template A Argument tuple for parameterized operations.
+ */
 export interface RetryStrategy {
   maxAttempts: number;
   shouldRetry: (cause: unknown) => boolean;
@@ -438,7 +434,27 @@ export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
   getDelay: exponentialBackoff({ baseMs: 100, maxMs: 1000 }),
 };
 
-export const withRetry = <T, E, A extends readonly unknown[]>(
+/**
+ * Wrap an operation with retry behavior.
+ *
+ * Attempts begin at 1 and continue while `attempt < strategy.maxAttempts`.
+ * After each failed attempt, `strategy.shouldRetry` decides whether another
+ * attempt is allowed. If retrying is allowed, `strategy.getDelay(attempt)` is
+ * used to compute a wait before the next attempt (negative delays are clamped
+ * to 0).
+ *
+ * On success, the wrapped operation returns the successful value immediately.
+ * On terminal failure (no attempts remaining or non-retryable cause), the
+ * original failure is yielded as `err(cause)`.
+ *
+ * Accepts:
+ * - an existing {@link Op}
+ * - an async/sync function (wrapped with {@link _try})
+ * - a generator function (wrapped with {@link fromGenFn})
+ *
+ * The returned op preserves parameter arity and inferred value/error types.
+ */
+const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
 ): Op<T, E, A> => {
@@ -462,7 +478,8 @@ export const withRetry = <T, E, A extends readonly unknown[]>(
           }
 
           const cause = result.error;
-          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(cause);
+          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
+          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw "unreachable";
@@ -508,7 +525,8 @@ export const withRetry = <T, E, A extends readonly unknown[]>(
           }
 
           const cause = result.error;
-          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(cause);
+          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
+          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw "unreachable";
@@ -542,3 +560,50 @@ export const withRetry = <T, E, A extends readonly unknown[]>(
   // oxlint-disable-next-line typescript/consistent-type-assertions
   return out as never;
 };
+
+const GENERATOR_FN = function* () {};
+
+function isGeneratorFunction(
+  fn: (...args: unknown[]) => unknown,
+): fn is (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown> {
+  return fn.constructor.name === GENERATOR_FN.constructor.name;
+}
+
+function isOp(value: unknown): value is Op<unknown, unknown, readonly unknown[]> {
+  return typeof value === "function" && "run" in value && "type" in value && value.type === "Op";
+}
+
+export function withRetry<T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  strategy?: RetryStrategy,
+): Op<T, E, A>;
+export function withRetry<Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
+  op: (...args: A) => Generator<Y, T, unknown>,
+  strategy?: RetryStrategy,
+): Op<T, ExtractErr<Y>, A>;
+export function withRetry<T, A extends readonly unknown[]>(
+  op: (...args: A) => T | Promise<T>,
+  strategy?: RetryStrategy,
+): Op<Awaited<T>, UnexpectedError, A>;
+export function withRetry(
+  op:
+    | Op<unknown, unknown, readonly unknown[]>
+    | ((...args: unknown[]) => unknown)
+    | ((...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>),
+  strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
+): Op<unknown, unknown, readonly unknown[]> {
+  if (isOp(op)) {
+    return withRetryOp(op, strategy);
+  }
+
+  if (isGeneratorFunction(op)) {
+    return withRetryOp(fromGenFn(op), strategy);
+  }
+
+  return withRetryOp(
+    fromGenFn(function* (...args: unknown[]) {
+      return yield* _try(() => op(...args));
+    }),
+    strategy,
+  );
+}

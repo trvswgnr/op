@@ -117,6 +117,81 @@ describe("public API (index)", () => {
     });
   });
 
+  describe("Op.withRetry", () => {
+    test("retries and succeeds through index exports", async () => {
+      let attempts = 0;
+      const transient = new Error("transient");
+      const child = Op.withRetry(
+        Op.try(async () => {
+          attempts += 1;
+          if (attempts < 2) {
+            throw transient;
+          }
+          return 21;
+        }),
+        {
+          maxAttempts: 3,
+          shouldRetry: (e) => e === transient,
+          getDelay: () => 0,
+        },
+      );
+
+      const program = Op(function* () {
+        const a = yield* Op.of(21);
+        const b = yield* child;
+        return a + b;
+      });
+
+      const result = await program.run();
+      assert(result.ok === true, "result.ok should be true");
+      expect(result.value).toBe(42);
+      expect(attempts).toBe(2);
+    });
+
+    test("accepts async and generator functions through index exports", async () => {
+      let asyncAttempts = 0;
+      const transient = new Error("transient");
+      const asyncProgram = Op.withRetry(
+        async (id: string) => {
+          asyncAttempts += 1;
+          if (asyncAttempts === 1) {
+            throw transient;
+          }
+          return id.length;
+        },
+        {
+          maxAttempts: 3,
+          shouldRetry: (e) => e === transient,
+          getDelay: () => 0,
+        },
+      );
+      const asyncResult = await asyncProgram.run("abcd");
+      assert(asyncResult.ok === true, "asyncResult.ok should be true");
+      expect(asyncResult.value).toBe(4);
+      expect(asyncAttempts).toBe(2);
+
+      let genAttempts = 0;
+      const generatorProgram = Op.withRetry(
+        function* (id: string) {
+          genAttempts += 1;
+          if (genAttempts === 1) {
+            return yield* Op.fail("retry me");
+          }
+          return id.toUpperCase();
+        },
+        {
+          maxAttempts: 3,
+          shouldRetry: (cause) => cause === "retry me",
+          getDelay: () => 0,
+        },
+      );
+      const genResult = await generatorProgram.run("ok");
+      assert(genResult.ok === true, "genResult.ok should be true");
+      expect(genResult.value).toBe("OK");
+      expect(genAttempts).toBe(2);
+    });
+  });
+
   describe("Op (generator)", () => {
     test("yield* Op.pure composes", async () => {
       {
