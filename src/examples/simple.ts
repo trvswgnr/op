@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, fromGenFn, _try, UnexpectedError, TypedError } from "../lib.js";
+import { Op, UnexpectedError, TypedError } from "../index.js";
 
 function isMainModule(): boolean {
   const entry = typeof process !== "undefined" ? process.argv[1] : undefined;
@@ -19,19 +19,19 @@ export class NegativeError extends Error {
   }
 }
 
-export const divide = fromGenFn(function* (a: number, b: number) {
-  if (b === 0) return yield* fail(new DivisionByZeroError());
+export const divide = Op(function* (a: number, b: number) {
+  if (b === 0) return yield* new DivisionByZeroError();
   return a / b;
 });
 
-export const sqrt = fromGenFn(function* (n: number) {
-  if (n < 0) return yield* fail(new NegativeError(n));
+export const sqrt = Op(function* (n: number) {
+  if (n < 0) return yield* Op.fail(new NegativeError(n));
   return Math.sqrt(n);
 });
 
 // Errors compose automatically through yield*
 // TypeScript infers: Op<number, DivisionByZeroError | NegativeError, []>
-export const mathComposeProgram = fromGenFn(function* () {
+export const mathComposeProgram = Op(function* () {
   const quotient = yield* divide(10, 3); // unwraps or short-circuits
   const rooted = yield* sqrt(quotient - 4); // same - different error type
   return rooted * 2;
@@ -82,30 +82,33 @@ export class ParseError extends Error {
   }
 }
 
-export const parseUser = fromGenFn(function* (payload: unknown) {
+export const parseUser = Op(function* (payload: unknown) {
   if (
     typeof payload !== "object" ||
     payload === null ||
     !("name" in payload) ||
     typeof payload.name !== "string"
   ) {
-    return yield* fail(new ParseError({ raw: payload }));
+    return yield* Op.fail(new ParseError({ raw: payload }));
   }
   return { name: payload.name };
 });
 
-export const fetchData = fromGenFn(function* (url: string) {
-  const response = yield* _try(
+export const fetchData = Op(function* (url: string) {
+  const response = yield* Op.try(
     async () => {
       const fetchedResponse = await fetch(url);
       if (!fetchedResponse.ok) {
-        throw new HttpError({ status: fetchedResponse.status, statusText: fetchedResponse.statusText });
+        throw new HttpError({
+          status: fetchedResponse.status,
+          statusText: fetchedResponse.statusText,
+        });
       }
       return fetchedResponse;
     },
     (e): FetchError => new FetchError({ cause: e }),
   );
-  const parsedBody = yield* _try(
+  const parsedBody = yield* Op.try(
     () => response.json(),
     (e): ParseError => new ParseError({ raw: e }),
   );
@@ -113,7 +116,7 @@ export const fetchData = fromGenFn(function* (url: string) {
 });
 
 // Errors accumulate through the union automatically
-export const userProgram = fromGenFn(function* (id: string) {
+export const userProgram = Op(function* (id: string) {
   const userPayload = yield* fetchData(`/api/users/${id}`);
   const user = yield* parseUser(userPayload);
   return user;
@@ -125,21 +128,20 @@ if (isMainModule()) {
     handleError(result.error);
   }
 
-  function handleError(error: FetchError | ParseError | UnexpectedError) {
+  function handleError(error: FetchError | ParseError | UnexpectedError): number {
     switch (error.type) {
       case "FetchError":
         console.error("caught a FetchError!");
         console.error(error.cause);
-        return;
+        return 1;
       case "ParseError":
         console.error("caught a ParseError!");
         console.error(error.raw);
-        return;
+        return 2;
       case "UnexpectedError":
         console.error("caught an UnexpectedError!");
         console.error(error.cause);
-        return;
+        return 3;
     }
-    error satisfies never;
   }
 }
