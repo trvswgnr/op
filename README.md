@@ -1,3 +1,3 @@
 # @prodkit/op
 
-A TypeScript library for composing operations.
+Generator-based operations with typed errors and retry composition for TypeScript.

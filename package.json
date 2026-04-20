@@ -1,6 +1,6 @@
 {
   "name": "@prodkit/op",
-  "description": "a typescript library for composing operations",
+  "description": "Generator-based operations with typed errors and retry composition for TypeScript",
   "keywords": [
     "composition",
     "effect",
