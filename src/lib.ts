@@ -151,6 +151,7 @@ interface Suspended {
 export type Instruction<E> = Err<E> | Suspended;
 
 export interface OpBase<T, E> {
+  type: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
