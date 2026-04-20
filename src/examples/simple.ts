@@ -1,4 +1,3 @@
-// oxlint-disable no-console
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, fromGenFn, _try, UnexpectedError, TypedError } from "../lib.js";
@@ -31,7 +30,7 @@ export const sqrt = fromGenFn(function* (n: number) {
 });
 
 // Errors compose automatically through yield*
-// TypeScript infers: Op<number, DivByZero | Negative, []>
+// TypeScript infers: Op<number, DivisionByZeroError | NegativeError, []>
 export const mathComposeProgram = fromGenFn(function* () {
   const a = yield* divide(10, 3); // unwraps or short-circuits
   const b = yield* sqrt(a - 4); // same - different error type

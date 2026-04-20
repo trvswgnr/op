@@ -1,3 +1,3 @@
-# @travvy/op
+# @prodkit/op
 
-a simple library for composing operations
+A TypeScript library for composing operations.

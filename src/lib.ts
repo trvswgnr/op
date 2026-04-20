@@ -26,10 +26,10 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
-export class NotImplementedError extends Error implements Typed<"NotImplementedError"> {
-  readonly type = "NotImplementedError";
+export class UnreachableError extends Error implements Typed<"UnreachableError"> {
+  readonly type = "UnreachableError";
   constructor() {
-    super("Not implemented");
+    super("Unreachable code path");
   }
 }
 
@@ -145,7 +145,7 @@ export function TypedError<TType extends string>(
 
     *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
       yield err(this);
-      throw "unreachable";
+      throw new UnreachableError();
     }
   };
 }
@@ -259,7 +259,7 @@ export const fail = <E>(value: E): Op<never, E, []> => {
   const self = {
     *[Symbol.iterator]() {
       yield err(value);
-      throw "unreachable";
+      throw new UnreachableError();
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
@@ -313,7 +313,7 @@ export const _try = <T, E = UnexpectedError>(
       };
       if (result.type === "Err") {
         yield result;
-        throw "unreachable";
+        throw new UnreachableError();
       }
       return result.value;
     },
@@ -502,7 +502,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
-            throw "unreachable";
+            throw new UnreachableError();
           }
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
@@ -551,7 +551,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
-            throw "unreachable";
+            throw new UnreachableError();
           }
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));

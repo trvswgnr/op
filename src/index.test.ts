@@ -89,12 +89,13 @@ describe("public API (index)", () => {
       }
       // sync throw defaults maps to UnexpectedError
       {
+        const syncThrow = new Error("failed");
         const result = await Op.try(async () => {
-          throw "failed";
+          throw syncThrow;
         }).run();
         assert(result.ok === false, "result.ok should be false");
         expect(result.error).toBeInstanceOf(UnexpectedError);
-        expect(result.error.cause).toBe("failed");
+        expect(result.error.cause).toBe(syncThrow);
       }
       // explicitly mapped
       {
