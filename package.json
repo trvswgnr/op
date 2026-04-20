@@ -1,5 +1,5 @@
 {
-  "name": "@travvy/op",
+  "name": "@prodkit/op",
   "description": "a typescript library for composing operations",
   "keywords": [
     "composition",
