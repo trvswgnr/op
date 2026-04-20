@@ -4,9 +4,11 @@ import {
   _try,
   fromGenFn,
   runOp,
+  withRetry,
   UnexpectedError,
   TypedError,
   type Op as _Op,
+  type RetryStrategy as _RetryStrategy,
 } from "./lib.js";
 
 /**
@@ -18,6 +20,7 @@ export const Op = Object.assign(fromGenFn, {
   of: succeed,
   fail,
   try: _try,
+  withRetry,
 });
 
 /**
