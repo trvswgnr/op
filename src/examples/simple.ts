@@ -32,28 +32,28 @@ export const sqrt = fromGenFn(function* (n: number) {
 // Errors compose automatically through yield*
 // TypeScript infers: Op<number, DivisionByZeroError | NegativeError, []>
 export const mathComposeProgram = fromGenFn(function* () {
-  const a = yield* divide(10, 3); // unwraps or short-circuits
-  const b = yield* sqrt(a - 4); // same - different error type
-  return b * 2;
+  const quotient = yield* divide(10, 3); // unwraps or short-circuits
+  const rooted = yield* sqrt(quotient - 4); // same - different error type
+  return rooted * 2;
 });
 
 if (isMainModule()) {
-  async function f() {
-    const _result = await mathComposeProgram.run();
-    switch (_result.type) {
+  async function runMathComposeDemo() {
+    const mathResult = await mathComposeProgram.run();
+    // mathResult: Result<number, DivisionByZeroError | NegativeError | UnexpectedError>
+    switch (mathResult.type) {
       case "Ok":
-        console.log("is Ok");
-        console.log(_result.value);
+        console.log("mathComposeProgram succeeded");
+        console.log(mathResult.value);
         return;
       case "Err":
-        console.error("is Err");
-        console.error(_result.error);
+        console.error("mathComposeProgram failed");
+        console.error(mathResult.error);
         return;
     }
-    _result satisfies never;
+    mathResult satisfies never;
   }
-  await f();
-  // _result: Result<number, DivByZero | Negative>
+  await runMathComposeDemo();
 }
 
 export class FetchError extends Error {
@@ -82,40 +82,40 @@ export class ParseError extends Error {
   }
 }
 
-export const parseUser = fromGenFn(function* (data: unknown) {
+export const parseUser = fromGenFn(function* (payload: unknown) {
   if (
-    typeof data !== "object" ||
-    data === null ||
-    !("name" in data) ||
-    typeof data.name !== "string"
+    typeof payload !== "object" ||
+    payload === null ||
+    !("name" in payload) ||
+    typeof payload.name !== "string"
   ) {
-    return yield* fail(new ParseError({ raw: data }));
+    return yield* fail(new ParseError({ raw: payload }));
   }
-  return { name: data.name };
+  return { name: payload.name };
 });
 
 export const fetchData = fromGenFn(function* (url: string) {
-  const res = yield* _try(
+  const response = yield* _try(
     async () => {
-      const res_ = await fetch(url);
-      if (!res_.ok) {
-        throw new HttpError({ status: res_.status, statusText: res_.statusText });
+      const fetchedResponse = await fetch(url);
+      if (!fetchedResponse.ok) {
+        throw new HttpError({ status: fetchedResponse.status, statusText: fetchedResponse.statusText });
       }
-      return res_;
+      return fetchedResponse;
     },
     (e): FetchError => new FetchError({ cause: e }),
   );
-  const json = yield* _try(
-    () => res.json(),
+  const parsedBody = yield* _try(
+    () => response.json(),
     (e): ParseError => new ParseError({ raw: e }),
   );
-  return json;
+  return parsedBody;
 });
 
 // Errors accumulate through the union automatically
 export const userProgram = fromGenFn(function* (id: string) {
-  const data = yield* fetchData(`/api/users/${id}`);
-  const user = yield* parseUser(data);
+  const userPayload = yield* fetchData(`/api/users/${id}`);
+  const user = yield* parseUser(userPayload);
   return user;
 });
 
@@ -140,6 +140,6 @@ if (isMainModule()) {
         console.error(error.cause);
         return;
     }
-    const _ = error satisfies never;
+    error satisfies never;
   }
 }
