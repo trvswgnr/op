@@ -26,6 +26,13 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
+export class NotImplementedError extends Error implements Typed<"NotImplementedError"> {
+  readonly type = "NotImplementedError";
+  constructor() {
+    super("Not implemented");
+  }
+}
+
 /**
  * Instance type for classes created by {@link TypedError}.
  *
@@ -394,4 +401,144 @@ export const fromGenFn: FromGenFn = (
     type: "Op" as const,
   }) as never;
   return out;
+};
+
+export class RetryableError extends Error implements Typed<"RetryableError"> {
+  readonly type = "RetryableError";
+  constructor(cause: unknown) {
+    super("Retryable error", { cause });
+  }
+  static isRetryable(cause: unknown): cause is RetryableError {
+    return cause instanceof RetryableError;
+  }
+}
+
+export interface RetryStrategy {
+  maxAttempts: number;
+  shouldRetry: (cause: unknown) => boolean;
+  getDelay: (attempt: number) => number;
+}
+
+export function exponentialBackoff(opts: {
+  baseMs: number;
+  maxMs: number;
+  jitterMs?: number;
+}): (attempt: number) => number {
+  const { baseMs, maxMs, jitterMs = 0 } = opts;
+  return (attempt: number) => {
+    const exponential = baseMs * Math.pow(2, attempt - 1);
+    const jitter = jitterMs > 0 ? Math.random() * jitterMs : 0;
+    return Math.min(exponential + jitter, maxMs);
+  };
+}
+
+export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
+  maxAttempts: 3,
+  shouldRetry: () => true,
+  getDelay: exponentialBackoff({ baseMs: 100, maxMs: 1000 }),
+};
+
+export const withRetry = <T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
+): Op<T, E, A> => {
+  if (Symbol.iterator in op) {
+    const self = {
+      *[Symbol.iterator](): Generator<
+        Instruction<E | UnexpectedError>,
+        T,
+        Result<T, E | UnexpectedError>
+      > {
+        let attempt = 1;
+
+        while (true) {
+          const result: Result<T, E | UnexpectedError> = yield {
+            type: "Suspended",
+            promise: op.run(),
+          };
+
+          if (result.ok) {
+            return result.value;
+          }
+
+          const cause = result.error;
+          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(cause);
+          if (!canRetry) {
+            yield err(cause);
+            throw "unreachable";
+          }
+
+          const delayMs = Math.max(0, strategy.getDelay(attempt));
+          if (delayMs > 0) {
+            yield {
+              type: "Suspended",
+              promise: new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
+            };
+          }
+
+          attempt += 1;
+        }
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: () => runOp(self as never),
+      type: "Op" as const,
+    };
+    const _op = () => self;
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    return Object.assign(_op, self) as never;
+  }
+
+  const g = (...args: A) => {
+    const inner = {
+      *[Symbol.iterator](): Generator<
+        Instruction<E | UnexpectedError>,
+        T,
+        Result<T, E | UnexpectedError>
+      > {
+        let attempt = 1;
+
+        while (true) {
+          const result: Result<T, E | UnexpectedError> = yield {
+            type: "Suspended",
+            promise: op.run(...args),
+          };
+
+          if (result.ok) {
+            return result.value;
+          }
+
+          const cause = result.error;
+          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(cause);
+          if (!canRetry) {
+            yield err(cause);
+            throw "unreachable";
+          }
+
+          const delayMs = Math.max(0, strategy.getDelay(attempt));
+          if (delayMs > 0) {
+            yield {
+              type: "Suspended",
+              promise: new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
+            };
+          }
+
+          attempt += 1;
+        }
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: () => runOp(inner as never),
+      type: "Op" as const,
+    };
+    const _op = () => inner;
+    return Object.assign(_op, inner);
+  };
+
+  const out = Object.assign(g, {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (...args: A) => runOp(g(...args) as never),
+    type: "Op" as const,
+  });
+
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return out as never;
 };
