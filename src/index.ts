@@ -4,11 +4,9 @@ import {
   _try,
   fromGenFn,
   runOp,
-  withRetry,
   UnexpectedError,
   TypedError,
   type Op as _Op,
-  type RetryStrategy as _RetryStrategy,
 } from "./lib.js";
 
 /**
@@ -20,7 +18,6 @@ export const Op = Object.assign(fromGenFn, {
   of: succeed,
   fail,
   try: _try,
-  withRetry,
 });
 
 /**
@@ -28,7 +25,8 @@ export const Op = Object.assign(fromGenFn, {
  * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters.
  *
  * A nullary op is callable and iterable. A parameterized op is a function from `A` to that
- * shape; `run(...args)` fixes arguments then runs the inner nullary op. Values have `type: "Op"`.
+ * shape; `run(...args)` fixes arguments then runs the inner nullary op. Values have `type: "Op"`
+ * and support `withRetry(strategy)` for fluent retry composition.
  *
  * @template T Value returned when the operation succeeds.
  * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
