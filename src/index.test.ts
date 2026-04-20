@@ -1,5 +1,6 @@
 import { assert, describe, expect, expectTypeOf, test } from "vitest";
 import { Op, UnexpectedError, TypedError, type Op as OpT } from "./index.js";
+import { RetryStrategy } from "./lib.js";
 
 describe("public API (index)", () => {
   describe("OpFactory", () => {
@@ -117,24 +118,23 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("Op.withRetry", () => {
+  describe("op.withRetry", () => {
+    const immediateRetry = (cause: unknown): RetryStrategy => ({
+      maxAttempts: 3,
+      shouldRetry: (e) => e === cause,
+      getDelay: () => 0,
+    });
+
     test("retries and succeeds through index exports", async () => {
       let attempts = 0;
       const transient = new Error("transient");
-      const child = Op.withRetry(
-        Op.try(async () => {
-          attempts += 1;
-          if (attempts < 2) {
-            throw transient;
-          }
-          return 21;
-        }),
-        {
-          maxAttempts: 3,
-          shouldRetry: (e) => e === transient,
-          getDelay: () => 0,
-        },
-      );
+      const child = Op.try(async () => {
+        attempts += 1;
+        if (attempts < 2) {
+          throw transient;
+        }
+        return 21;
+      }).withRetry(immediateRetry(transient));
 
       const program = Op(function* () {
         const a = yield* Op.of(21);
@@ -148,43 +148,29 @@ describe("public API (index)", () => {
       expect(attempts).toBe(2);
     });
 
-    test("accepts async and generator functions through index exports", async () => {
+    test("retries async and generator ops through index exports", async () => {
       let asyncAttempts = 0;
       const transient = new Error("transient");
-      const asyncProgram = Op.withRetry(
-        async (id: string) => {
-          asyncAttempts += 1;
-          if (asyncAttempts === 1) {
-            throw transient;
-          }
-          return id.length;
-        },
-        {
-          maxAttempts: 3,
-          shouldRetry: (e) => e === transient,
-          getDelay: () => 0,
-        },
-      );
+      const asyncProgram = Op(function* (id: string) {
+        asyncAttempts += 1;
+        if (asyncAttempts === 1) {
+          throw transient;
+        }
+        return id.length;
+      }).withRetry(immediateRetry(transient));
       const asyncResult = await asyncProgram.run("abcd");
       assert(asyncResult.ok === true, "asyncResult.ok should be true");
       expect(asyncResult.value).toBe(4);
       expect(asyncAttempts).toBe(2);
 
       let genAttempts = 0;
-      const generatorProgram = Op.withRetry(
-        function* (id: string) {
-          genAttempts += 1;
-          if (genAttempts === 1) {
-            return yield* Op.fail("retry me");
-          }
-          return id.toUpperCase();
-        },
-        {
-          maxAttempts: 3,
-          shouldRetry: (cause) => cause === "retry me",
-          getDelay: () => 0,
-        },
-      );
+      const generatorProgram = Op(function* (id: string) {
+        genAttempts += 1;
+        if (genAttempts === 1) {
+          return yield* Op.fail("retry me");
+        }
+        return id.toUpperCase();
+      }).withRetry(immediateRetry("retry me"));
       const genResult = await generatorProgram.run("ok");
       assert(genResult.ok === true, "genResult.ok should be true");
       expect(genResult.value).toBe("OK");
@@ -311,7 +297,7 @@ describe("Op monad laws (via bind / run)", () => {
   });
 
   test("right identity (pure)", async () => {
-    const m = Op.of(42);
+    const m = Op.of(69);
     await expectSameResult(bind(m, Op.of), m);
   });
 

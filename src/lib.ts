@@ -157,20 +157,30 @@ interface Suspended {
 
 export type Instruction<E> = Err<E> | Suspended;
 
+export interface WithRetry<T, E, A extends readonly unknown[]> {
+  /**
+   * Returns an op that retries this op for each `run(...args)` or `yield*`.
+   *
+   * `shouldRetry` receives the root failure cause. When this op fails with
+   * `UnexpectedError`, the predicate receives `error.cause`.
+   */
+  withRetry(strategy?: RetryStrategy): Op<T, E, A>;
+}
+
 export interface OpBase<T, E> {
   type: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
-export interface OpNullary<T, E> extends OpBase<T, E> {
+export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
 
-type OpArity<T, E, A extends readonly unknown[]> = {
+interface OpArity<T, E, A extends readonly unknown[]> extends WithRetry<T, E, A> {
   (...args: A): OpNullary<T, E>;
   run(...args: A): Promise<Result<T, E | UnexpectedError>>;
-};
+}
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
 
@@ -207,6 +217,8 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     type: "Op",
   };
   const op = () => self;
@@ -242,6 +254,8 @@ export const fail = <E>(value: E): Op<never, E, []> => {
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     type: "Op" as const,
   };
   const op = () => self;
@@ -296,6 +310,8 @@ export const _try = <T, E = UnexpectedError>(
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     type: "Op" as const,
   };
   const op = () => self;
@@ -389,6 +405,8 @@ export const fromGenFn: FromGenFn = (
       [Symbol.iterator]: () => f(...args),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(inner as never),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
       type: "Op",
     };
     const _op = () => inner;
@@ -398,29 +416,29 @@ export const fromGenFn: FromGenFn = (
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: (...args: unknown[]) => runOp(g(...args) as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
     type: "Op" as const,
   }) as never;
   return out;
 };
 
-/**
- * Retry strategy: maximum number of attempts, whether to retry a given error, and how long to wait between attempts.
- * @template T Value returned when the operation succeeds.
- * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
- * @template A Argument tuple for parameterized operations.
- */
+/** Retry policy for `op.withRetry(strategy)`. */
 export interface RetryStrategy {
+  /** Total tries, including the first attempt. */
   maxAttempts: number;
+  /** Whether to retry after a failure (receives the root cause). */
   shouldRetry: (cause: unknown) => boolean;
+  /** Delay in milliseconds before the next attempt (attempt starts at 1). */
   getDelay: (attempt: number) => number;
 }
 
-export function exponentialBackoff(opts: {
-  baseMs: number;
-  maxMs: number;
+export function exponentialBackoff(opts?: {
+  baseMs?: number;
+  maxMs?: number;
   jitterMs?: number;
 }): (attempt: number) => number {
-  const { baseMs, maxMs, jitterMs = 0 } = opts;
+  const { baseMs = 100, maxMs = 1000, jitterMs = 0 } = opts ?? {};
   return (attempt: number) => {
     const exponential = baseMs * Math.pow(2, attempt - 1);
     const jitter = jitterMs > 0 ? Math.random() * jitterMs : 0;
@@ -431,11 +449,11 @@ export function exponentialBackoff(opts: {
 export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
   maxAttempts: 3,
   shouldRetry: () => true,
-  getDelay: exponentialBackoff({ baseMs: 100, maxMs: 1000 }),
+  getDelay: exponentialBackoff(),
 };
 
 /**
- * Wrap an operation with retry behavior.
+ * Internal engine backing the fluent `op.withRetry(strategy)` API.
  *
  * Attempts begin at 1 and continue while `attempt < strategy.maxAttempts`.
  * After each failed attempt, `strategy.shouldRetry` decides whether another
@@ -446,13 +464,6 @@ export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
  * On success, the wrapped operation returns the successful value immediately.
  * On terminal failure (no attempts remaining or non-retryable cause), the
  * original failure is yielded as `err(cause)`.
- *
- * Accepts:
- * - an existing {@link Op}
- * - an async/sync function (wrapped with {@link _try})
- * - a generator function (wrapped with {@link fromGenFn})
- *
- * The returned op preserves parameter arity and inferred value/error types.
  */
 const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
@@ -498,6 +509,8 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(self as never),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -545,6 +558,8 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(inner as never),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -554,56 +569,11 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
   const out = Object.assign(g, {
     // oxlint-disable-next-line typescript/consistent-type-assertions
     run: (...args: A) => runOp(g(...args) as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
     type: "Op" as const,
   });
 
   // oxlint-disable-next-line typescript/consistent-type-assertions
   return out as never;
 };
-
-const GENERATOR_FN = function* () {};
-
-function isGeneratorFunction(
-  fn: (...args: unknown[]) => unknown,
-): fn is (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown> {
-  return fn.constructor.name === GENERATOR_FN.constructor.name;
-}
-
-function isOp(value: unknown): value is Op<unknown, unknown, readonly unknown[]> {
-  return typeof value === "function" && "run" in value && "type" in value && value.type === "Op";
-}
-
-export function withRetry<T, E, A extends readonly unknown[]>(
-  op: Op<T, E, A>,
-  strategy?: RetryStrategy,
-): Op<T, E, A>;
-export function withRetry<Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
-  op: (...args: A) => Generator<Y, T, unknown>,
-  strategy?: RetryStrategy,
-): Op<T, ExtractErr<Y>, A>;
-export function withRetry<T, A extends readonly unknown[]>(
-  op: (...args: A) => T | Promise<T>,
-  strategy?: RetryStrategy,
-): Op<Awaited<T>, UnexpectedError, A>;
-export function withRetry(
-  op:
-    | Op<unknown, unknown, readonly unknown[]>
-    | ((...args: unknown[]) => unknown)
-    | ((...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>),
-  strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
-): Op<unknown, unknown, readonly unknown[]> {
-  if (isOp(op)) {
-    return withRetryOp(op, strategy);
-  }
-
-  if (isGeneratorFunction(op)) {
-    return withRetryOp(fromGenFn(op), strategy);
-  }
-
-  return withRetryOp(
-    fromGenFn(function* (...args: unknown[]) {
-      return yield* _try(() => op(...args));
-    }),
-    strategy,
-  );
-}

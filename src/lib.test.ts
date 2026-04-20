@@ -8,7 +8,6 @@ import {
   _try,
   UnexpectedError,
   TypedError,
-  withRetry,
   RetryStrategy,
 } from "./lib.js";
 
@@ -83,10 +82,10 @@ describe("TypedError", () => {
       resource: string;
       id: number;
     }> {}
-    const err = new NotFound({ resource: "user", id: 42, message: "gone", cause: "db" });
+    const err = new NotFound({ resource: "user", id: 69, message: "gone", cause: "db" });
     expect(err.message).toBe("gone");
     expect(err.cause).toBe("db");
-    expect(err.data).toEqual({ resource: "user", id: 42 });
+    expect(err.data).toEqual({ resource: "user", id: 69 });
   });
 
   test("does not mutate the passed data object, creates a new object without message and cause", () => {
@@ -365,13 +364,11 @@ describe("withRetry", () => {
   class FetchError extends Error {
     readonly type = "FetchError";
   }
-  const toFetchError = (cause: unknown): FetchError =>
-    cause instanceof FetchError ? cause : new FetchError(String(cause));
 
-  const createFetcher = () => {
+  const createFetcher = (maxRetries = 1) => {
     let attempt = 0;
     return async (url: string) => {
-      if (attempt === 0) {
+      if (attempt < maxRetries) {
         attempt++;
         throw new FetchError("couldn't fetch");
       }
@@ -379,17 +376,28 @@ describe("withRetry", () => {
     };
   };
 
+  const retryFetchError: RetryStrategy = {
+    maxAttempts: 3,
+    shouldRetry: (cause) => cause instanceof FetchError,
+    getDelay: () => 0,
+  };
+
+  const createFetchProgram = (
+    fetcher: (url: string) => Promise<{ url: string }>,
+    strategy?: RetryStrategy,
+  ) =>
+    fromGenFn(function* (id: string) {
+      return yield* _try(() => fetcher(`https://example.com/${id}`));
+    }).withRetry(strategy);
+
   test("retries on failure with default options", async () => {
-    const fetcher = createFetcher();
-    const program = withRetry(
-      fromGenFn(function* (id: string) {
-        return yield* _try(() => fetcher(`https://example.com/${id}`));
-      }),
-    );
+    const fetcher = vi.fn(createFetcher());
+    const program = createFetchProgram(fetcher);
 
     const result = await program.run("123");
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toEqual({ url: `https://example.com/123` });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   test("retries until success with custom retry predicate and delay", async () => {
@@ -399,13 +407,7 @@ describe("withRetry", () => {
       shouldRetry: (cause) => cause instanceof FetchError,
       getDelay: (attempt) => attempt * 100,
     };
-
-    const program = withRetry(
-      fromGenFn(function* (id: string) {
-        return yield* _try(() => fetcher(`https://example.com/${id}`), toFetchError);
-      }),
-      strategy,
-    );
+    const program = createFetchProgram(fetcher, strategy);
 
     const result = await program.run("123");
     assert(result.ok === true, "result.ok should be true");
@@ -417,23 +419,11 @@ describe("withRetry", () => {
     const fetcher = vi.fn(async (_url: string) => {
       throw new FetchError("always fails");
     });
-
-    const strategy: RetryStrategy = {
-      maxAttempts: 3,
-      shouldRetry: (cause) => cause instanceof FetchError,
-      getDelay: () => 0,
-    };
-
-    const program = withRetry(
-      fromGenFn(function* (id: string) {
-        return yield* _try(() => fetcher(`https://example.com/${id}`), toFetchError);
-      }),
-      strategy,
-    );
+    const program = createFetchProgram(fetcher, retryFetchError);
 
     const result = await program.run("123");
     assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBeInstanceOf(FetchError);
+    expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
@@ -448,16 +438,11 @@ describe("withRetry", () => {
       getDelay: () => 0,
     };
 
-    const program = withRetry(
-      fromGenFn(function* (id: string) {
-        return yield* _try(() => fetcher(`https://example.com/${id}`), toFetchError);
-      }),
-      strategy,
-    );
+    const program = createFetchProgram(fetcher, strategy);
 
     const result = await program.run("123");
     assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBeInstanceOf(FetchError);
+    expect(result.error).toBeInstanceOf(UnexpectedError);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -470,13 +455,7 @@ describe("withRetry", () => {
         shouldRetry: () => true,
         getDelay: () => 100,
       };
-
-      const program = withRetry(
-        fromGenFn(function* (id: string) {
-          return yield* _try(() => fetcher(`https://example.com/${id}`));
-        }),
-        strategy,
-      );
+      const program = createFetchProgram(fetcher, strategy);
 
       const runPromise = program.run("123");
 
@@ -496,23 +475,17 @@ describe("withRetry", () => {
 
   test("works when wrapping _try directly", async () => {
     let attempts = 0;
-    const program = withRetry(
-      _try(
-        async () => {
-          attempts += 1;
-          if (attempts < 2) {
-            throw new FetchError("transient failure");
-          }
-          return { ok: true as const };
-        },
-        toFetchError,
-      ),
-      {
-        maxAttempts: 3,
-        shouldRetry: (cause) => cause instanceof FetchError,
-        getDelay: () => 0,
-      },
-    );
+    const program = _try(async () => {
+      attempts += 1;
+      if (attempts < 2) {
+        throw new FetchError("transient failure");
+      }
+      return { ok: true as const };
+    }).withRetry({
+      maxAttempts: 3,
+      shouldRetry: (cause) => cause instanceof FetchError,
+      getDelay: () => 0,
+    });
 
     const result = await program.run();
     assert(result.ok === true, "result.ok should be true");
@@ -523,13 +496,13 @@ describe("withRetry", () => {
   test("wrapping _try directly can retry UnexpectedError causes", async () => {
     let attempts = 0;
     const transient = new Error("temporary outage");
-    const program = withRetry(_try(async () => {
+    const program = _try(async () => {
       attempts += 1;
       if (attempts < 3) {
         throw transient;
       }
       return "done";
-    }), {
+    }).withRetry({
       maxAttempts: 3,
       shouldRetry: (cause) => cause === transient,
       getDelay: () => 0,
@@ -545,20 +518,17 @@ describe("withRetry", () => {
     let attempts = 0;
     const transient = new FetchError("intermittent");
     const child = () =>
-      _try(
-        async () => {
-          attempts += 1;
-          if (attempts === 1) {
-            throw transient;
-          }
-          return 20;
-        },
-        toFetchError,
-      );
+      _try(async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw transient;
+        }
+        return 20;
+      });
 
     const parent = fromGenFn(function* () {
       const base = yield* succeed(22);
-      const fetched = yield* withRetry(child(), {
+      const fetched = yield* child().withRetry({
         maxAttempts: 3,
         shouldRetry: (cause) => cause instanceof FetchError,
         getDelay: () => 0,
@@ -572,23 +542,20 @@ describe("withRetry", () => {
     expect(attempts).toBe(2);
   });
 
-  test("accepts an async function directly", async () => {
+  test("retries Op.try(async fn) with fluent API", async () => {
     let attempts = 0;
     const transient = new Error("temporary");
-    const program = withRetry(
-      async (id: string) => {
-        attempts += 1;
-        if (attempts === 1) {
-          throw transient;
-        }
-        return { url: `https://example.com/${id}` };
-      },
-      {
-        maxAttempts: 3,
-        shouldRetry: (cause) => cause === transient,
-        getDelay: () => 0,
-      },
-    );
+    const program = fromGenFn(function* (id: string) {
+      attempts += 1;
+      if (attempts === 1) {
+        throw transient;
+      }
+      return yield* _try(() => Promise.resolve({ url: `https://example.com/${id}` }));
+    }).withRetry({
+      maxAttempts: 3,
+      shouldRetry: (cause: unknown) => cause === transient,
+      getDelay: () => 0,
+    });
 
     const result = await program.run("123");
     assert(result.ok === true, "result.ok should be true");
@@ -596,22 +563,19 @@ describe("withRetry", () => {
     expect(attempts).toBe(2);
   });
 
-  test("accepts a generator function directly", async () => {
+  test("retries generator ops with fluent API", async () => {
     let attempts = 0;
-    const program = withRetry(
-      function* (id: string) {
-        attempts += 1;
-        if (attempts === 1) {
-          return yield* fail(new FetchError("first attempt failed"));
-        }
-        return { url: `https://example.com/${id}` };
-      },
-      {
-        maxAttempts: 3,
-        shouldRetry: (cause) => cause instanceof FetchError,
-        getDelay: () => 0,
-      },
-    );
+    const program = fromGenFn(function* (id: string) {
+      attempts += 1;
+      if (attempts === 1) {
+        return yield* fail(new FetchError("first attempt failed"));
+      }
+      return { url: `https://example.com/${id}` };
+    }).withRetry({
+      maxAttempts: 3,
+      shouldRetry: (cause) => cause instanceof FetchError,
+      getDelay: () => 0,
+    });
 
     const result = await program.run("123");
     assert(result.ok === true, "result.ok should be true");
@@ -783,26 +747,22 @@ describe("type inference", () => {
   });
 
   test("withRetry preserves inferred op shapes", async () => {
-    const p1 = withRetry(_try(() => Promise.resolve(1)));
+    const p1 = _try(() => Promise.resolve(1)).withRetry();
     expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, []>>();
 
-    const p2 = withRetry(
-      _try(
-        () => Promise.resolve(1),
-        () => "retryable",
-      ),
-    );
+    const p2 = _try(
+      () => Promise.resolve(1),
+      () => "retryable",
+    ).withRetry();
     expectTypeOf(p2).toEqualTypeOf<Op<number, string, []>>();
 
-    const p3 = withRetry(
-      fromGenFn(function* (id: string) {
-        return yield* succeed(id.length);
-      }),
-    );
+    const p3 = fromGenFn(function* (id: string) {
+      return yield* succeed(id.length);
+    }).withRetry();
     expectTypeOf(p3).toEqualTypeOf<Op<number, never, [id: string]>>();
 
     const nested = fromGenFn(function* () {
-      const v = yield* withRetry(_try(() => Promise.resolve(1)));
+      const v = yield* _try(() => Promise.resolve(1)).withRetry();
       return v + 1;
     });
     expectTypeOf(nested).toEqualTypeOf<Op<number, UnexpectedError, []>>();
@@ -826,17 +786,19 @@ describe("type inference", () => {
     p3.run("abc", "extra");
   });
 
-  test("withRetry infers async and generator function inputs", async () => {
-    const p1 = withRetry(async (id: string) => id.length);
+  test("withRetry inference for fluent async and generator ops", async () => {
+    const p1 = fromGenFn(function* (id: string) {
+      return yield* _try(() => Promise.resolve(id.length));
+    }).withRetry();
     expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, [id: string]>>();
     expectTypeOf(p1.run("abc")).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
 
-    const p2 = withRetry(function* (id: string) {
+    const p2 = fromGenFn(function* (id: string) {
       if (Math.random() < 0) {
         return yield* fail("boom");
       }
       return id.length;
-    });
+    }).withRetry();
     expectTypeOf(p2).toEqualTypeOf<Op<number, string, [id: string]>>();
     expectTypeOf(p2.run("abc")).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
 
