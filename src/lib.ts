@@ -208,11 +208,11 @@ export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
  * @returns An operation with success type `Awaited<T>` and no `Err` yields from this helper.
  *
  * @example
- * const r = await Op.succeed(69).run();
+ * const r = await Op.of(69).run();
  * if (r.ok) console.log(r.value);
  *
  * @example
- * const r = await Op.succeed(Promise.resolve("done")).run();
+ * const r = await Op.of(Promise.resolve("done")).run();
  * if (r.ok) console.log(r.value);
  */
 export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
@@ -343,7 +343,7 @@ export const _try = <T, E = UnexpectedError>(
  * @returns A settled {@link Result}.
  *
  * @example
- * const r = await Op.run(Op.succeed(7));
+ * const r = await Op.run(Op.of(7));
  * if (r.ok) console.log(r.value);
  */
 export async function runOp<E, T>(
@@ -395,7 +395,7 @@ export interface FromGenFn {
  *
  * @example
  * const double = Op(function* () {
- *   const n = yield* Op.succeed(3);
+ *   const n = yield* Op.of(3);
  *   return n * 2;
  * });
  * const r = await double.run();
