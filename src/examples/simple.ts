@@ -39,18 +39,21 @@ export const mathComposeProgram = fromGenFn(function* () {
 });
 
 if (isMainModule()) {
-  const _result = await mathComposeProgram.run();
-  void _result;
-  switch (_result.type) {
-    case "Ok":
-      console.log("is Ok");
-      console.log(_result.value);
-      break;
-    case "Err":
-      console.error("is Err");
-      console.error(_result.error);
-      break;
+  async function f() {
+    const _result = await mathComposeProgram.run();
+    switch (_result.type) {
+      case "Ok":
+        console.log("is Ok");
+        console.log(_result.value);
+        return;
+      case "Err":
+        console.error("is Err");
+        console.error(_result.error);
+        return;
+    }
+    _result satisfies never;
   }
+  await f();
   // _result: Result<number, DivByZero | Negative>
 }
 
