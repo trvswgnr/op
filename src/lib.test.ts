@@ -523,11 +523,11 @@ describe("withRetry", () => {
         if (attempts === 1) {
           throw transient;
         }
-        return 20;
+        return 19;
       });
 
     const parent = fromGenFn(function* () {
-      const base = yield* succeed(22);
+      const base = yield* succeed(50);
       const fetched = yield* child().withRetry({
         maxAttempts: 3,
         shouldRetry: (cause) => cause instanceof FetchError,
@@ -538,7 +538,7 @@ describe("withRetry", () => {
 
     const result = await parent.run();
     assert(result.ok === true, "result.ok should be true");
-    expect(result.value).toBe(42);
+    expect(result.value).toBe(69);
     expect(attempts).toBe(2);
   });
 

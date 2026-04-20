@@ -14,9 +14,9 @@ export interface Typed<TypeName extends string> {
  * const e = new UnexpectedError({ cause: original });
  *
  * @example
- * const result = await Op.suspend(() => Promise.reject("oops")).run();
- * if (!result.ok && result.error.type === "UnexpectedError") {
- *   console.error(result.error.cause);
+ * const result = await Op.try(() => Promise.reject("oops")).run();
+ * if (!result.ok && result.error instanceof UnexpectedError) {
+ *   console.error(result.error.cause); // "oops"
  * }
  */
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
@@ -155,7 +155,7 @@ interface Suspended {
   readonly promise: Promise<unknown>;
 }
 
-export type Instruction<E> = Err<E> | Suspended;
+type Instruction<E> = Err<E> | Suspended;
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
   /**
@@ -163,6 +163,15 @@ export interface WithRetry<T, E, A extends readonly unknown[]> {
    *
    * `shouldRetry` receives the root failure cause. When this op fails with
    * `UnexpectedError`, the predicate receives `error.cause`.
+   *
+   * @example
+   * const op = Op.try(() => fetch("/api/x")).withRetry({
+   *   maxAttempts: 3,
+   *   shouldRetry: (cause) => cause instanceof Error,
+   *   getDelay: () => 0,
+   * });
+   * const result = await op.run();
+   * if (!result.ok) console.log(result.error);
    */
   withRetry(strategy?: RetryStrategy): Op<T, E, A>;
 }
@@ -177,7 +186,7 @@ export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []> {
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
 
-interface OpArity<T, E, A extends readonly unknown[]> extends WithRetry<T, E, A> {
+export interface OpArity<T, E, A extends readonly unknown[]> extends WithRetry<T, E, A> {
   (...args: A): OpNullary<T, E>;
   run(...args: A): Promise<Result<T, E | UnexpectedError>>;
 }
@@ -199,11 +208,11 @@ export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
  * @returns An operation with success type `Awaited<T>` and no `Err` yields from this helper.
  *
  * @example
- * const r = await succeed(69).run();
+ * const r = await Op.succeed(69).run();
  * if (r.ok) console.log(r.value);
  *
  * @example
- * const r = await succeed(Promise.resolve("done")).run();
+ * const r = await Op.succeed(Promise.resolve("done")).run();
  * if (r.ok) console.log(r.value);
  */
 export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
@@ -237,12 +246,12 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
  * @returns An operation with success type `never` and error type `E`.
  *
  * @example
- * const r = await fail("not found").run();
+ * const r = await Op.fail("not found").run();
  * if (!r.ok) console.log(r.error);
  *
  * @example
  * const op = Op(function* () {
- *   yield* fail(new Error("abort"));
+ *   yield* Op.fail(new Error("abort"));
  *   return 1;
  * });
  */
@@ -278,10 +287,10 @@ export const fail = <E>(value: E): Op<never, E, []> => {
  * @returns An operation that completes after the promise settles.
  *
  * @example
- * const r = await _try(() => fetch("/api/x")).run();
+ * const r = await Op.try(() => fetch("/api/x")).run();
  *
  * @example
- * const r = await _try(
+ * const r = await Op.try(
  *   () => Promise.reject("bad"),
  *   (e) => String(e),
  * ).run();
@@ -334,7 +343,7 @@ export const _try = <T, E = UnexpectedError>(
  * @returns A settled {@link Result}.
  *
  * @example
- * const r = await runOp(succeed(7));
+ * const r = await Op.run(Op.succeed(7));
  * if (r.ok) console.log(r.value);
  */
 export async function runOp<E, T>(
@@ -385,14 +394,14 @@ export interface FromGenFn {
  * @returns An operation with inferred `T`, `E`, and `A`.
  *
  * @example
- * const double = fromGenFn(function* () {
- *   const n = yield* succeed(3);
+ * const double = Op(function* () {
+ *   const n = yield* Op.succeed(3);
  *   return n * 2;
  * });
  * const r = await double.run();
  *
  * @example
- * const greet = fromGenFn(function* (name: string) {
+ * const greet = Op(function* (name: string) {
  *   return `Hello, ${name}`;
  * });
  * const r = await greet("Ada").run();
