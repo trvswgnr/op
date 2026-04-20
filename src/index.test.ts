@@ -133,18 +133,18 @@ describe("public API (index)", () => {
         if (attempts < 2) {
           throw transient;
         }
-        return 21;
+        return 60;
       }).withRetry(immediateRetry(transient));
 
       const program = Op(function* () {
-        const a = yield* Op.of(21);
+        const a = yield* Op.of(9);
         const b = yield* child;
         return a + b;
       });
 
       const result = await program.run();
       assert(result.ok === true, "result.ok should be true");
-      expect(result.value).toBe(42);
+      expect(result.value).toBe(69);
       expect(attempts).toBe(2);
     });
 
