@@ -88,9 +88,7 @@ If `onError` is omitted, failures become `UnexpectedError`.
 Executes the operation and returns:
 
 ```ts
-type Result<T, E> =
-  | { type: "Ok"; ok: true; value: T }
-  | { type: "Err"; ok: false; error: E };
+type Result<T, E> = { type: "Ok"; ok: true; value: T } | { type: "Err"; ok: false; error: E };
 ```
 
 ### `.withRetry(strategy?)`

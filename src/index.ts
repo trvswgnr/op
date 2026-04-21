@@ -17,6 +17,9 @@ export const Op = Object.assign(fromGenFn, {
   of: succeed,
   fail,
   try: _try,
+  get empty(): Op<void, never, readonly []> {
+    return succeed(undefined);
+  },
 });
 
 /**
