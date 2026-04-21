@@ -275,7 +275,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
  *   return 1;
  * });
  */
-export const fail = <E>(value: E): Op<never, E, []> => {
+export const fail = <E>(value: E): Op<never, E, readonly []> => {
   const self = {
     *[Symbol.iterator]() {
       yield err(value);
@@ -320,7 +320,7 @@ export const fail = <E>(value: E): Op<never, E, []> => {
 export const _try = <T, E = UnexpectedError>(
   f: () => T,
   onError?: (e: unknown) => E,
-): Op<Awaited<T>, E, []> => {
+): Op<Awaited<T>, E, readonly []> => {
   const self = {
     *[Symbol.iterator]() {
       const result: Result<T, E> = yield {
