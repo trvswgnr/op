@@ -6,6 +6,7 @@ import {
   Result,
   succeed,
   _try,
+  TimeoutError,
   UnexpectedError,
   TypedError,
   RetryStrategy,
@@ -582,6 +583,170 @@ describe("withRetry", () => {
     assert(result.ok === true, "result.ok should be true");
     expect(result.value).toEqual({ url: "https://example.com/123" });
     expect(attempts).toBe(2);
+  });
+});
+
+describe("withTimeout", () => {
+  test("succeeds when the operation completes before timeout", async () => {
+    const program = _try(() => Promise.resolve(69)).withTimeout(100);
+    const result = await program.run();
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toBe(69);
+  });
+
+  test("fails with TimeoutError when operation exceeds timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const program = _try(
+        () =>
+          new Promise<number>((resolve) => {
+            setTimeout(() => resolve(69), 200);
+          }),
+      ).withTimeout(100);
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const result = await runPromise;
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      if (result.error instanceof TimeoutError) {
+        expect(result.error.timeoutMs).toBe(100);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("timeout wraps the entire retried run when chained outside retry", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const transient = new Error("transient");
+      const program = _try(
+        () =>
+          new Promise<number>((resolve, reject) => {
+            attempts += 1;
+            setTimeout(() => {
+              if (attempts === 1) {
+                reject(transient);
+                return;
+              }
+              resolve(69);
+            }, 75);
+          }),
+      )
+        .withRetry({
+          maxAttempts: 3,
+          shouldRetry: (cause) => cause === transient,
+          getDelay: () => 0,
+        })
+        .withTimeout(100);
+
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const result = await runPromise;
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(attempts).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("timeout applies per-attempt when chained inside retry", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const program = _try(
+        () =>
+          new Promise<number>((resolve) => {
+            attempts += 1;
+            const delay = attempts === 1 ? 120 : 50;
+            setTimeout(() => resolve(69), delay);
+          }),
+      )
+        .withTimeout(100)
+        .withRetry({
+          maxAttempts: 2,
+          shouldRetry: (cause) => cause instanceof TimeoutError,
+          getDelay: () => 0,
+        });
+
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(150);
+
+      const result = await runPromise;
+      assert(result.ok === true, "result.ok should be true");
+      expect(result.value).toBe(69);
+      expect(attempts).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("withTimeout preserves inferred op shapes", async () => {
+    const p1 = _try(() => Promise.resolve(1)).withTimeout(10);
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError | TimeoutError, []>>();
+
+    const p2 = _try(
+      () => Promise.resolve(1),
+      () => "mapped",
+    ).withTimeout(10);
+    expectTypeOf(p2).toEqualTypeOf<Op<number, string | TimeoutError, []>>();
+
+    const p3 = fromGenFn(function* (id: string) {
+      return yield* succeed(id.length);
+    }).withTimeout(10);
+    expectTypeOf(p3).toEqualTypeOf<Op<number, TimeoutError, [id: string]>>();
+
+    const r1 = p1.run();
+    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, TimeoutError | UnexpectedError>>>();
+
+    const r2 = p2.run();
+    expectTypeOf(r2).toEqualTypeOf<
+      Promise<Result<number, string | TimeoutError | UnexpectedError>>
+    >();
+
+    const r3 = p3.run("abc");
+    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, TimeoutError | UnexpectedError>>>();
+
+    expect((await p1.run()).ok).toBe(true);
+
+    // @ts-expect-error - nullary timeout op does not accept args
+    p1.run(1);
+    // @ts-expect-error - parameterized timeout op requires argument
+    p3.run();
+    // @ts-expect-error - parameterized timeout op does not accept extra args
+    p3.run("abc", "extra");
+
+    let attempts = 0;
+    class FetchError extends TypedError("FetchError") {}
+    const fetcher = async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw new FetchError();
+      }
+      return 69;
+    };
+    const slowOp = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return await fetcher();
+    };
+    const p4 = fromGenFn(function* () {
+      const x = yield* _try(slowOp, () => new FetchError())
+        .withRetry()
+        .withTimeout(50);
+      expectTypeOf(x).toEqualTypeOf<number>();
+      return x;
+    });
+    expectTypeOf(p4).toEqualTypeOf<Op<number, TimeoutError | FetchError, []>>();
+    const result = await p4.run();
+    expectTypeOf(result).toEqualTypeOf<
+      Result<number, TimeoutError | FetchError | UnexpectedError>
+    >();
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toBe(69);
   });
 });
 

@@ -4,6 +4,7 @@ import {
   _try,
   fromGenFn,
   runOp,
+  TimeoutError,
   UnexpectedError,
   UnreachableError,
   TypedError,
@@ -24,7 +25,7 @@ export const Op = Object.assign(fromGenFn, {
  *
  * A nullary op is callable and iterable. A parameterized op is a function from `A` to that
  * shape; `run(...args)` fixes arguments then runs the inner nullary op. Values have `type: "Op"`
- * and support `withRetry(strategy)` for fluent retry composition.
+ * and support `withRetry(strategy)` / `withTimeout(ms)` for fluent composition.
  *
  * @template T Value returned when the operation succeeds.
  * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
@@ -32,4 +33,4 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export { TypedError, UnexpectedError, UnreachableError };
+export { TypedError, TimeoutError, UnexpectedError, UnreachableError };
