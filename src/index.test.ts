@@ -1,5 +1,5 @@
-import { assert, describe, expect, expectTypeOf, test } from "vitest";
-import { Op, UnexpectedError, TypedError, type Op as OpT } from "./index.js";
+import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
+import { Op, TimeoutError, UnexpectedError, TypedError, type Op as OpT } from "./index.js";
 import { RetryStrategy } from "./lib.js";
 
 describe("public API (index)", () => {
@@ -176,6 +176,59 @@ describe("public API (index)", () => {
       assert(genResult.ok === true, "genResult.ok should be true");
       expect(genResult.value).toBe("OK");
       expect(genAttempts).toBe(2);
+    });
+  });
+
+  describe("op.withTimeout", () => {
+    test("times out through index exports", async () => {
+      vi.useFakeTimers();
+      try {
+        const child = Op.try(
+          () =>
+            new Promise<number>((resolve) => {
+              setTimeout(() => resolve(69), 200);
+            }),
+        ).withTimeout(100);
+
+        const runPromise = child.run();
+        await vi.advanceTimersByTimeAsync(100);
+        const result = await runPromise;
+
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toBeInstanceOf(TimeoutError);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("timeout+retry chain order controls semantics through index exports", async () => {
+      vi.useFakeTimers();
+      try {
+        let attempts = 0;
+        const program = Op.try(
+          () =>
+            new Promise<number>((resolve) => {
+              attempts += 1;
+              const delay = attempts === 1 ? 120 : 50;
+              setTimeout(() => resolve(69), delay);
+            }),
+        )
+          .withTimeout(100)
+          .withRetry({
+            maxAttempts: 2,
+            shouldRetry: (cause) => cause instanceof TimeoutError,
+            getDelay: () => 0,
+          });
+
+        const runPromise = program.run();
+        await vi.advanceTimersByTimeAsync(150);
+        const result = await runPromise;
+        assert(result.ok === true, "result.ok should be true");
+        expect(result.value).toBe(69);
+        expect(attempts).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
