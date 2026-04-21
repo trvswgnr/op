@@ -1,6 +1,6 @@
 {
   "name": "@prodkit/op",
-  "description": "Generator-based operations with typed errors and retry composition for TypeScript",
+  "description": "Composable generator-based operations with typed results, typed errors, async suspension, and built-in retry semantics.",
   "keywords": [
     "composition",
     "effect",
@@ -38,6 +38,7 @@
     "test:unit": "vitest run --exclude '**/*.e2e.test.ts' --exclude '**/*.integration.test.ts'",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.19.37",
     "oxfmt": "^0.40.0",
