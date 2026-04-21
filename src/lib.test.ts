@@ -745,8 +745,8 @@ describe("withTimeout", () => {
     expectTypeOf(result).toEqualTypeOf<
       Result<number, TimeoutError | FetchError | UnexpectedError>
     >();
-    assert(result.ok === true, "result.ok should be true");
-    expect(result.value).toBe(69);
+    assert(result.ok === false, "result.ok should be false");
+    expect(result.error).toBeInstanceOf(TimeoutError);
   });
 });
 
