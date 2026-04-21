@@ -1,7 +1,7 @@
 # @prodkit/op
 
 `@prodkit/op` is a small TypeScript library for composing effectful workflows with generator functions.
-It gives you predictable `Ok`/`Err` results, typed error unions across `yield*` boundaries, async suspension with `Op.try`, and retry policies with `withRetry`.
+It gives you predictable `Ok`/`Err` results, typed error unions across `yield*` boundaries, async suspension with `Op.try`, retry policies with `withRetry`, and execution budgets with `withTimeout`.
 
 If you like writing workflows that read top to bottom without throwing exceptions through your app layer, this library is built for that.
 
@@ -15,7 +15,7 @@ JavaScript async control flow often spreads error handling across `try/catch`, r
 - run once with `.run(...)`
 - handle a discriminated `Result<T, E>`
 
-The result is code that stays explicit under growth, including retry and typed domain errors.
+The result is code that stays explicit under growth, including retry, timeout budgets, and typed domain errors.
 
 ## Install
 
@@ -106,6 +106,25 @@ const strategy = {
 };
 
 const fetchWithRetry = Op.try(() => fetch("https://example.com")).withRetry(strategy);
+```
+
+### `.withTimeout(timeoutMs)`
+
+Wraps an operation with a timeout and fails with `TimeoutError` when the wrapped operation does not
+finish before `timeoutMs`.
+
+Composition order determines semantics:
+
+```ts
+// timeout applies to the ENTIRE retried run
+const totalBudget = Op.try(() => fetch("https://example.com"))
+  .withRetry(strategy)
+  .withTimeout(5000);
+
+// timeout applies to EACH attempt
+const perAttempt = Op.try(() => fetch("https://example.com"))
+  .withTimeout(5000)
+  .withRetry(strategy);
 ```
 
 ## Typed errors

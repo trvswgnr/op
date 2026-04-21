@@ -26,6 +26,15 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
+export class TimeoutError extends Error implements Typed<"TimeoutError"> {
+  readonly type = "TimeoutError";
+  readonly timeoutMs: number;
+  constructor({ timeoutMs }: { timeoutMs: number }) {
+    super(`Operation timed out after ${timeoutMs}ms`);
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export class UnreachableError extends Error implements Typed<"UnreachableError"> {
   readonly type = "UnreachableError";
   constructor() {
@@ -176,17 +185,26 @@ export interface WithRetry<T, E, A extends readonly unknown[]> {
   withRetry(strategy?: RetryStrategy): Op<T, E, A>;
 }
 
+export interface WithTimeout<T, E, A extends readonly unknown[]> {
+  /**
+   * Returns an op that fails with {@link TimeoutError} when `run(...args)` or `yield*` exceeds
+   * `timeoutMs`.
+   */
+  withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
+}
+
 export interface OpBase<T, E> {
   type: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
-export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []> {
+export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
 
-export interface OpArity<T, E, A extends readonly unknown[]> extends WithRetry<T, E, A> {
+export interface OpArity<T, E, A extends readonly unknown[]>
+  extends WithRetry<T, E, A>, WithTimeout<T, E, A> {
   (...args: A): OpNullary<T, E>;
   run(...args: A): Promise<Result<T, E | UnexpectedError>>;
 }
@@ -228,6 +246,8 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op",
   };
   const op = () => self;
@@ -265,6 +285,8 @@ export const fail = <E>(value: E): Op<never, E, []> => {
     run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op" as const,
   };
   const op = () => self;
@@ -321,6 +343,8 @@ export const _try = <T, E = UnexpectedError>(
     run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op" as const,
   };
   const op = () => self;
@@ -416,6 +440,8 @@ export const fromGenFn: FromGenFn = (
       run: () => runOp(inner as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       type: "Op",
     };
     const _op = () => inner;
@@ -427,6 +453,8 @@ export const fromGenFn: FromGenFn = (
     run: (...args: unknown[]) => runOp(g(...args) as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     type: "Op" as const,
   }) as never;
   return out;
@@ -520,6 +548,8 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(self as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -569,6 +599,8 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(inner as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -580,9 +612,107 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
     run: (...args: A) => runOp(g(...args) as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     type: "Op" as const,
   });
 
   // oxlint-disable-next-line typescript/consistent-type-assertions
   return out as never;
+};
+
+const withTimeoutOp = <T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  timeoutMs: number,
+): Op<T, E | TimeoutError, A> => {
+  const clampedTimeoutMs = Math.max(0, timeoutMs);
+
+  if (Symbol.iterator in op) {
+    const self = {
+      *[Symbol.iterator](): Generator<
+        Instruction<E | UnexpectedError | TimeoutError>,
+        T,
+        Result<T, E | UnexpectedError | TimeoutError>
+      > {
+        const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
+          type: "Suspended",
+          promise: raceTimeout(op.run(), clampedTimeoutMs),
+        };
+        if (!result.ok) {
+          yield err(result.error);
+          throw new UnreachableError();
+        }
+        return result.value;
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: () => runOp(self as never),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
+      type: "Op" as const,
+    };
+    const _op = () => self;
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    return Object.assign(_op, self) as never;
+  }
+
+  const g = (...args: A) => {
+    const inner = {
+      *[Symbol.iterator](): Generator<
+        Instruction<E | UnexpectedError | TimeoutError>,
+        T,
+        Result<T, E | UnexpectedError | TimeoutError>
+      > {
+        const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
+          type: "Suspended",
+          promise: raceTimeout(op.run(...args), clampedTimeoutMs),
+        };
+        if (!result.ok) {
+          yield err(result.error);
+          throw new UnreachableError();
+        }
+        return result.value;
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: () => runOp(inner as never),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
+      type: "Op" as const,
+    };
+    const _op = () => inner;
+    return Object.assign(_op, inner);
+  };
+
+  const out = Object.assign(g, {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (...args: A) => runOp(g(...args) as never),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
+    type: "Op" as const,
+  });
+
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return out as never;
+};
+
+const raceTimeout = <T, E>(
+  promise: Promise<Result<T, E>>,
+  timeoutMs: number,
+): Promise<Result<T, E | TimeoutError>> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<Result<T, E | TimeoutError>>((resolve) => {
+    timeoutId = setTimeout(() => resolve(err(new TimeoutError({ timeoutMs }))), timeoutMs);
+  });
+
+  const result: Promise<Result<T, E | TimeoutError>> = promise;
+  return Promise.race([result, timeout]).finally(() => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  });
 };
