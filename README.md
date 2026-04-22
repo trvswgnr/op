@@ -83,20 +83,14 @@ Creates an op that always fails with `error`.
 Runs an async or sync function and converts failures into `Err`.
 If `onError` is omitted, failures become `UnexpectedError`.
 
-`f` receives `{ signal }` — an `AbortSignal` that fires when the surrounding `withTimeout` expires
-or when a signal passed to `run({ signal })` is aborted. Forward it to cancellable APIs so
-in-flight work (e.g. `fetch`, DB queries) actually stops instead of leaking after a timeout.
+`f` receives an `AbortSignal` that fires when the surrounding `withTimeout` expires. Forward it
+to cancellable APIs so in-flight work (e.g. `fetch`, DB queries) actually stops instead of
+leaking after a timeout.
 
 ```ts
-const fetchUser = Op.try(({ signal }) => fetch("/api/users/1", { signal }));
-
-// Aborts the fetch when the 1s budget elapses:
+const fetchUser = Op.try((signal) => fetch("/api/users/1", { signal }));
 const result = await fetchUser.withTimeout(1000).run();
-
-// External cancellation:
-const controller = new AbortController();
-const p = fetchUser.run({ signal: controller.signal });
-controller.abort();
+// when the 1s budget elapses, the fetch is aborted.
 ```
 
 ### `.run(...args)`
