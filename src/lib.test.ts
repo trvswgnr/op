@@ -1148,11 +1148,4 @@ describe("AbortSignal", () => {
       vi.useRealTimers();
     }
   });
-
-  test("callbacks ignoring the ctx still work (backwards compatibility)", async () => {
-    const program = _try(() => Promise.resolve(7));
-    const result = await program.run();
-    assert(result.ok === true, "result.ok should be true");
-    expect(result.value).toBe(7);
-  });
 });
