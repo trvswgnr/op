@@ -200,7 +200,7 @@ export interface OpBase<T, E> {
 
 export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []> {
   (): OpBase<T, E>;
-  run(options?: { signal?: AbortSignal }): Promise<Result<T, E | UnexpectedError>>;
+  run(): Promise<Result<T, E | UnexpectedError>>;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>
@@ -243,7 +243,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       return value;
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: (options?: { signal?: AbortSignal }) => runOp(self as never, options),
+    run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -282,7 +282,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       throw new UnreachableError();
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: (options?: { signal?: AbortSignal }) => runOp(self as never, options),
+    run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -302,18 +302,17 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * operation succeeds with that value. On rejection, if `onError` is provided, its return value is
  * the failure; otherwise the failure is {@link UnexpectedError} with the rejection on `cause`.
  *
- * `f` receives a `{ signal }` context. The signal aborts when the surrounding `withTimeout`
- * fires or when a signal passed to `run({ signal })` is triggered. Forward it to cancellable
- * APIs (such as `fetch`) so in-flight work stops instead of leaking.
+ * `f` receives an {@link AbortSignal} that aborts when the surrounding `withTimeout` fires.
+ * Forward it to cancellable APIs (such as `fetch`) so in-flight work stops instead of leaking.
  *
  * @template T Resolved value type.
  * @template E Error type when `onError` is provided. Defaults to {@link UnexpectedError} when omitted.
- * @param f Function returning the promise to await. Receives `{ signal }` for cancellation.
+ * @param f Function returning the promise to await. Receives a cancellation signal.
  * @param onError Maps a rejection reason to `E` when provided.
  * @returns An operation that completes after the promise settles.
  *
  * @example
- * const r = await Op.try(({ signal }) => fetch("/api/x", { signal })).run();
+ * const r = await Op.try((signal) => fetch("/api/x", { signal })).run();
  *
  * @example
  * const r = await Op.try(
@@ -322,7 +321,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * ).run();
  */
 export const _try = <T, E = UnexpectedError>(
-  f: (ctx: { signal: AbortSignal }) => T,
+  f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
 ): Op<Awaited<T>, E, readonly []> => {
   const self = {
@@ -331,7 +330,7 @@ export const _try = <T, E = UnexpectedError>(
         type: "Suspended" as const,
         suspend: (signal: AbortSignal) =>
           Promise.resolve()
-            .then(() => f({ signal }))
+            .then(() => f(signal))
             .then(
               (a) => ok(a),
               (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
@@ -345,7 +344,7 @@ export const _try = <T, E = UnexpectedError>(
       return result.value;
     },
     // oxlint-disable-next-line typescript/consistent-type-assertions
-    run: (options?: { signal?: AbortSignal }) => runOp(self as never, options),
+    run: () => runOp(self as never),
     // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -375,11 +374,14 @@ export const _try = <T, E = UnexpectedError>(
  * const r = await Op.run(Op.of(7));
  * if (r.ok) console.log(r.value);
  */
-export async function runOp<E, T>(
+export function runOp<E, T>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
+  return drive(op, new AbortController().signal);
+}
+
+async function drive<E, T>(
   op: Op<T, E, readonly []>,
-  options?: { signal?: AbortSignal },
+  signal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>> {
-  const signal = options?.signal ?? new AbortController().signal;
   try {
     const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
@@ -444,7 +446,7 @@ export const fromGenFn: FromGenFn = (
     const inner = {
       [Symbol.iterator]: () => f(...args),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: (options?: { signal?: AbortSignal }) => runOp(inner as never, options),
+      run: () => runOp(inner as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
       // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -523,7 +525,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const attemptStep = (yield {
             type: "Suspended",
             suspend: (signal) =>
-              op.run({ signal }).then((r) => ({ result: r, aborted: signal.aborted })),
+              drive(op, signal).then((r) => ({ result: r, aborted: signal.aborted })),
           }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
 
           const result = attemptStep.result;
@@ -559,7 +561,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         }
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: (options?: { signal?: AbortSignal }) => runOp(self as never, options),
+      run: () => runOp(self as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
       // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -581,9 +583,10 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const attemptStep = (yield {
             type: "Suspended",
             suspend: (signal) =>
-              op(...args)
-                .run({ signal })
-                .then((r) => ({ result: r, aborted: signal.aborted })),
+              drive(op(...args), signal).then((r) => ({
+                result: r,
+                aborted: signal.aborted,
+              })),
           }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
 
           const result = attemptStep.result;
@@ -619,7 +622,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         }
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: (options?: { signal?: AbortSignal }) => runOp(inner as never, options),
+      run: () => runOp(inner as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
       // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -660,7 +663,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
           suspend: (outerSignal) =>
-            raceTimeout((signal) => op.run({ signal }), clampedTimeoutMs, outerSignal),
+            raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -669,7 +672,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: (options?: { signal?: AbortSignal }) => runOp(self as never, options),
+      run: () => runOp(self as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
       // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -691,7 +694,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
           suspend: (outerSignal) =>
-            raceTimeout((signal) => op(...args).run({ signal }), clampedTimeoutMs, outerSignal),
+            raceTimeout((signal) => drive(op(...args), signal), clampedTimeoutMs, outerSignal),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -700,7 +703,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      run: (options?: { signal?: AbortSignal }) => runOp(inner as never, options),
+      run: () => runOp(inner as never),
       // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
       // oxlint-disable-next-line typescript/consistent-type-assertions
