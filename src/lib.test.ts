@@ -1013,7 +1013,7 @@ describe("type inference", () => {
 describe("AbortSignal", () => {
   test("Op.try callback receives a signal that is not aborted by default", async () => {
     let seen: AbortSignal | undefined;
-    const program = _try(({ signal }) => {
+    const program = _try((signal) => {
       seen = signal;
       return Promise.resolve("ok");
     });
@@ -1028,7 +1028,7 @@ describe("AbortSignal", () => {
     try {
       let seenSignal: AbortSignal | undefined;
       const program = _try(
-        ({ signal }) =>
+        (signal) =>
           new Promise<number>((resolve, reject) => {
             seenSignal = signal;
             const id = setTimeout(() => resolve(69), 500);
@@ -1052,32 +1052,6 @@ describe("AbortSignal", () => {
     }
   });
 
-  test("external signal passed to run propagates into Op.try", async () => {
-    const controller = new AbortController();
-    let sawAbort = false;
-
-    const program = _try(
-      ({ signal }) =>
-        new Promise<number>((resolve, reject) => {
-          const id = setTimeout(() => resolve(69), 5000);
-          signal.addEventListener("abort", () => {
-            sawAbort = true;
-            clearTimeout(id);
-            reject(signal.reason);
-          });
-        }),
-      () => "aborted" as const,
-    );
-
-    const runPromise = program.run({ signal: controller.signal });
-    queueMicrotask(() => controller.abort(new Error("user cancel")));
-
-    const result = await runPromise;
-    assert(result.ok === false, "result.ok should be false");
-    expect(sawAbort).toBe(true);
-    expect(result.error).toBe("aborted");
-  });
-
   test("timeout cascades into retry-wrapped ops so inner fetch is aborted", async () => {
     vi.useFakeTimers();
     try {
@@ -1085,7 +1059,7 @@ describe("AbortSignal", () => {
       let aborted = false;
 
       const program = _try(
-        ({ signal }) =>
+        (signal) =>
           new Promise<number>((_, reject) => {
             attempts += 1;
             const id = setTimeout(() => reject(new Error("transient")), 50);
@@ -1116,34 +1090,30 @@ describe("AbortSignal", () => {
     }
   });
 
-  test("retry backoff delay is cancelled when outer signal aborts", async () => {
+  test("timeout stops the retry loop instead of racing zombie attempts", async () => {
     vi.useFakeTimers();
     try {
       let attempts = 0;
       const transient = new Error("transient");
-      const inner = _try(() => {
+      const program = _try(() => {
         attempts += 1;
         return Promise.reject(transient);
-      }).withRetry({
-        maxAttempts: 5,
-        shouldRetry: () => true,
-        getDelay: () => 1000,
-      });
+      })
+        .withRetry({
+          maxAttempts: 5,
+          shouldRetry: () => true,
+          getDelay: () => 1000,
+        })
+        .withTimeout(50);
 
-      const controller = new AbortController();
-      const runPromise = inner.run({ signal: controller.signal });
-
-      // Let the first attempt fail, enter the backoff delay.
-      await vi.advanceTimersByTimeAsync(10);
-      expect(attempts).toBe(1);
-
-      controller.abort(new Error("user cancel"));
-      await vi.advanceTimersByTimeAsync(0);
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(200);
 
       const result = await runPromise;
-      // Delay was cut short; no further attempts scheduled.
-      expect(attempts).toBe(1);
       assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      // Only one attempt ran before the timeout aborted the delay and halted the loop.
+      expect(attempts).toBe(1);
     } finally {
       vi.useRealTimers();
     }
