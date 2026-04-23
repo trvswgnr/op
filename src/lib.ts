@@ -161,7 +161,7 @@ export function TypedError<TType extends string>(
 
 interface Suspended {
   readonly type: "Suspended";
-  readonly promise: Promise<unknown>;
+  readonly suspend: (signal: AbortSignal) => Promise<unknown>;
 }
 
 type Instruction<E> = Err<E> | Suspended;
@@ -302,14 +302,17 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * operation succeeds with that value. On rejection, if `onError` is provided, its return value is
  * the failure; otherwise the failure is {@link UnexpectedError} with the rejection on `cause`.
  *
+ * `f` receives an {@link AbortSignal} that aborts when the surrounding `withTimeout` fires.
+ * Forward it to cancellable APIs (such as `fetch`) so in-flight work stops instead of leaking.
+ *
  * @template T Resolved value type.
  * @template E Error type when `onError` is provided. Defaults to {@link UnexpectedError} when omitted.
- * @param f Zero-arg function returning the promise to await.
+ * @param f Function returning the promise to await. Receives a cancellation signal.
  * @param onError Maps a rejection reason to `E` when provided.
  * @returns An operation that completes after the promise settles.
  *
  * @example
- * const r = await Op.try(() => fetch("/api/x")).run();
+ * const r = await Op.try((signal) => fetch("/api/x", { signal })).run();
  *
  * @example
  * const r = await Op.try(
@@ -318,20 +321,21 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * ).run();
  */
 export const _try = <T, E = UnexpectedError>(
-  f: () => T,
+  f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
 ): Op<Awaited<T>, E, readonly []> => {
   const self = {
     *[Symbol.iterator]() {
       const result: Result<T, E> = yield {
         type: "Suspended" as const,
-        promise: Promise.resolve()
-          .then(() => f())
-          .then(
-            (a) => ok(a),
-            (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
-            // oxlint-disable-next-line typescript/consistent-type-assertions
-          ) as Promise<Result<T, E>>,
+        suspend: (signal: AbortSignal) =>
+          Promise.resolve()
+            .then(() => f(signal))
+            .then(
+              (a) => ok(a),
+              (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
+              // oxlint-disable-next-line typescript/consistent-type-assertions
+            ) as Promise<Result<T, E>>,
       };
       if (result.type === "Err") {
         yield result;
@@ -370,8 +374,13 @@ export const _try = <T, E = UnexpectedError>(
  * const r = await Op.run(Op.of(7));
  * if (r.ok) console.log(r.value);
  */
-export async function runOp<E, T>(
+export function runOp<E, T>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
+  return drive(op, new AbortController().signal);
+}
+
+async function drive<E, T>(
   op: Op<T, E, readonly []>,
+  signal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
     const ef = typeof op === "function" ? op() : op;
@@ -380,7 +389,7 @@ export async function runOp<E, T>(
     while (!step.done) {
       try {
         if (step.value.type === "Err") return err(step.value.error);
-        step = iter.next(await step.value.promise);
+        step = iter.next(await step.value.suspend(signal));
       } catch (cause) {
         return err(new UnexpectedError({ cause }));
       }
@@ -508,26 +517,28 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 ): Op<T, E, A> => {
   if (Symbol.iterator in op) {
     const self = {
-      *[Symbol.iterator](): Generator<
-        Instruction<E | UnexpectedError>,
-        T,
-        Result<T, E | UnexpectedError>
-      > {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
         let attempt = 1;
 
         while (true) {
-          const result: Result<T, E | UnexpectedError> = yield {
+          // oxlint-disable-next-line typescript/consistent-type-assertions
+          const attemptStep = (yield {
             type: "Suspended",
-            promise: op.run(),
-          };
+            suspend: (signal) =>
+              drive(op, signal).then((r) => ({ result: r, aborted: signal.aborted })),
+          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
 
+          const result = attemptStep.result;
           if (result.ok) {
             return result.value;
           }
 
           const cause = result.error;
           const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
-          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
+          const canRetry =
+            !attemptStep.aborted &&
+            attempt < strategy.maxAttempts &&
+            strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw new UnreachableError();
@@ -535,10 +546,15 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
           if (delayMs > 0) {
-            yield {
+            // oxlint-disable-next-line typescript/consistent-type-assertions
+            const delayAborted = (yield {
               type: "Suspended",
-              promise: new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
-            };
+              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
+            }) as boolean;
+            if (delayAborted) {
+              yield err(cause);
+              throw new UnreachableError();
+            }
           }
 
           attempt += 1;
@@ -559,26 +575,31 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
   const g = (...args: A) => {
     const inner = {
-      *[Symbol.iterator](): Generator<
-        Instruction<E | UnexpectedError>,
-        T,
-        Result<T, E | UnexpectedError>
-      > {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
         let attempt = 1;
 
         while (true) {
-          const result: Result<T, E | UnexpectedError> = yield {
+          // oxlint-disable-next-line typescript/consistent-type-assertions
+          const attemptStep = (yield {
             type: "Suspended",
-            promise: op.run(...args),
-          };
+            suspend: (signal) =>
+              drive(op(...args), signal).then((r) => ({
+                result: r,
+                aborted: signal.aborted,
+              })),
+          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
 
+          const result = attemptStep.result;
           if (result.ok) {
             return result.value;
           }
 
           const cause = result.error;
           const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
-          const canRetry = attempt < strategy.maxAttempts && strategy.shouldRetry(retryCause);
+          const canRetry =
+            !attemptStep.aborted &&
+            attempt < strategy.maxAttempts &&
+            strategy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw new UnreachableError();
@@ -586,10 +607,15 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
           if (delayMs > 0) {
-            yield {
+            // oxlint-disable-next-line typescript/consistent-type-assertions
+            const delayAborted = (yield {
               type: "Suspended",
-              promise: new Promise<void>((resolve) => setTimeout(resolve, delayMs)),
-            };
+              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
+            }) as boolean;
+            if (delayAborted) {
+              yield err(cause);
+              throw new UnreachableError();
+            }
           }
 
           attempt += 1;
@@ -636,7 +662,8 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       > {
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
-          promise: raceTimeout(op.run(), clampedTimeoutMs),
+          suspend: (outerSignal) =>
+            raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -666,7 +693,8 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       > {
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
-          promise: raceTimeout(op.run(...args), clampedTimeoutMs),
+          suspend: (outerSignal) =>
+            raceTimeout((signal) => drive(op(...args), signal), clampedTimeoutMs, outerSignal),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -701,18 +729,43 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
 };
 
 const raceTimeout = <T, E>(
-  promise: Promise<Result<T, E>>,
+  run: (signal: AbortSignal) => Promise<Result<T, E>>,
   timeoutMs: number,
+  outerSignal: AbortSignal,
 ): Promise<Result<T, E | TimeoutError>> => {
+  const controller = new AbortController();
+  const cascade = () => controller.abort(outerSignal.reason);
+  if (outerSignal.aborted) cascade();
+  else outerSignal.addEventListener("abort", cascade, { once: true });
+
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<Result<T, E | TimeoutError>>((resolve) => {
-    timeoutId = setTimeout(() => resolve(err(new TimeoutError({ timeoutMs }))), timeoutMs);
+    timeoutId = setTimeout(() => {
+      const e = new TimeoutError({ timeoutMs });
+      controller.abort(e);
+      resolve(err(e));
+    }, timeoutMs);
   });
 
-  const result: Promise<Result<T, E | TimeoutError>> = promise;
-  return Promise.race([result, timeout]).finally(() => {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
-    }
+  return Promise.race([run(controller.signal), timeout]).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    outerSignal.removeEventListener("abort", cascade);
   });
 };
+
+const abortableDelay = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
