@@ -1,6 +1,6 @@
 {
   "name": "@prodkit/op",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Composable generator-based operations with typed results, typed errors, async suspension, and built-in retry semantics.",
   "keywords": [
     "composition",
