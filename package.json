@@ -10,6 +10,14 @@
     "typescript"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trvswgnr/op"
+  },
+  "bugs": {
+    "url": "https://github.com/trvswgnr/op/issues"
+  },
+  "homepage": "https://github.com/trvswgnr/op#readme",
   "files": [
     "dist",
     "README.md"
