@@ -7,7 +7,7 @@ If you like writing workflows that read top to bottom without throwing exception
 
 ## Why this exists
 
-JavaScript async control flow often spreads error handling across `try/catch`, rejected promises, and ad hoc return shapes.
+JavaScript async control flow often spreads error handling across `try/catch`, rejected promises, and inconsistent return values.
 `@prodkit/op` centralizes that into one model:
 
 - describe a workflow as an `Op`
@@ -135,10 +135,26 @@ const perAttempt = Op.try(() => fetch("https://example.com"))
   .withRetry(strategy);
 ```
 
+### `.withSignal(signal)`
+
+Binds an operation to an external `AbortSignal` so you can cancel in-flight work (for example when
+an HTTP request is aborted or a job is shut down).
+
+```ts
+const controller = new AbortController();
+const fetchUser = Op.try((signal) => fetch("/api/users/1", { signal })).withSignal(
+  controller.signal,
+);
+
+const runPromise = fetchUser.run();
+controller.abort(new Error("request cancelled"));
+const result = await runPromise;
+```
+
 ## Typed errors
 
 Use `TypedError("Name")` for discriminated domain errors that still behave like real `Error` objects.
-Instances are iterable, which lets `yield* new MyError()` short-circuit like `Op.fail`.
+You can raise one directly with `yield* new MyError()` inside an op.
 
 ```ts
 import { TypedError, Op } from "@prodkit/op";
@@ -167,10 +183,9 @@ You can also build your own delay function with `exponentialBackoff({ baseMs, ma
 
 ## Concurrent combinators
 
-Fan multiple ops out and collapse their results back into a single `Op`. Each combinator
-returns a nullary `Op` that preserves per-slot success types and unions child error types.
-When the combinator's outcome is decided early (`all` after a failure, `any` after a
-success, `race` on first settle), siblings are cancelled via `AbortSignal`.
+Run multiple ops concurrently and compose them back into one `Op`.
+When a result is decided early (`all` after a failure, `any` after a success, `race` on first
+settle), remaining work is cancelled through `AbortSignal`.
 
 ### `Op.all(ops)`
 
@@ -201,7 +216,7 @@ if (r.ok) {
 
 Succeeds with the first op to succeed; remaining siblings are aborted. If every op fails,
 the combinator fails with `ErrorGroup` whose `errors` array holds each child failure
-in input index order. Empty input fails with `new ErrorGroup({ errors: [] })`.
+in input index order. Empty input fails with an empty `ErrorGroup`.
 
 ```ts
 import { ErrorGroup } from "@prodkit/op";
@@ -215,7 +230,7 @@ if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
 
 Propagates whichever op settles first — success or failure. Remaining siblings are
 aborted with no library-specific reason. `Op.race([])` fails fast with
-`UnexpectedError("No operations to run")`.
+`UnexpectedError`.
 
 ```ts
 const r = await Op.race([slow, fast]).run();
