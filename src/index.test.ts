@@ -4,7 +4,7 @@ import {
   TimeoutError,
   UnexpectedError,
   TypedError,
-  AllFailedError,
+  ErrorGroup,
   type Op as OpT,
 } from "./index.js";
 import { RetryStrategy, type Result } from "./lib.js";
@@ -24,7 +24,7 @@ describe("public API (index)", () => {
   describe("UnexpectedError", () => {
     test("discriminant and cause", () => {
       const cause = new Error("root");
-      const e = new UnexpectedError({ cause });
+      const e = new UnexpectedError(cause);
       expect(e.type).toBe("UnexpectedError");
       expect(e.message).toBe("An unexpected error occurred");
       expect(e.cause).toBe(cause);
@@ -550,35 +550,35 @@ describe("Op.any", () => {
           });
         }),
     );
-    const r = await Op.any([slow, Op.of(42)]).run();
+    const r = await Op.any([slow, Op.of(69)]).run();
     assert(r.ok === true, "ok");
-    expect(r.value).toBe(42);
+    expect(r.value).toBe(69);
     expect(slowAborted).toBe(true);
   });
 
-  test("all-fail surfaces AllFailedError with errors in input order", async () => {
+  test("all-fail surfaces ErrorGroup with errors in input order", async () => {
     const r = await Op.any([
       Op.fail("a" as const),
       Op.fail("b" as const),
       Op.fail("c" as const),
     ]).run();
     assert(r.ok === false, "err");
-    assert(r.error instanceof AllFailedError, "AllFailedError");
+    assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual(["a", "b", "c"]);
   });
 
-  test("empty input fails with empty AllFailedError", async () => {
+  test("empty input fails with empty ErrorGroup", async () => {
     const r = await Op.any([]).run();
     assert(r.ok === false, "err");
-    assert(r.error instanceof AllFailedError, "AllFailedError");
+    assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual([]);
   });
 
-  test("error type is AllFailedError<union of child errors>", async () => {
+  test("error type is ErrorGroup<union of child errors>", async () => {
     const combined = Op.any([Op.fail(1), Op.fail("two" as const)]);
     const r = await combined.run();
-    if (!r.ok && r.error instanceof AllFailedError) {
-      expectTypeOf(r.error.errors).toEqualTypeOf<readonly (number | "two" | UnexpectedError)[]>();
+    if (!r.ok && r.error instanceof ErrorGroup) {
+      expectTypeOf(r.error.errors).toEqualTypeOf<(number | "two" | UnexpectedError)[]>();
     }
   });
 
@@ -592,7 +592,7 @@ describe("Op.any", () => {
       Op.try(() => rejectAfter("fast", 0), toTag("fast")),
     ]).run();
     assert(r.ok === false, "err");
-    assert(r.error instanceof AllFailedError, "AllFailedError");
+    assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual(["slow", "fast"]);
   });
 });
@@ -627,7 +627,7 @@ describe("Op.race", () => {
   });
 
   test("losers are aborted with no library-specific reason", async () => {
-    let observedReason: unknown = "sentinel";
+    let observedReason: unknown;
     const slow = Op.try(
       (signal) =>
         new Promise<number>((resolve) => {
@@ -639,11 +639,8 @@ describe("Op.race", () => {
     );
     const fast = Op.of(1);
     await Op.race([slow, fast]).run();
-    // The default AbortController abort() produces a DOMException AbortError, not a
-    // library-specific typed error. We just confirm no Op error class leaked through.
-    expect(observedReason).not.toBeInstanceOf(TimeoutError);
-    expect(observedReason).not.toBeInstanceOf(AllFailedError);
-    expect(observedReason).not.toBeInstanceOf(UnexpectedError);
+    assert(observedReason instanceof DOMException, "should be a DOMException");
+    expect(observedReason.name).toBe("AbortError");
   });
 
   test("union type across children", async () => {

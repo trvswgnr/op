@@ -200,15 +200,15 @@ if (r.ok) {
 ### `Op.any(ops)`
 
 Succeeds with the first op to succeed; remaining siblings are aborted. If every op fails,
-the combinator fails with `AllFailedError` whose `errors` array holds each child failure
-in input index order. Empty input fails with `new AllFailedError({ errors: [] })`.
+the combinator fails with `ErrorGroup` whose `errors` array holds each child failure
+in input index order. Empty input fails with `new ErrorGroup({ errors: [] })`.
 
 ```ts
-import { AllFailedError } from "@prodkit/op";
+import { ErrorGroup } from "@prodkit/op";
 
 const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
 if (r.ok) console.log(r.value); // 42
-if (!r.ok && r.error instanceof AllFailedError) console.log(r.error.errors);
+if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
 ```
 
 ### `Op.race(ops)`

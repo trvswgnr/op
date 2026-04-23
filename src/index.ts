@@ -8,7 +8,7 @@ import {
   allSettledOp,
   anyOp,
   raceOp,
-  AllFailedError,
+  ErrorGroup,
   TimeoutError,
   UnexpectedError,
   UnreachableError,
@@ -45,4 +45,4 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export { TypedError, TimeoutError, UnexpectedError, UnreachableError, AllFailedError };
+export { TypedError, TimeoutError, UnexpectedError, UnreachableError, ErrorGroup };
