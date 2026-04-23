@@ -913,18 +913,16 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   readonly []
 > => {
   const snapshot = ops.slice();
-  type V = { [K in keyof Ops]: SuccessOf<Ops[K]> };
-  type E = ErrorOf<Ops[number]> | UnexpectedError;
-  return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
+  return makeNullaryOp(function* () {
     const result = (yield {
       type: "Suspended" as const,
       suspend: (outerSignal) => driveAll(snapshot, outerSignal),
-    }) as Result<unknown[], E>;
+    }) as Result<never, never>;
     if (!result.ok) {
       yield err(result.error);
       throw new UnreachableError();
     }
-    return result.value as V;
+    return result.value;
   });
 };
 
