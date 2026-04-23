@@ -1,6 +1,13 @@
 import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
-import { Op, TimeoutError, UnexpectedError, TypedError, type Op as OpT } from "./index.js";
-import { RetryStrategy } from "./lib.js";
+import {
+  Op,
+  TimeoutError,
+  UnexpectedError,
+  TypedError,
+  AllFailedError,
+  type Op as OpT,
+} from "./index.js";
+import { RetryStrategy, type Result } from "./lib.js";
 
 describe("public API (index)", () => {
   describe("OpFactory", () => {
@@ -393,5 +400,287 @@ describe("Op monad laws (via bind / run)", () => {
       bind(bind(m, f), g),
       bind(m, (x) => bind(f(x), g)),
     );
+  });
+});
+
+const resolveAfter = <T>(value: T, ms: number) =>
+  new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+
+const rejectAfter = (reason: unknown, ms: number) =>
+  new Promise<never>((_, reject) => setTimeout(() => reject(reason), ms));
+
+describe("Op.all", () => {
+  test("tuple of successes in input order", async () => {
+    const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toEqual([1, "two", true]);
+    const [n, s, b] = r.value;
+    expectTypeOf(n).toEqualTypeOf<number>();
+    expectTypeOf(s).toEqualTypeOf<string>();
+    expectTypeOf(b).toEqualTypeOf<boolean>();
+  });
+
+  test("empty input succeeds with []", async () => {
+    const r = await Op.all([]).run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toEqual([]);
+  });
+
+  test("fails fast on first Err and aborts siblings", async () => {
+    let siblingAborted = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          const t = setTimeout(() => resolve(1), 50);
+          signal.addEventListener("abort", () => {
+            siblingAborted = true;
+            clearTimeout(t);
+            resolve(-1);
+          });
+        }),
+    );
+    const fast = Op.fail("boom" as const);
+
+    const r = await Op.all([slow, fast]).run();
+    assert(r.ok === false, "err");
+    expect(r.error).toBe("boom");
+    expect(siblingAborted).toBe(true);
+  });
+
+  test("union error type across children", async () => {
+    class AErr extends TypedError("AErr") {}
+    class BErr extends TypedError("BErr") {}
+    const n: number = 1;
+    const s: string = "x";
+    const a = Op(function* () {
+      if (Math.random() > 2) return yield* new AErr();
+      return n;
+    });
+    const b = Op(function* () {
+      if (Math.random() > 2) return yield* new BErr();
+      return s;
+    });
+    const combined = Op.all([a, b]);
+    const r = await combined.run();
+    if (!r.ok) {
+      expectTypeOf(r.error).toEqualTypeOf<AErr | BErr | UnexpectedError>();
+    }
+  });
+
+  test("awaits every child before returning after a failure", async () => {
+    let slowObservedAbort = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          signal.addEventListener("abort", () => {
+            slowObservedAbort = true;
+            // Delay acknowledgment so we can verify `Op.all` waits for it.
+            setTimeout(() => resolve(-1), 5);
+          });
+        }),
+    );
+    const fast = Op.fail("boom" as const);
+
+    await Op.all([slow, fast]).run();
+    expect(slowObservedAbort).toBe(true);
+  });
+});
+
+describe("Op.allSettled", () => {
+  test("returns tuple of Result in input order", async () => {
+    const r = await Op.allSettled([Op.of(1), Op.fail("no" as const), Op.of("ok")]).run();
+    assert(r.ok === true, "ok");
+    const [a, b, c] = r.value;
+    assert(a.ok === true && b.ok === false && c.ok === true, "branches");
+    expect(a.value).toBe(1);
+    expect(b.error).toBe("no");
+    expect(c.value).toBe("ok");
+  });
+
+  test("empty input succeeds with []", async () => {
+    const r = await Op.allSettled([]).run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toEqual([]);
+  });
+
+  test("never fails", async () => {
+    const combined = Op.allSettled([Op.fail(1), Op.fail("two" as const)]);
+    const r = await combined.run();
+    // Even a `never`-failing op still widens to UnexpectedError after .run() since the
+    // runtime can always throw in user code. What matters: .ok is always true here.
+    assert(r.ok === true, "ok");
+    const [a, b] = r.value;
+    expectTypeOf(a).toEqualTypeOf<Result<never, number | UnexpectedError>>();
+    expectTypeOf(b).toEqualTypeOf<Result<never, "two" | UnexpectedError>>();
+  });
+
+  test("does not abort siblings on failure", async () => {
+    let siblingAborted = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          const t = setTimeout(() => resolve(1), 10);
+          signal.addEventListener("abort", () => {
+            siblingAborted = true;
+            clearTimeout(t);
+            resolve(-1);
+          });
+        }),
+    );
+    const r = await Op.allSettled([slow, Op.fail("boom")]).run();
+    assert(r.ok === true, "ok");
+    expect(siblingAborted).toBe(false);
+    const [first] = r.value;
+    assert(first.ok === true, "slow sibling completed normally");
+    expect(first.value).toBe(1);
+  });
+});
+
+describe("Op.any", () => {
+  test("returns first success and aborts siblings", async () => {
+    let slowAborted = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          const t = setTimeout(() => resolve(99), 50);
+          signal.addEventListener("abort", () => {
+            slowAborted = true;
+            clearTimeout(t);
+            resolve(-1);
+          });
+        }),
+    );
+    const r = await Op.any([slow, Op.of(42)]).run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toBe(42);
+    expect(slowAborted).toBe(true);
+  });
+
+  test("all-fail surfaces AllFailedError with errors in input order", async () => {
+    const r = await Op.any([
+      Op.fail("a" as const),
+      Op.fail("b" as const),
+      Op.fail("c" as const),
+    ]).run();
+    assert(r.ok === false, "err");
+    assert(r.error instanceof AllFailedError, "AllFailedError");
+    expect(r.error.errors).toEqual(["a", "b", "c"]);
+  });
+
+  test("empty input fails with empty AllFailedError", async () => {
+    const r = await Op.any([]).run();
+    assert(r.ok === false, "err");
+    assert(r.error instanceof AllFailedError, "AllFailedError");
+    expect(r.error.errors).toEqual([]);
+  });
+
+  test("error type is AllFailedError<union of child errors>", async () => {
+    const combined = Op.any([Op.fail(1), Op.fail("two" as const)]);
+    const r = await combined.run();
+    if (!r.ok && r.error instanceof AllFailedError) {
+      expectTypeOf(r.error.errors).toEqualTypeOf<readonly (number | "two" | UnexpectedError)[]>();
+    }
+  });
+
+  test("preserves index order when failures settle out of order", async () => {
+    const toTag =
+      <T extends string>(tag: T) =>
+      (_: unknown): T =>
+        tag;
+    const r = await Op.any([
+      Op.try(() => rejectAfter("slow", 10), toTag("slow")),
+      Op.try(() => rejectAfter("fast", 0), toTag("fast")),
+    ]).run();
+    assert(r.ok === false, "err");
+    assert(r.error instanceof AllFailedError, "AllFailedError");
+    expect(r.error.errors).toEqual(["slow", "fast"]);
+  });
+});
+
+describe("Op.race", () => {
+  test("first settler wins (Ok)", async () => {
+    let loserAborted = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          const t = setTimeout(() => resolve(-1), 50);
+          signal.addEventListener("abort", () => {
+            loserAborted = true;
+            clearTimeout(t);
+            resolve(-1);
+          });
+        }),
+    );
+    const fast = Op.try(() => resolveAfter(7, 0));
+    const r = await Op.race([slow, fast]).run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toBe(7);
+    expect(loserAborted).toBe(true);
+  });
+
+  test("first settler wins (Err)", async () => {
+    const slow = Op.try(() => resolveAfter(1, 20));
+    const fast = Op.fail("quick" as const);
+    const r = await Op.race([slow, fast]).run();
+    assert(r.ok === false, "err");
+    expect(r.error).toBe("quick");
+  });
+
+  test("losers are aborted with no library-specific reason", async () => {
+    let observedReason: unknown = "sentinel";
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          signal.addEventListener("abort", () => {
+            observedReason = signal.reason;
+            resolve(-1);
+          });
+        }),
+    );
+    const fast = Op.of(1);
+    await Op.race([slow, fast]).run();
+    // The default AbortController abort() produces a DOMException AbortError, not a
+    // library-specific typed error. We just confirm no Op error class leaked through.
+    expect(observedReason).not.toBeInstanceOf(TimeoutError);
+    expect(observedReason).not.toBeInstanceOf(AllFailedError);
+    expect(observedReason).not.toBeInstanceOf(UnexpectedError);
+  });
+
+  test("union type across children", async () => {
+    const combined = Op.race([Op.of(1), Op.fail("two" as const)]);
+    const r = await combined.run();
+    if (r.ok) expectTypeOf(r.value).toEqualTypeOf<number>();
+    if (!r.ok) expectTypeOf(r.error).toEqualTypeOf<"two" | UnexpectedError>();
+  });
+});
+
+describe("Op combinators compose with withTimeout / withRetry", () => {
+  test("Op.all().withTimeout() times out the whole fan-out", async () => {
+    vi.useFakeTimers();
+    try {
+      const slow = Op.try(() => resolveAfter(1000, 1000));
+      const promise = Op.all([slow, slow]).withTimeout(10).run();
+      await vi.advanceTimersByTimeAsync(15);
+      const r = await promise;
+      assert(r.ok === false, "err");
+      expect(r.error).toBeInstanceOf(TimeoutError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("Op.any().withRetry() retries the whole combinator", async () => {
+    let attempts = 0;
+    const flaky = Op(function* () {
+      attempts += 1;
+      if (attempts < 2) return yield* Op.fail("nope" as const);
+      return yield* Op.of(11);
+    });
+    const r = await Op.any([flaky])
+      .withRetry({ maxAttempts: 3, shouldRetry: () => true, getDelay: () => 0 })
+      .run();
+    assert(r.ok === true, "ok");
+    expect(r.value).toBe(11);
+    expect(attempts).toBe(2);
   });
 });
