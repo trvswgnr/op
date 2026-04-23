@@ -744,6 +744,90 @@ describe("withTimeout", () => {
   });
 });
 
+describe("withSignal", () => {
+  test("passes a live signal into Op.try by default", async () => {
+    const controller = new AbortController();
+    let seenSignal: AbortSignal | undefined;
+    const program = _try((signal) => {
+      seenSignal = signal;
+      return Promise.resolve(69);
+    }).withSignal(controller.signal);
+
+    const result = await program.run();
+    assert(result.ok === true, "result.ok should be true");
+    expect(result.value).toBe(69);
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenSignal?.aborted).toBe(false);
+  });
+
+  test("aborting the bound signal cancels in-flight Op.try work", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const program = _try(
+        (signal) =>
+          new Promise<number>((resolve, reject) => {
+            if (signal.aborted) {
+              reject(signal.reason);
+              return;
+            }
+            const id = setTimeout(() => resolve(69), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(id);
+              reject(signal.reason);
+            });
+          }),
+        (cause) => String(cause instanceof Error ? cause.message : cause),
+      ).withSignal(controller.signal);
+
+      const runPromise = program.run();
+      controller.abort(new Error("request cancelled"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      const result = await runPromise;
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBe("request cancelled");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("withSignal preserves inferred op shapes", async () => {
+    const controller = new AbortController();
+    const p1 = _try(() => Promise.resolve(1)).withSignal(controller.signal);
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, []>>();
+
+    const p2 = _try(
+      () => Promise.resolve(1),
+      () => "mapped",
+    ).withSignal(controller.signal);
+    expectTypeOf(p2).toEqualTypeOf<Op<number, string, []>>();
+
+    const p3 = fromGenFn(function* (id: string) {
+      return yield* succeed(id.length);
+    }).withSignal(controller.signal);
+    expectTypeOf(p3).toEqualTypeOf<Op<number, never, [id: string]>>();
+
+    const r1 = p1.run();
+    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+
+    const r2 = p2.run();
+    expectTypeOf(r2).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
+
+    const r3 = p3.run("abc");
+    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+
+    expect((await p1.run()).ok).toBe(true);
+
+    // @ts-expect-error - nullary withSignal op does not accept args
+    p1.run(1);
+    // @ts-expect-error - parameterized withSignal op requires argument
+    p3.run();
+    // @ts-expect-error - parameterized withSignal op does not accept extra args
+    p3.run("abc", "extra");
+  });
+});
+
 describe("op.run", () => {
   test("sync op completes without awaiting", async () => {
     const result = await succeed("sync").run();
