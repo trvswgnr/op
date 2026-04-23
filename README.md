@@ -264,4 +264,44 @@ npm run lint
 npm run build
 ```
 
+## Publishing
+
+### One-time setup
+
+1. Create an npm automation token with publish rights for `@prodkit/op`.
+2. Add it as `NPM_TOKEN` in GitHub repository secrets.
+3. Ensure you have permission to publish the `@prodkit` scope.
+
+### Release workflow (recommended)
+
+1. Run local release checks:
+
+```bash
+npm run release:prepare
+```
+
+2. Bump package version (patch/minor/major as needed):
+
+```bash
+npm version patch
+```
+
+3. Push commit and tag:
+
+```bash
+git push && git push --tags
+```
+
+4. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
+   - installs with `npm ci`
+   - runs `npm run check`
+   - publishes with provenance (`npm publish --provenance --access public`)
+
+### Manual publish fallback
+
+```bash
+npm run release:prepare
+npm publish --access public --provenance
+```
+
 Contributor requirement: Node `>=24.14.0`.
