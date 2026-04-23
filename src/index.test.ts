@@ -5,6 +5,7 @@ import {
   UnexpectedError,
   TypedError,
   ErrorGroup,
+  exponentialBackoff,
   type Op as OpT,
 } from "./index.js";
 import { RetryPolicy, type Result } from "./lib.js";
@@ -19,6 +20,15 @@ describe("public API (index)", () => {
     });
     test("pure is a function", () => {
       expect(Op.of).toBeInstanceOf(Function);
+    });
+  });
+  describe("exponentialBackoff", () => {
+    test("is exported and produces exponential delays", () => {
+      const getDelay = exponentialBackoff({ baseMs: 100, maxMs: 1000, jitterMs: 0 });
+      expect(getDelay(1)).toBe(100);
+      expect(getDelay(2)).toBe(200);
+      expect(getDelay(3)).toBe(400);
+      expect(getDelay(5)).toBe(1000); // clamped by maxMs
     });
   });
   describe("UnexpectedError", () => {
