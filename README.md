@@ -165,6 +165,62 @@ const validate = Op(function* (name: string) {
 
 You can also build your own delay function with `exponentialBackoff({ baseMs, maxMs, jitterMs })`.
 
+## Concurrent combinators
+
+Fan multiple ops out and collapse their results back into a single `Op`. Each combinator
+returns a nullary `Op` that preserves per-slot success types and unions child error types.
+When the combinator's outcome is decided early (`all` after a failure, `any` after a
+success, `race` on first settle), siblings are cancelled via `AbortSignal`.
+
+### `Op.all(ops)`
+
+Runs every op concurrently and succeeds with a tuple of their success values. Fails fast
+on the first failure; in-flight siblings receive an abort and the combinator waits for
+them to settle before returning. Empty input succeeds with `[]`.
+
+```ts
+const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
+if (r.ok) {
+  const [n, s, b] = r.value; // [number, string, boolean]
+}
+```
+
+### `Op.allSettled(ops)`
+
+Waits for every op and returns a tuple of their `Result`s in input order. Never fails and
+never aborts siblings.
+
+```ts
+const r = await Op.allSettled([Op.of(1), Op.fail("nope")]).run();
+if (r.ok) {
+  const [a, b] = r.value; // Result<number, ...>, Result<never, "nope" | ...>
+}
+```
+
+### `Op.any(ops)`
+
+Succeeds with the first op to succeed; remaining siblings are aborted. If every op fails,
+the combinator fails with `AllFailedError` whose `errors` array holds each child failure
+in input index order. Empty input fails with `new AllFailedError({ errors: [] })`.
+
+```ts
+import { AllFailedError } from "@prodkit/op";
+
+const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
+if (r.ok) console.log(r.value); // 42
+if (!r.ok && r.error instanceof AllFailedError) console.log(r.error.errors);
+```
+
+### `Op.race(ops)`
+
+Propagates whichever op settles first — success or failure. Remaining siblings are
+aborted with no library-specific reason. `Op.race([])` never settles (same as
+`Promise.race([])`); compose `.withTimeout(ms)` if you need a deadline.
+
+```ts
+const r = await Op.race([slow, fast]).run();
+```
+
 ## Scripts
 
 ```bash
