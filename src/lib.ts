@@ -762,8 +762,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
         withTimeoutOp(coerceNever(self), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      withSignal: (signal: AbortSignal) =>
-        withSignalOp(coerceNever(self), signal, localRuntime),
+      withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -831,8 +830,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
         withTimeoutOp(coerceNever(inner), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      withSignal: (signal: AbortSignal) =>
-        withSignalOp(coerceNever(inner), signal, localRuntime),
+      withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(inner), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -903,8 +901,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
           mergeRuntimeConfig(localRuntime, nextOptions),
         ),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      withSignal: (signal: AbortSignal) =>
-        withSignalOp(coerceNever(self), signal, localRuntime),
+      withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -949,8 +946,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
           mergeRuntimeConfig(localRuntime, nextOptions),
         ),
       // oxlint-disable-next-line typescript/consistent-type-assertions
-      withSignal: (signal: AbortSignal) =>
-        withSignalOp(coerceNever(inner), signal, localRuntime),
+      withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(inner), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => inner;
