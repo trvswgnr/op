@@ -1,5 +1,6 @@
 {
   "name": "@prodkit/op",
+  "version": "0.1.0",
   "description": "Composable generator-based operations with typed results, typed errors, async suspension, and built-in retry semantics.",
   "keywords": [
     "composition",
@@ -22,6 +23,10 @@
       "import": "./dist/index.mjs"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsdown",
     "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test",
@@ -32,6 +37,9 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "prepublishOnly": "npm run check",
+    "release:prepare": "npm run check && npm pack --dry-run",
+    "release:version": "npm version patch",
+    "release:publish": "npm publish --access public --provenance",
     "test": "vitest run",
     "test:e2e": "vitest run **/*.e2e.test.ts",
     "test:integration": "vitest run **/*.integration.test.ts",
