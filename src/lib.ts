@@ -54,12 +54,12 @@ export class UnreachableError extends Error implements Typed<"UnreachableError">
  * @template TypeName String discriminant; available as `error.type` and `error.name`.
  * @template Data Constructor fields other than `message` and `cause`.
  */
-export interface TypedError<
+export type TypedError<
   TypeName extends string,
   Data extends Record<string, unknown> & { message?: string | undefined; cause?: unknown } = {},
-> extends Error {
+> = _TypedError<TypeName> & ({} extends Data ? {} : { [K in keyof Data]: Data[K] });
+interface _TypedError<TypeName extends string> extends Error {
   readonly type: TypeName;
-  readonly data: Omit<Data, "cause" | "message">;
   [Symbol.iterator](): Generator<Err<this>, never, unknown>;
 }
 
@@ -162,15 +162,14 @@ export function TypedError<TType extends string>(
     implements Typed<TType>
   {
     readonly type = type;
-    readonly data: Omit<Data, "cause" | "message">;
+
     constructor(...args: TypedErrorCtorParams<Data>) {
       // oxlint-disable-next-line typescript/consistent-type-assertions
       const _data = args[0] ?? ({} as Data);
       const { message, cause, ...data } = _data;
       super(message ?? defaultMessage, { cause });
       this.name = type;
-      // oxlint-disable-next-line typescript/consistent-type-assertions
-      this.data = Object.freeze(data) as Omit<Data, "cause" | "message">;
+      Object.assign(this, data);
     }
 
     *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
@@ -179,6 +178,9 @@ export function TypedError<TType extends string>(
     }
   };
 }
+TypedError.is = (error: unknown): error is TypedError<string> => {
+  return error instanceof Error && "type" in error && typeof error.type === "string";
+};
 
 interface Suspended {
   readonly type: "Suspended";
@@ -1030,8 +1032,7 @@ const driveAny = <T, E>(
  * `AbortError` DOMException), so nothing observes a synthetic internal cancellation error
  * from `@prodkit/op` itself.
  *
- * `Op.race([])` never settles, matching `Promise.race([])`. Compose `.withTimeout(ms)` if
- * a deadline is needed.
+ * `Op.race([])` fails fast with `UnexpectedError("No operations to run")`.
  *
  * @example
  * const r = await Op.race([slow(), fast()]).run();

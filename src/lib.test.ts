@@ -42,14 +42,12 @@ describe("TypedError", () => {
     const err = new NetworkError();
     expect(err.message).toBe("A network error occurred");
     expect(err.type).toBe("NetworkError");
-    expect(err.data).toEqual({});
   });
 
   test("subclass with no extra data can be constructed with no arguments", () => {
     class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
     const err = new DivisionByZeroError();
     expect(err.message).toBe("");
-    expect(err.data).toEqual({});
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(DivisionByZeroError);
   });
@@ -58,15 +56,12 @@ describe("TypedError", () => {
     const ValidationError = TypedError("ValidationError");
     const err = new ValidationError({ message: "field required" });
     expect(err.message).toBe("field required");
-    expect(err.data).toEqual({});
-    expect("message" in err.data).toBe(false);
   });
 
   test("message key with undefined falls back to default text", () => {
     const E = TypedError("E", "An E error occurred");
     const err = new E({ message: undefined });
     expect(err.message).toBe("An E error occurred");
-    expect(err.data).toEqual({});
   });
 
   test("cause is passed to Error and stripped from data", () => {
@@ -74,8 +69,6 @@ describe("TypedError", () => {
     const cause = new Error("root");
     const err = new E({ cause });
     expect(err.cause).toBe(cause);
-    expect(err.data).toEqual({});
-    expect("cause" in err.data).toBe(false);
   });
 
   test("preserves arbitrary payload fields on data", () => {
@@ -86,14 +79,15 @@ describe("TypedError", () => {
     const err = new NotFound({ resource: "user", id: 69, message: "gone", cause: "db" });
     expect(err.message).toBe("gone");
     expect(err.cause).toBe("db");
-    expect(err.data).toEqual({ resource: "user", id: 69 });
+    expect(err.resource).toBe("user");
+    expect(err.id).toBe(69);
   });
 
   test("does not mutate the passed data object, creates a new object without message and cause", () => {
     const E = TypedError("E");
     const payload = Object.freeze({ message: "m", cause: 1, extra: true });
     const err = new E(payload);
-    expect(err.data).toEqual({ extra: true });
+    expect(err).toHaveProperty("extra", true);
   });
 
   test("type narrowing: distinct factories produce distinct classes", () => {
