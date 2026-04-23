@@ -266,12 +266,6 @@ npm run build
 
 ## Publishing
 
-### One-time setup
-
-1. Create an npm automation token with publish rights for `@prodkit/op`.
-2. Add it as `NPM_TOKEN` in GitHub repository secrets.
-3. Ensure you have permission to publish the `@prodkit` scope.
-
 ### Release workflow (recommended)
 
 1. Run local release checks:
