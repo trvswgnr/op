@@ -273,7 +273,8 @@ const r = await Op.race([slow, fast]).run();
 
 ## Flagship production example: webhook consumer
 
-See `src/examples/webhook-flagship.ts` for a complete order webhook pipeline that demonstrates:
+See `examples/webhook-flagship.mjs` for a complete order webhook pipeline
+that demonstrates:
 
 - input validation with typed domain errors
 - idempotency checks
@@ -284,16 +285,37 @@ See `src/examples/webhook-flagship.ts` for a complete order webhook pipeline tha
 - retry + timeout budgets with `withRetry`/`withTimeout`
 - abort propagation into in-flight calls through `AbortSignal`
 
-Run the focused tests:
+Run the consumer-level checks:
 
 ```bash
-npm run test -- src/examples/webhook-flagship.test.ts
+npm run examples:consumer:test:pack
 ```
 
 ## More examples
 
-- `src/examples/simple.ts`: minimal composition and typed error walkthrough.
-- `src/examples/simple.test.ts`: focused tests for the simple example.
+- `examples/simple.mjs`: minimal composition and typed error walkthrough.
+- `examples/smoke.mjs`: consumer-level scenario assertions for simple + webhook flows.
+
+## Consumer smoke project
+
+`examples/` verifies this package the way a consumer would install and execute it.
+
+Prefer the tarball smoke test for release confidence (it validates the exact files that would be
+published):
+
+```bash
+npm run examples:consumer:test:pack
+```
+
+You can also validate alternative install paths:
+
+```bash
+# install directly from GitHub repo
+npm run examples:consumer:test:github
+
+# install from latest published npm package
+npm run examples:consumer:test:npm
+```
 
 ## Scripts
 
@@ -302,6 +324,7 @@ npm run test
 npm run typecheck
 npm run lint
 npm run build
+npm run examples:consumer:test:pack
 ```
 
 ## Contributing
