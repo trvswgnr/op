@@ -1009,3 +1009,113 @@ describe("type inference", () => {
     expect(result.error).toBeInstanceOf(CustomError1);
   });
 });
+
+describe("AbortSignal", () => {
+  test("Op.try callback receives a signal that is not aborted by default", async () => {
+    let seen: AbortSignal | undefined;
+    const program = _try((signal) => {
+      seen = signal;
+      return Promise.resolve("ok");
+    });
+    const result = await program.run();
+    assert(result.ok === true, "result.ok should be true");
+    expect(seen).toBeInstanceOf(AbortSignal);
+    expect(seen?.aborted).toBe(false);
+  });
+
+  test("timeout aborts the signal passed to Op.try", async () => {
+    vi.useFakeTimers();
+    try {
+      let seenSignal: AbortSignal | undefined;
+      const program = _try(
+        (signal) =>
+          new Promise<number>((resolve, reject) => {
+            seenSignal = signal;
+            const id = setTimeout(() => resolve(69), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(id);
+              reject(signal.reason);
+            });
+          }),
+      ).withTimeout(100);
+
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(100);
+      const result = await runPromise;
+
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(seenSignal?.aborted).toBe(true);
+      expect(seenSignal?.reason).toBeInstanceOf(TimeoutError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("timeout cascades into retry-wrapped ops so inner fetch is aborted", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      let aborted = false;
+
+      const program = _try(
+        (signal) =>
+          new Promise<number>((_, reject) => {
+            attempts += 1;
+            const id = setTimeout(() => reject(new Error("transient")), 50);
+            signal.addEventListener("abort", () => {
+              aborted = true;
+              clearTimeout(id);
+              reject(signal.reason);
+            });
+          }),
+      )
+        .withRetry({
+          maxAttempts: 10,
+          shouldRetry: () => true,
+          getDelay: () => 10,
+        })
+        .withTimeout(120);
+
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(200);
+
+      const result = await runPromise;
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(aborted).toBe(true);
+      expect(attempts).toBeGreaterThanOrEqual(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("timeout stops the retry loop instead of racing zombie attempts", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const transient = new Error("transient");
+      const program = _try(() => {
+        attempts += 1;
+        return Promise.reject(transient);
+      })
+        .withRetry({
+          maxAttempts: 5,
+          shouldRetry: () => true,
+          getDelay: () => 1000,
+        })
+        .withTimeout(50);
+
+      const runPromise = program.run();
+      await vi.advanceTimersByTimeAsync(200);
+
+      const result = await runPromise;
+      assert(result.ok === false, "result.ok should be false");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      // Only one attempt ran before the timeout aborted the delay and halted the loop.
+      expect(attempts).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
