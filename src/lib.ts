@@ -512,6 +512,109 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   getDelay: exponentialBackoff(),
 };
 
+const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
+  op: Op<T, EIn, A>,
+  mapNullary: (resolved: Op<T, EIn, readonly []>) => Op<T, EOut, readonly []>,
+): Op<T, EOut, A> => {
+  if (Symbol.iterator in op) {
+    return mapNullary(op as Op<T, EIn, readonly []>) as never;
+  }
+
+  const g = (...args: A) => mapNullary((op as OpArity<T, EIn, A>)(...args) as never);
+  const out = Object.assign(g, {
+    run: (...args: A) => runOp(g(...args) as never),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
+    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    type: "Op" as const,
+  });
+
+  return out as never;
+};
+
+const withRetryNullaryOp = <T, E>(
+  op: Op<T, E, readonly []>,
+  policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+): Op<T, E, readonly []> => {
+  return makeNullaryOp<T, E | UnexpectedError>(function* () {
+    let attempt = 1;
+
+    while (true) {
+      const attemptStep = (yield {
+        type: "Suspended",
+        suspend: (signal: AbortSignal) =>
+          drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
+      }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
+
+      const result = attemptStep.result;
+      if (result.ok) {
+        return result.value;
+      }
+
+      const cause = result.error;
+      const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
+      const canRetry =
+        !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
+      if (!canRetry) {
+        yield err(cause);
+        throw new UnreachableError();
+      }
+
+      const delayMs = Math.max(0, policy.getDelay(attempt));
+      if (delayMs > 0) {
+        const delayAborted = (yield {
+          type: "Suspended",
+          suspend: (signal: AbortSignal) =>
+            abortableDelay(delayMs, signal).then(() => signal.aborted),
+        }) as boolean;
+        if (delayAborted) {
+          yield err(cause);
+          throw new UnreachableError();
+        }
+      }
+
+      attempt += 1;
+    }
+  }) as never;
+};
+
+const withTimeoutNullaryOp = <T, E>(
+  op: Op<T, E, readonly []>,
+  timeoutMs: number,
+): Op<T, E | TimeoutError, readonly []> => {
+  const clampedTimeoutMs = Math.max(0, timeoutMs);
+  return makeNullaryOp<T, E | UnexpectedError | TimeoutError>(function* () {
+    const result = (yield {
+      type: "Suspended",
+      suspend: (outerSignal: AbortSignal) =>
+        raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
+    }) as Result<T, E | UnexpectedError | TimeoutError>;
+    if (!result.ok) {
+      yield err(result.error);
+      throw new UnreachableError();
+    }
+    return result.value;
+  }) as never;
+};
+
+const withSignalNullaryOp = <T, E>(
+  op: Op<T, E, readonly []>,
+  signal: AbortSignal,
+): Op<T, E, readonly []> => {
+  return makeNullaryOp<T, E | UnexpectedError>(function* () {
+    const result = (yield {
+      type: "Suspended" as const,
+      suspend: (outerSignal: AbortSignal) =>
+        runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
+    }) as Result<T, E | UnexpectedError>;
+    if (!result.ok) {
+      yield err(result.error);
+      throw new UnreachableError();
+    }
+    return result.value;
+  }) as never;
+};
+
 /**
  * Implements `op.withRetry(policy)`.
  *
@@ -524,193 +627,14 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, A> => {
-  if (Symbol.iterator in op) {
-    const self = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        let attempt = 1;
-
-        while (true) {
-          const attemptStep = (yield {
-            type: "Suspended",
-            suspend: (signal) =>
-              drive(op, signal).then((r) => ({ result: r, aborted: signal.aborted })),
-          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
-
-          const result = attemptStep.result;
-          if (result.ok) {
-            return result.value;
-          }
-
-          const cause = result.error;
-          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
-          const canRetry =
-            !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
-          if (!canRetry) {
-            yield err(cause);
-            throw new UnreachableError();
-          }
-
-          const delayMs = Math.max(0, policy.getDelay(attempt));
-          if (delayMs > 0) {
-            const delayAborted = (yield {
-              type: "Suspended",
-              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
-            }) as boolean;
-            if (delayAborted) {
-              yield err(cause);
-              throw new UnreachableError();
-            }
-          }
-
-          attempt += 1;
-        }
-      },
-      run: () => runOp(self as never),
-      withRetry: (next?: RetryPolicy) => withRetryOp(self as never, next),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-      type: "Op" as const,
-    };
-    const _op = () => self;
-    return Object.assign(_op, self) as never;
-  }
-
-  const g = (...args: A) => {
-    const inner = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        let attempt = 1;
-
-        while (true) {
-          const attemptStep = (yield {
-            type: "Suspended",
-            suspend: (signal) =>
-              drive(op(...args), signal).then((r) => ({
-                result: r,
-                aborted: signal.aborted,
-              })),
-          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
-
-          const result = attemptStep.result;
-          if (result.ok) {
-            return result.value;
-          }
-
-          const cause = result.error;
-          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
-          const canRetry =
-            !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
-          if (!canRetry) {
-            yield err(cause);
-            throw new UnreachableError();
-          }
-
-          const delayMs = Math.max(0, policy.getDelay(attempt));
-          if (delayMs > 0) {
-            const delayAborted = (yield {
-              type: "Suspended",
-              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
-            }) as boolean;
-            if (delayAborted) {
-              yield err(cause);
-              throw new UnreachableError();
-            }
-          }
-
-          attempt += 1;
-        }
-      },
-      run: () => runOp(inner as never),
-      withRetry: (next?: RetryPolicy) => withRetryOp(inner as never, next),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
-      type: "Op" as const,
-    };
-    const _op = () => inner;
-    return Object.assign(_op, inner);
-  };
-
-  const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (next?: RetryPolicy) => withRetryOp(out as never, next),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    type: "Op" as const,
-  });
-
-  return out as never;
+  return mapFluentOp(op, (resolved) => withRetryNullaryOp(resolved, policy)) as never;
 };
 
 const withTimeoutOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   timeoutMs: number,
 ): Op<T, E | TimeoutError, A> => {
-  const clampedTimeoutMs = Math.max(0, timeoutMs);
-
-  if (Symbol.iterator in op) {
-    const self = {
-      *[Symbol.iterator](): Generator<
-        Instruction<E | UnexpectedError | TimeoutError>,
-        T,
-        Result<T, E | UnexpectedError | TimeoutError>
-      > {
-        const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
-          type: "Suspended",
-          suspend: (outerSignal) =>
-            raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
-        };
-        if (!result.ok) {
-          yield err(result.error);
-          throw new UnreachableError();
-        }
-        return result.value;
-      },
-      run: () => runOp(self as never),
-      withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
-      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-      type: "Op" as const,
-    };
-    const _op = () => self;
-    return Object.assign(_op, self) as never;
-  }
-
-  const g = (...args: A) => {
-    const inner = {
-      *[Symbol.iterator](): Generator<
-        Instruction<E | UnexpectedError | TimeoutError>,
-        T,
-        Result<T, E | UnexpectedError | TimeoutError>
-      > {
-        const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
-          type: "Suspended",
-          suspend: (outerSignal) =>
-            raceTimeout((signal) => drive(op(...args), signal), clampedTimeoutMs, outerSignal),
-        };
-        if (!result.ok) {
-          yield err(result.error);
-          throw new UnreachableError();
-        }
-        return result.value;
-      },
-      run: () => runOp(inner as never),
-      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
-      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
-      type: "Op" as const,
-    };
-    const _op = () => inner;
-    return Object.assign(_op, inner);
-  };
-
-  const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
-    withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    type: "Op" as const,
-  });
-
-  return out as never;
+  return mapFluentOp(op, (resolved) => withTimeoutNullaryOp(resolved, timeoutMs)) as never;
 };
 
 const runWithBoundSignal = <T, E>(
@@ -738,67 +662,7 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   signal: AbortSignal,
 ): Op<T, E, A> => {
-  if (Symbol.iterator in op) {
-    const self = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        const result = (yield {
-          type: "Suspended" as const,
-          suspend: (outerSignal: AbortSignal) =>
-            runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-        }) as Result<T, E | UnexpectedError>;
-        if (!result.ok) {
-          yield err(result.error);
-          throw new UnreachableError();
-        }
-        return result.value;
-      },
-      run: () => runOp(self as never),
-      withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-      withSignal: (nextSignal: AbortSignal) => withSignalOp(self as never, nextSignal),
-      type: "Op" as const,
-    };
-    const _op = () => self;
-    return Object.assign(_op, self) as never;
-  }
-
-  const g = (...args: A) => {
-    const inner = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        const result = (yield {
-          type: "Suspended" as const,
-          suspend: (outerSignal: AbortSignal) =>
-            runWithBoundSignal(
-              (mergedSignal) => drive(op(...args), mergedSignal),
-              signal,
-              outerSignal,
-            ),
-        }) as Result<T, E | UnexpectedError>;
-        if (!result.ok) {
-          yield err(result.error);
-          throw new UnreachableError();
-        }
-        return result.value;
-      },
-      run: () => runOp(inner as never),
-      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (nextSignal: AbortSignal) => withSignalOp(inner as never, nextSignal),
-      type: "Op" as const,
-    };
-    const _op = () => inner;
-    return Object.assign(_op, inner);
-  };
-
-  const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (nextSignal: AbortSignal) => withSignalOp(out as never, nextSignal),
-    type: "Op" as const,
-  });
-
-  return out as never;
+  return mapFluentOp(op, (resolved) => withSignalNullaryOp(resolved, signal)) as never;
 };
 
 const raceTimeout = <T, E>(
