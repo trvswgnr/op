@@ -1,0 +1,12 @@
+{
+  "name": "examples",
+  "private": true,
+  "description": "Consumer-level smoke checks for @prodkit/op installation paths.",
+  "type": "module",
+  "scripts": {
+    "smoke": "node ./smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
