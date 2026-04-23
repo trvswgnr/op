@@ -290,6 +290,11 @@ Run the focused tests:
 npm run test -- src/examples/webhook-flagship.test.ts
 ```
 
+## More examples
+
+- `src/examples/simple.ts`: minimal composition and typed error walkthrough.
+- `src/examples/simple.test.ts`: focused tests for the simple example.
+
 ## Scripts
 
 ```bash
@@ -299,38 +304,10 @@ npm run lint
 npm run build
 ```
 
+## Contributing
+
+For local development, release flow, and publish procedures, see `CONTRIBUTING.md`.
+
 ## Publishing
-
-### Release workflow (recommended)
-
-1. Run local release checks:
-
-```bash
-npm run release:prepare
-```
-
-2. Bump package version (patch/minor/major as needed):
-
-```bash
-npm version patch
-```
-
-3. Push commit and tag:
-
-```bash
-git push && git push --tags
-```
-
-4. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
-   - installs with `npm ci`
-   - runs `npm run check`
-   - publishes with provenance (`npm publish --provenance --access public`)
-
-### Manual publish fallback
-
-```bash
-npm run release:prepare
-npm publish --access public --no-provenance
-```
 
 Contributor requirement: Node `>=24.14.0`.

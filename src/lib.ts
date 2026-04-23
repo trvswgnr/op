@@ -26,6 +26,14 @@ export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   }
 }
 
+/**
+ * Built-in typed error emitted when an operation exceeds a timeout budget.
+ *
+ * This is produced by {@link WithTimeout.withTimeout} and by combinators that include a timed
+ * operation in their graph.
+ *
+ * @param timeoutMs Timeout threshold in milliseconds that was exceeded.
+ */
 export class TimeoutError extends Error implements Typed<"TimeoutError"> {
   readonly type = "TimeoutError";
   readonly timeoutMs: number;
@@ -35,6 +43,12 @@ export class TimeoutError extends Error implements Typed<"TimeoutError"> {
   }
 }
 
+/**
+ * Internal control-flow sentinel used to mark logically impossible paths.
+ *
+ * The library exports this for completeness and debugging, but most consumers should not
+ * construct or throw it directly.
+ */
 export class UnreachableError extends Error implements Typed<"UnreachableError"> {
   readonly type = "UnreachableError";
   constructor() {
@@ -81,10 +95,25 @@ interface ErrorGroupConstructor {
   readonly prototype: ErrorGroup<unknown>;
 }
 
+/**
+ * Built-in typed aggregate error used by combinators that need to preserve multiple failures.
+ *
+ * Today this is primarily emitted by {@link anyOp} when all candidates fail. The `errors` array
+ * contains child failures in input order.
+ *
+ * @template E Child error type.
+ */
 export interface ErrorGroup<E> extends AggregateError, Typed<"ErrorGroup"> {
   readonly errors: E[];
 }
 
+/**
+ * Runtime constructor for {@link ErrorGroup}.
+ *
+ * @template E Child error type.
+ * @param errors Child failures to aggregate.
+ * @param message Human-readable context for why the group was created.
+ */
 export const ErrorGroup: ErrorGroupConstructor = class<E>
   extends AggregateError
   implements Typed<"ErrorGroup">
