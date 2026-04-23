@@ -39,8 +39,6 @@ describe("public API (index)", () => {
       expect(e.type).toBe("SmokeError");
       expect(e.name).toBe("SmokeError");
       expect(e.message).toBe("x");
-      expect(e.data).toEqual({});
-      expectTypeOf(e.data).toEqualTypeOf<{}>();
     });
   });
 

@@ -214,11 +214,30 @@ if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
 ### `Op.race(ops)`
 
 Propagates whichever op settles first — success or failure. Remaining siblings are
-aborted with no library-specific reason. `Op.race([])` never settles (same as
-`Promise.race([])`); compose `.withTimeout(ms)` if you need a deadline.
+aborted with no library-specific reason. `Op.race([])` fails fast with
+`UnexpectedError("No operations to run")`.
 
 ```ts
 const r = await Op.race([slow, fast]).run();
+```
+
+## Flagship production example: webhook consumer
+
+See `src/examples/webhook-flagship.ts` for a complete order webhook pipeline that demonstrates:
+
+- input validation with typed domain errors
+- idempotency checks
+- risk scoring with provider fallback via `Op.any`
+- cache/config policy lookup via `Op.race`
+- concurrent inventory/payment orchestration via `Op.all`
+- best-effort side effects via `Op.allSettled`
+- retry + timeout budgets with `withRetry`/`withTimeout`
+- abort propagation into in-flight calls through `AbortSignal`
+
+Run the focused tests:
+
+```bash
+npm run test -- src/examples/webhook-flagship.test.ts
 ```
 
 ## Scripts
