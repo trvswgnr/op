@@ -93,6 +93,23 @@ const result = await fetchUser.withTimeout(1000).run();
 // when the 1s budget elapses, the fetch is aborted.
 ```
 
+### `Op.run(op)`
+
+Static runner for nullary ops. This is equivalent to `op.run()`, and is useful when you want to
+execute an op value passed around as data.
+
+```ts
+const result = await Op.run(Op.of(7));
+```
+
+### `Op.empty`
+
+Reusable no-op that succeeds with `undefined`.
+
+```ts
+const result = await Op.empty.run();
+```
+
 ### `.run(...args)`
 
 Executes the operation and returns:
@@ -180,6 +197,24 @@ const validate = Op(function* (name: string) {
 - exponential backoff from `100ms` up to `1000ms`
 
 You can also build your own delay function with `exponentialBackoff({ baseMs, maxMs, jitterMs })`.
+
+```ts
+import { exponentialBackoff } from "@prodkit/op";
+
+const policy = {
+  maxAttempts: 5,
+  shouldRetry: (cause: unknown) => cause instanceof Error,
+  getDelay: exponentialBackoff({ baseMs: 200, maxMs: 2_000, jitterMs: 100 }),
+};
+```
+
+## Built-in errors
+
+- `UnexpectedError`: default wrapper when a thrown/rejected value is not mapped to a domain error.
+- `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
+- `ErrorGroup`: produced by `Op.any` when all children fail.
+- `UnreachableError`: internal sentinel used by control flow; exported for completeness, but most
+  consumers should not instantiate it directly.
 
 ## Concurrent combinators
 
