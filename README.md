@@ -301,7 +301,7 @@ git push && git push --tags
 
 ```bash
 npm run release:prepare
-npm publish --access public --provenance
+npm publish --access public --no-provenance
 ```
 
 Contributor requirement: Node `>=24.14.0`.
