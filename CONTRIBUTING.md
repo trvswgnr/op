@@ -12,6 +12,19 @@ Run the same checks used before publishing:
 npm run check
 ```
 
+The quality gate includes a consumer-level smoke test that installs the package from an `npm pack`
+tarball via `examples/`.
+
+All examples are consumer-level and live under `examples/*`.
+
+You can run consumer install path checks directly:
+
+```bash
+npm run examples:consumer:test:pack
+npm run examples:consumer:test:github
+npm run examples:consumer:test:npm
+```
+
 ## Release Workflow (Recommended)
 
 1. Run local release checks:
