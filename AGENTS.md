@@ -12,6 +12,7 @@
 - Prefers `.run(...args)` to stay args-only; cancellation/config should compose fluently (for example via `.withSignal(...)`) rather than be passed to `run`.
 - Prefers user-facing docs and comments to emphasize outcomes and usage over internal implementation details.
 - When requesting commit message drafts, prefers why-focused messages grounded in the actual staged/unstaged diff.
+- Prefers commit message drafts to use the simplest fitting body shape (none, one sentence, or bullets) rather than forcing multiple bullets.
 
 ## Learned Workspace Facts
 
