@@ -7,7 +7,7 @@ import {
   ErrorGroup,
   type Op as OpT,
 } from "./index.js";
-import { RetryStrategy, type Result } from "./lib.js";
+import { RetryPolicy, type Result } from "./lib.js";
 
 describe("public API (index)", () => {
   describe("OpFactory", () => {
@@ -125,7 +125,7 @@ describe("public API (index)", () => {
   });
 
   describe("op.withRetry", () => {
-    const immediateRetry = (cause: unknown): RetryStrategy => ({
+    const immediateRetry = (cause: unknown): RetryPolicy => ({
       maxAttempts: 3,
       shouldRetry: (e) => e === cause,
       getDelay: () => 0,

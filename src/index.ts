@@ -36,7 +36,7 @@ export const Op = Object.assign(fromGenFn, {
  * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters.
  *
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
- * `withRetry(strategy)`, `withTimeout(ms)`, and `withSignal(signal)`.
+ * `withRetry(policy)`, `withTimeout(ms)`, and `withSignal(signal)`.
  *
  * @template T Value returned when the operation succeeds.
  * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
