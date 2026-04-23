@@ -24,8 +24,7 @@
     }
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "scripts": {
     "build": "tsdown",
@@ -39,7 +38,7 @@
     "prepublishOnly": "npm run check",
     "release:prepare": "npm run check && npm pack --dry-run",
     "release:version": "npm version patch",
-    "release:publish": "npm publish --access public --provenance",
+    "release:publish": "npm publish --access public --no-provenance",
     "test": "vitest run",
     "test:e2e": "vitest run **/*.e2e.test.ts",
     "test:integration": "vitest run **/*.integration.test.ts",
