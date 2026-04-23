@@ -422,11 +422,11 @@ export const _try = <T, E = UnexpectedError>(
  * const r = await Op.run(Op.of(7));
  * if (r.ok) console.log(r.value);
  */
-export function runOp<E, T>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
+export function runOp<T, E>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
   return drive(op, new AbortController().signal);
 }
 
-async function drive<E, T>(
+async function drive<T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>> {
