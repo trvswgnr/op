@@ -164,7 +164,6 @@ export function TypedError<TType extends string>(
     readonly type = type;
 
     constructor(...args: TypedErrorCtorParams<Data>) {
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       const _data = args[0] ?? ({} as Data);
       const { message, cause, ...data } = _data;
       super(message ?? defaultMessage, { cause });
@@ -265,16 +264,12 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     *[Symbol.iterator]() {
       return value;
     },
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op",
   };
   const op = () => self;
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return Object.assign(op, self) as never;
 };
 
@@ -304,16 +299,12 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       yield err(value);
       throw new UnreachableError();
     },
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op" as const,
   };
   const op = () => self;
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return Object.assign(op, self) as never;
 };
 
@@ -357,7 +348,6 @@ export const _try = <T, E = UnexpectedError>(
             .then(
               (a) => ok(a),
               (cause) => err(onError ? onError(cause) : new UnexpectedError(cause)),
-              // oxlint-disable-next-line typescript/consistent-type-assertions
             ) as Promise<Result<T, E>>,
       };
       if (result.type === "Err") {
@@ -366,16 +356,12 @@ export const _try = <T, E = UnexpectedError>(
       }
       return result.value;
     },
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op" as const,
   };
   const op = () => self;
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return Object.assign(op, self) as never;
 };
 
@@ -468,24 +454,17 @@ export const fromGenFn: FromGenFn = (
   const g = (...args: unknown[]) => {
     const inner = {
       [Symbol.iterator]: () => f(...args),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(inner as never),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       type: "Op",
     };
     const _op = () => inner;
     return Object.assign(_op, inner);
   };
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: (...args: unknown[]) => runOp(g(...args) as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     type: "Op" as const,
   }) as never;
@@ -544,7 +523,6 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         let attempt = 1;
 
         while (true) {
-          // oxlint-disable-next-line typescript/consistent-type-assertions
           const attemptStep = (yield {
             type: "Suspended",
             suspend: (signal) =>
@@ -569,7 +547,6 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
           if (delayMs > 0) {
-            // oxlint-disable-next-line typescript/consistent-type-assertions
             const delayAborted = (yield {
               type: "Suspended",
               suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
@@ -583,16 +560,12 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           attempt += 1;
         }
       },
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(self as never),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
       type: "Op" as const,
     };
     const _op = () => self;
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     return Object.assign(_op, self) as never;
   }
 
@@ -602,7 +575,6 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         let attempt = 1;
 
         while (true) {
-          // oxlint-disable-next-line typescript/consistent-type-assertions
           const attemptStep = (yield {
             type: "Suspended",
             suspend: (signal) =>
@@ -630,7 +602,6 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
           if (delayMs > 0) {
-            // oxlint-disable-next-line typescript/consistent-type-assertions
             const delayAborted = (yield {
               type: "Suspended",
               suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
@@ -644,11 +615,8 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           attempt += 1;
         }
       },
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(inner as never),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       type: "Op" as const,
     };
@@ -657,16 +625,12 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
   };
 
   const out = Object.assign(g, {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: (...args: A) => runOp(g(...args) as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     type: "Op" as const,
   });
 
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return out as never;
 };
 
@@ -694,16 +658,12 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         }
         return result.value;
       },
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(self as never),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
       type: "Op" as const,
     };
     const _op = () => self;
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     return Object.assign(_op, self) as never;
   }
 
@@ -725,11 +685,8 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         }
         return result.value;
       },
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       run: () => runOp(inner as never),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
-      // oxlint-disable-next-line typescript/consistent-type-assertions
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
       type: "Op" as const,
     };
@@ -738,16 +695,12 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
   };
 
   const out = Object.assign(g, {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: (...args: A) => runOp(g(...args) as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
     type: "Op" as const,
   });
 
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return out as never;
 };
 
@@ -833,16 +786,12 @@ const makeNullaryOp = <T, E>(
 ): Op<T, E, readonly []> => {
   const self = {
     [Symbol.iterator]: gen,
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     run: () => runOp(self as never),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     type: "Op" as const,
   };
   const op = () => self;
-  // oxlint-disable-next-line typescript/consistent-type-assertions
   return Object.assign(op, self) as never;
 };
 
@@ -870,7 +819,6 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   type V = { [K in keyof Ops]: SuccessOf<Ops[K]> };
   type E = ErrorOf<Ops[number]> | UnexpectedError;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
       suspend: (outerSignal) => driveAll(snapshot, outerSignal),
@@ -879,7 +827,6 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
       yield err(result.error);
       throw new UnreachableError();
     }
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     return result.value as V;
   });
 };
@@ -937,7 +884,6 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   const snapshot = ops.slice();
   type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> };
   return makeNullaryOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     const value = (yield {
       type: "Suspended" as const,
       suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal),
@@ -977,7 +923,6 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
   type V = SuccessOf<Ops[number]>;
   type E = ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
       suspend: (outerSignal) => driveAny(snapshot, outerSignal),
@@ -1044,7 +989,6 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
   type V = SuccessOf<Ops[number]>;
   type E = ErrorOf<Ops[number]> | UnexpectedError;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
-    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
       suspend: (outerSignal) => driveRace(snapshot, outerSignal),
