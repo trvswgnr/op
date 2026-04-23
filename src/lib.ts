@@ -229,10 +229,7 @@ export interface OpBase<T, E> {
 }
 
 export interface OpNullary<T, E>
-  extends OpBase<T, E>,
-    WithRetry<T, E, []>,
-    WithTimeout<T, E, []>,
-    WithSignal<T, E, []> {
+  extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []>, WithSignal<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
@@ -775,7 +772,11 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
         const result = (yield {
           type: "Suspended" as const,
           suspend: (outerSignal: AbortSignal) =>
-            runWithBoundSignal((mergedSignal) => drive(op(...args), mergedSignal), signal, outerSignal),
+            runWithBoundSignal(
+              (mergedSignal) => drive(op(...args), mergedSignal),
+              signal,
+              outerSignal,
+            ),
         }) as Result<T, E | UnexpectedError>;
         if (!result.ok) {
           yield err(result.error);
