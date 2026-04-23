@@ -45,8 +45,8 @@ export class UnreachableError extends Error implements Typed<"UnreachableError">
 /**
  * Instance type for classes created by {@link TypedError}.
  *
- * `message` and `cause` are standard `Error` fields. Any other constructor fields are stored on
- * {@link TypedError.data}.
+ * `message` and `cause` are standard `Error` fields. Any other constructor fields are copied onto
+ * the error instance.
  *
  * `[Symbol.iterator]` yields a single `Err` carrying this instance, so `yield*` on an instance
  * inside an {@link Op} propagates the failure like a child operation.
@@ -58,6 +58,7 @@ export type TypedError<
   TypeName extends string,
   Data extends Record<string, unknown> & { message?: string | undefined; cause?: unknown } = {},
 > = _TypedError<TypeName> & ({} extends Data ? {} : { [K in keyof Data]: Data[K] });
+
 interface _TypedError<TypeName extends string> extends Error {
   readonly type: TypeName;
   [Symbol.iterator](): Generator<Err<this>, never, unknown>;
@@ -120,14 +121,104 @@ export type Result<T, E> = Ok<T> | Err<E>;
 const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
 const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
 
+export enum ConcurrencyMode {
+  Parallel = "parallel",
+  Sequential = "sequential",
+}
+
+export interface RunOptions {
+  concurrencyMode?: ConcurrencyMode;
+  maxConcurrency?: number;
+}
+
+export interface RuntimeConfig {
+  concurrencyMode: ConcurrencyMode;
+  maxConcurrency: number;
+}
+
+const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
+  concurrencyMode: ConcurrencyMode.Parallel,
+  maxConcurrency: Number.POSITIVE_INFINITY,
+});
+
+let runtimeConfig: RuntimeConfig = { ...DEFAULT_RUNTIME_CONFIG };
+
+const normalizeMaxConcurrency = (value: number | undefined): number => {
+  if (value === undefined) return DEFAULT_RUNTIME_CONFIG.maxConcurrency;
+  if (!Number.isFinite(value)) return Number.POSITIVE_INFINITY;
+  return Math.max(1, Math.floor(value));
+};
+
+const normalizeRuntimeConfig = (config: RunOptions): RuntimeConfig => ({
+  concurrencyMode: config.concurrencyMode ?? DEFAULT_RUNTIME_CONFIG.concurrencyMode,
+  maxConcurrency: normalizeMaxConcurrency(config.maxConcurrency),
+});
+
+const mergeRuntimeConfig = (base: RuntimeConfig, overrides?: RunOptions): RuntimeConfig =>
+  overrides === undefined
+    ? base
+    : normalizeRuntimeConfig({
+        concurrencyMode: overrides.concurrencyMode ?? base.concurrencyMode,
+        maxConcurrency: overrides.maxConcurrency ?? base.maxConcurrency,
+      });
+
+const cloneRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
+  concurrencyMode: config.concurrencyMode,
+  maxConcurrency: config.maxConcurrency,
+});
+
+export const getRuntimeConfig = (): Readonly<RuntimeConfig> =>
+  Object.freeze(cloneRuntimeConfig(runtimeConfig));
+
+export const configureRuntime = (config: RunOptions): Readonly<RuntimeConfig> => {
+  runtimeConfig = mergeRuntimeConfig(runtimeConfig, config);
+  return getRuntimeConfig();
+};
+
+export const resetRuntimeConfig = (): Readonly<RuntimeConfig> => {
+  runtimeConfig = cloneRuntimeConfig(DEFAULT_RUNTIME_CONFIG);
+  return getRuntimeConfig();
+};
+
+const isRunOptionKey = (key: string): key is keyof RunOptions =>
+  key === "concurrencyMode" || key === "maxConcurrency";
+
+const isRunOptions = (value: unknown): value is RunOptions =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.keys(value).some((key) => isRunOptionKey(key));
+
+type RunArgs<A extends readonly unknown[]> = [...A] | [...A, RunOptions];
+
+const coerceRunArgs = <A extends readonly unknown[]>(args: readonly unknown[]): A => {
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return args as unknown as A;
+};
+
+const coerceNever = <T>(value: T): never => {
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return value as never;
+};
+
+const splitRunArgs = <A extends readonly unknown[]>(
+  args: readonly unknown[],
+): [A, RunOptions | undefined] => {
+  const last = args.at(-1);
+  if (!isRunOptions(last)) {
+    return [coerceRunArgs<A>(args), undefined];
+  }
+  return [coerceRunArgs<A>(args.slice(0, -1)), last];
+};
+
 /**
  * Creates a new typed error class with the given type name and optional default message.
  *
  * Data can be defined as a generic type parameter to the error class.
- * This data is passed to the error constructor and can be accessed via the `data` property.
+ * This data is passed to the error constructor and copied onto the error instance.
  *
- * The "message" and "cause" properties are always allowed to be passed to the constructor
- * and are excluded from the `data` property.
+ * The "message" and "cause" properties are always allowed to be passed to the constructor and are
+ * excluded from the copied fields.
  *
  * Implements the `[Symbol.iterator]` method to allow it to be used in a `yield*` expression.
  *
@@ -164,6 +255,7 @@ export function TypedError<TType extends string>(
     readonly type = type;
 
     constructor(...args: TypedErrorCtorParams<Data>) {
+      // oxlint-disable-next-line typescript/consistent-type-assertions
       const _data = args[0] ?? ({} as Data);
       const { message, cause, ...data } = _data;
       super(message ?? defaultMessage, { cause });
@@ -177,13 +269,14 @@ export function TypedError<TType extends string>(
     }
   };
 }
+
 TypedError.is = (error: unknown): error is TypedError<string> => {
   return error instanceof Error && "type" in error && typeof error.type === "string";
 };
 
 interface Suspended {
   readonly type: "Suspended";
-  readonly suspend: (signal: AbortSignal) => Promise<unknown>;
+  readonly suspend: (signal: AbortSignal, runtime: RuntimeConfig) => Promise<unknown>;
 }
 
 type Instruction<E> = Err<E> | Suspended;
@@ -204,7 +297,7 @@ export interface WithRetry<T, E, A extends readonly unknown[]> {
    * const result = await op.run();
    * if (!result.ok) console.log(result.error);
    */
-  withRetry(strategy?: RetryStrategy): Op<T, E, A>;
+  withRetry(strategy?: RetryStrategy, options?: RunOptions): Op<T, E, A>;
 }
 
 export interface WithTimeout<T, E, A extends readonly unknown[]> {
@@ -212,13 +305,13 @@ export interface WithTimeout<T, E, A extends readonly unknown[]> {
    * Returns an op that fails with {@link TimeoutError} when `run(...args)` or `yield*` exceeds
    * `timeoutMs`.
    */
-  withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
+  withTimeout(timeoutMs: number, options?: RunOptions): Op<T, E | TimeoutError, A>;
 }
 
 export interface WithSignal<T, E, A extends readonly unknown[]> {
   /**
    * Returns an op bound to an external {@link AbortSignal}. When the signal aborts, in-flight
-   * `Op.try` callbacks and combinator children receive the cancellation through their own signal.
+   * work receives the cancellation through its own signal.
    */
   withSignal(signal: AbortSignal): Op<T, E, A>;
 }
@@ -231,13 +324,13 @@ export interface OpBase<T, E> {
 export interface OpNullary<T, E>
   extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []>, WithSignal<T, E, []> {
   (): OpBase<T, E>;
-  run(): Promise<Result<T, E | UnexpectedError>>;
+  run(options?: RunOptions): Promise<Result<T, E | UnexpectedError>>;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>
   extends WithRetry<T, E, A>, WithTimeout<T, E, A>, WithSignal<T, E, A> {
   (...args: A): OpNullary<T, E>;
-  run(...args: A): Promise<Result<T, E | UnexpectedError>>;
+  run(...args: RunArgs<A>): Promise<Result<T, E | UnexpectedError>>;
 }
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
@@ -273,14 +366,21 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     *[Symbol.iterator]() {
       return value;
     },
-    run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (options?: RunOptions) => runOp(coerceNever(self), options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+      withRetryOp(coerceNever(self), strategy, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, options?: RunOptions) =>
+      withTimeoutOp(coerceNever(self), timeoutMs, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal),
     type: "Op",
   };
   const op = () => self;
-  return Object.assign(op, self) as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(Object.assign(op, self));
 };
 
 /**
@@ -309,14 +409,21 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       yield err(value);
       throw new UnreachableError();
     },
-    run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (options?: RunOptions) => runOp(coerceNever(self), options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+      withRetryOp(coerceNever(self), strategy, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, options?: RunOptions) =>
+      withTimeoutOp(coerceNever(self), timeoutMs, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal),
     type: "Op" as const,
   };
   const op = () => self;
-  return Object.assign(op, self) as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(Object.assign(op, self));
 };
 
 /**
@@ -359,6 +466,7 @@ export const _try = <T, E = UnexpectedError>(
             .then(
               (a) => ok(a),
               (cause) => err(onError ? onError(cause) : new UnexpectedError(cause)),
+              // oxlint-disable-next-line typescript/consistent-type-assertions
             ) as Promise<Result<T, E>>,
       };
       if (result.type === "Err") {
@@ -367,22 +475,31 @@ export const _try = <T, E = UnexpectedError>(
       }
       return result.value;
     },
-    run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (options?: RunOptions) => runOp(coerceNever(self), options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+      withRetryOp(coerceNever(self), strategy, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, options?: RunOptions) =>
+      withTimeoutOp(coerceNever(self), timeoutMs, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal),
     type: "Op" as const,
   };
   const op = () => self;
-  return Object.assign(op, self) as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(Object.assign(op, self));
 };
 
 /**
- * Executes a nullary operation and returns a settled {@link Result}.
+ * Drives a nullary operation to completion and returns a {@link Result} (this function does not
+ * throw; failures are `ok: false`).
  *
- * Use this as the low-level runner behind `.run()`. It never throws for operation failures:
- * failures are returned as `ok: false` (with unexpected throws wrapped as
- * {@link UnexpectedError}).
+ * If `op` is a function, it is called once to get the iterable (same as `op()` before iterating).
+ * Each yielded `Err` becomes an error result. Each `Suspended` step awaits `promise` and resumes
+ * the generator. If the iterator throws, or awaiting the suspension promise throws, the result is
+ * `Err` with {@link UnexpectedError}.
  *
  * @template E Error type from yielded `Err` values.
  * @template T Success return type from the generator.
@@ -393,13 +510,27 @@ export const _try = <T, E = UnexpectedError>(
  * const r = await Op.run(Op.of(7));
  * if (r.ok) console.log(r.value);
  */
-export function runOp<E, T>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
-  return drive(op, new AbortController().signal);
+export function runOp<E, T>(
+  op: Op<T, E, readonly []>,
+  options?: RunOptions,
+): Promise<Result<T, E | UnexpectedError>> {
+  const runtime = mergeRuntimeConfig(runtimeConfig, options);
+  return driveWithRuntime(op, new AbortController().signal, runtime);
 }
 
-async function drive<E, T>(
+const driveWithRuntime = <E, T>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
+  runtime: RuntimeConfig,
+): Promise<Result<T, E | UnexpectedError>> =>
+  runtime.concurrencyMode === ConcurrencyMode.Sequential || Number.isFinite(runtime.maxConcurrency)
+    ? driveCompiled(op, signal, runtime)
+    : driveInterpreted(op, signal, runtime);
+
+async function driveInterpreted<E, T>(
+  op: Op<T, E, readonly []>,
+  signal: AbortSignal,
+  runtime: RuntimeConfig,
 ): Promise<Result<T, E | UnexpectedError>> {
   try {
     const ef = typeof op === "function" ? op() : op;
@@ -408,13 +539,40 @@ async function drive<E, T>(
     while (!step.done) {
       try {
         if (step.value.type === "Err") return err(step.value.error);
-        step = iter.next(await step.value.suspend(signal));
+        step = iter.next(await step.value.suspend(signal, runtime));
       } catch (cause) {
         return err(new UnexpectedError(cause));
       }
     }
     const value = await step.value;
     return ok(value);
+  } catch (cause) {
+    return err(new UnexpectedError(cause));
+  }
+}
+
+async function driveCompiled<E, T>(
+  op: Op<T, E, readonly []>,
+  signal: AbortSignal,
+  runtime: RuntimeConfig,
+): Promise<Result<T, E | UnexpectedError>> {
+  try {
+    const ef = typeof op === "function" ? op() : op;
+    const iter = ef[Symbol.iterator]();
+    let input: unknown = undefined;
+    while (true) {
+      const step = input === undefined ? iter.next() : iter.next(input);
+      if (step.done) {
+        const value = await step.value;
+        return ok(value);
+      }
+      try {
+        if (step.value.type === "Err") return err(step.value.error);
+        input = await step.value.suspend(signal, runtime);
+      } catch (cause) {
+        return err(new UnexpectedError(cause));
+      }
+    }
   } catch (cause) {
     return err(new UnexpectedError(cause));
   }
@@ -464,23 +622,37 @@ export const fromGenFn: FromGenFn = (
   const g = (...args: unknown[]) => {
     const inner = {
       [Symbol.iterator]: () => f(...args),
-      run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (options?: RunOptions) => runOp(coerceNever(inner), options),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+        withRetryOp(coerceNever(inner), strategy, options),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number, options?: RunOptions) =>
+        withTimeoutOp(coerceNever(inner), timeoutMs, options),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(inner), signal),
       type: "Op",
     };
     const _op = () => inner;
     return Object.assign(_op, inner);
   };
-  const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
-    run: (...args: unknown[]) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+  const out = Object.assign(g, {
+    run: (...rawArgs: unknown[]) => {
+      const [args, options] = splitRunArgs(rawArgs);
+      return runOp(coerceNever(g(...args)), options);
+    },
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+      withRetryOp(coerceNever(out), strategy, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, options?: RunOptions) =>
+      withTimeoutOp(coerceNever(out), timeoutMs, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(out), signal),
     type: "Op" as const,
-  }) as never;
-  return out;
+  });
+  return coerceNever(out);
 };
 
 /** Retry policy for `op.withRetry(strategy)`. */
@@ -513,80 +685,36 @@ export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
 };
 
 /**
- * Implements `op.withRetry(strategy)`.
+ * Internal engine backing the fluent `op.withRetry(strategy)` API.
  *
  * Attempts begin at 1 and continue while `attempt < strategy.maxAttempts`.
- * After each failure, `strategy.shouldRetry` decides whether to continue.
- * When retrying, `strategy.getDelay(attempt)` controls the wait before the next attempt
- * (negative delays are clamped to 0).
+ * After each failed attempt, `strategy.shouldRetry` decides whether another
+ * attempt is allowed. If retrying is allowed, `strategy.getDelay(attempt)` is
+ * used to compute a wait before the next attempt (negative delays are clamped
+ * to 0).
+ *
+ * On success, the wrapped operation returns the successful value immediately.
+ * On terminal failure (no attempts remaining or non-retryable cause), the
+ * original failure is yielded as `err(cause)`.
  */
 const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
+  options?: RunOptions,
 ): Op<T, E, A> => {
+  const localRuntime = mergeRuntimeConfig(runtimeConfig, options);
+
   if (Symbol.iterator in op) {
     const self = {
       *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
         let attempt = 1;
 
         while (true) {
+          // oxlint-disable-next-line typescript/consistent-type-assertions
           const attemptStep = (yield {
             type: "Suspended",
-            suspend: (signal) =>
-              drive(op, signal).then((r) => ({ result: r, aborted: signal.aborted })),
-          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
-
-          const result = attemptStep.result;
-          if (result.ok) {
-            return result.value;
-          }
-
-          const cause = result.error;
-          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
-          const canRetry =
-            !attemptStep.aborted &&
-            attempt < strategy.maxAttempts &&
-            strategy.shouldRetry(retryCause);
-          if (!canRetry) {
-            yield err(cause);
-            throw new UnreachableError();
-          }
-
-          const delayMs = Math.max(0, strategy.getDelay(attempt));
-          if (delayMs > 0) {
-            const delayAborted = (yield {
-              type: "Suspended",
-              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
-            }) as boolean;
-            if (delayAborted) {
-              yield err(cause);
-              throw new UnreachableError();
-            }
-          }
-
-          attempt += 1;
-        }
-      },
-      run: () => runOp(self as never),
-      withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-      type: "Op" as const,
-    };
-    const _op = () => self;
-    return Object.assign(_op, self) as never;
-  }
-
-  const g = (...args: A) => {
-    const inner = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        let attempt = 1;
-
-        while (true) {
-          const attemptStep = (yield {
-            type: "Suspended",
-            suspend: (signal) =>
-              drive(op(...args), signal).then((r) => ({
+            suspend: (signal, runtime) =>
+              driveWithRuntime(op, signal, mergeRuntimeConfig(runtime, options)).then((r) => ({
                 result: r,
                 aborted: signal.aborted,
               })),
@@ -610,6 +738,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
           const delayMs = Math.max(0, strategy.getDelay(attempt));
           if (delayMs > 0) {
+            // oxlint-disable-next-line typescript/consistent-type-assertions
             const delayAborted = (yield {
               type: "Suspended",
               suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
@@ -623,10 +752,87 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           attempt += 1;
         }
       },
-      run: () => runOp(inner as never),
-      withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(self), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (next?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(self), next, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(coerceNever(self), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (signal: AbortSignal) =>
+        withSignalOp(coerceNever(self), signal, localRuntime),
+      type: "Op" as const,
+    };
+    const _op = () => self;
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    return coerceNever(Object.assign(_op, self));
+  }
+
+  const g = (...args: A) => {
+    const inner = {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
+        let attempt = 1;
+
+        while (true) {
+          // oxlint-disable-next-line typescript/consistent-type-assertions
+          const attemptStep = (yield {
+            type: "Suspended",
+            suspend: (signal, runtime) =>
+              driveWithRuntime(op(...args), signal, mergeRuntimeConfig(runtime, options)).then(
+                (r) => ({
+                  result: r,
+                  aborted: signal.aborted,
+                }),
+              ),
+          }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
+
+          const result = attemptStep.result;
+          if (result.ok) {
+            return result.value;
+          }
+
+          const cause = result.error;
+          const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
+          const canRetry =
+            !attemptStep.aborted &&
+            attempt < strategy.maxAttempts &&
+            strategy.shouldRetry(retryCause);
+          if (!canRetry) {
+            yield err(cause);
+            throw new UnreachableError();
+          }
+
+          const delayMs = Math.max(0, strategy.getDelay(attempt));
+          if (delayMs > 0) {
+            // oxlint-disable-next-line typescript/consistent-type-assertions
+            const delayAborted = (yield {
+              type: "Suspended",
+              suspend: (signal) => abortableDelay(delayMs, signal).then(() => signal.aborted),
+            }) as boolean;
+            if (delayAborted) {
+              yield err(cause);
+              throw new UnreachableError();
+            }
+          }
+
+          attempt += 1;
+        }
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(inner), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (next?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(inner), next, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(coerceNever(inner), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (signal: AbortSignal) =>
+        withSignalOp(coerceNever(inner), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -634,21 +840,32 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
   };
 
   const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    run: (...rawArgs: unknown[]) => {
+      const [args, runOptions] = splitRunArgs<A>(rawArgs);
+      return runOp(coerceNever(g(...args)), mergeRuntimeConfig(localRuntime, runOptions));
+    },
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (next?: RetryStrategy, nextOptions?: RunOptions) =>
+      withRetryOp(coerceNever(out), next, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+      withTimeoutOp(coerceNever(out), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(out), signal, localRuntime),
     type: "Op" as const,
   });
 
-  return out as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(out);
 };
 
 const withTimeoutOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   timeoutMs: number,
+  options?: RunOptions,
 ): Op<T, E | TimeoutError, A> => {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
+  const localRuntime = mergeRuntimeConfig(runtimeConfig, options);
 
   if (Symbol.iterator in op) {
     const self = {
@@ -659,8 +876,12 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       > {
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
-          suspend: (outerSignal) =>
-            raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
+          suspend: (outerSignal, runtime) =>
+            raceTimeout(
+              (signal) => driveWithRuntime(op, signal, mergeRuntimeConfig(runtime, options)),
+              clampedTimeoutMs,
+              outerSignal,
+            ),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -668,14 +889,27 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         }
         return result.value;
       },
-      run: () => runOp(self as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(self), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(self), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (nextTimeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(
+          coerceNever(self),
+          nextTimeoutMs,
+          mergeRuntimeConfig(localRuntime, nextOptions),
+        ),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (signal: AbortSignal) =>
+        withSignalOp(coerceNever(self), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => self;
-    return Object.assign(_op, self) as never;
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    return coerceNever(Object.assign(_op, self));
   }
 
   const g = (...args: A) => {
@@ -687,8 +921,13 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       > {
         const result: Result<T, E | UnexpectedError | TimeoutError> = yield {
           type: "Suspended",
-          suspend: (outerSignal) =>
-            raceTimeout((signal) => drive(op(...args), signal), clampedTimeoutMs, outerSignal),
+          suspend: (outerSignal, runtime) =>
+            raceTimeout(
+              (signal) =>
+                driveWithRuntime(op(...args), signal, mergeRuntimeConfig(runtime, options)),
+              clampedTimeoutMs,
+              outerSignal,
+            ),
         };
         if (!result.ok) {
           yield err(result.error);
@@ -696,10 +935,22 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         }
         return result.value;
       },
-      run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
-      withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(inner), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(inner), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (nextTimeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(
+          coerceNever(inner),
+          nextTimeoutMs,
+          mergeRuntimeConfig(localRuntime, nextOptions),
+        ),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (signal: AbortSignal) =>
+        withSignalOp(coerceNever(inner), signal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -707,14 +958,23 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
   };
 
   const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
-    withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    run: (...rawArgs: unknown[]) => {
+      const [args, runOptions] = splitRunArgs<A>(rawArgs);
+      return runOp(coerceNever(g(...args)), mergeRuntimeConfig(localRuntime, runOptions));
+    },
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+      withRetryOp(coerceNever(out), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (nextTimeoutMs: number, nextOptions?: RunOptions) =>
+      withTimeoutOp(coerceNever(out), nextTimeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(out), signal, localRuntime),
     type: "Op" as const,
   });
 
-  return out as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(out);
 };
 
 const runWithBoundSignal = <T, E>(
@@ -741,39 +1001,19 @@ const runWithBoundSignal = <T, E>(
 const withSignalOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   signal: AbortSignal,
+  options?: RunOptions,
 ): Op<T, E, A> => {
+  const localRuntime = mergeRuntimeConfig(runtimeConfig, options);
+
   if (Symbol.iterator in op) {
     const self = {
       *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
         const result = (yield {
           type: "Suspended" as const,
-          suspend: (outerSignal: AbortSignal) =>
-            runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-        }) as Result<T, E | UnexpectedError>;
-        if (!result.ok) {
-          yield err(result.error);
-          throw new UnreachableError();
-        }
-        return result.value;
-      },
-      run: () => runOp(self as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-      withSignal: (nextSignal: AbortSignal) => withSignalOp(self as never, nextSignal),
-      type: "Op" as const,
-    };
-    const _op = () => self;
-    return Object.assign(_op, self) as never;
-  }
-
-  const g = (...args: A) => {
-    const inner = {
-      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
-        const result = (yield {
-          type: "Suspended" as const,
-          suspend: (outerSignal: AbortSignal) =>
+          suspend: (outerSignal: AbortSignal, runtime: RuntimeConfig) =>
             runWithBoundSignal(
-              (mergedSignal) => drive(op(...args), mergedSignal),
+              (mergedSignal) =>
+                driveWithRuntime(op, mergedSignal, mergeRuntimeConfig(runtime, options)),
               signal,
               outerSignal,
             ),
@@ -784,10 +1024,56 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
         }
         return result.value;
       },
-      run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (nextSignal: AbortSignal) => withSignalOp(inner as never, nextSignal),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(self), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(self), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(coerceNever(self), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (nextSignal: AbortSignal) =>
+        withSignalOp(coerceNever(self), nextSignal, localRuntime),
+      type: "Op" as const,
+    };
+    const _op = () => self;
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    return coerceNever(Object.assign(_op, self));
+  }
+
+  const g = (...args: A) => {
+    const inner = {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
+        const result = (yield {
+          type: "Suspended" as const,
+          suspend: (outerSignal: AbortSignal, runtime: RuntimeConfig) =>
+            runWithBoundSignal(
+              (mergedSignal) =>
+                driveWithRuntime(op(...args), mergedSignal, mergeRuntimeConfig(runtime, options)),
+              signal,
+              outerSignal,
+            ),
+        }) as Result<T, E | UnexpectedError>;
+        if (!result.ok) {
+          yield err(result.error);
+          throw new UnreachableError();
+        }
+        return result.value;
+      },
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      run: (runOptions?: RunOptions) =>
+        runOp(coerceNever(inner), mergeRuntimeConfig(localRuntime, runOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+        withRetryOp(coerceNever(inner), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+        withTimeoutOp(coerceNever(inner), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+      // oxlint-disable-next-line typescript/consistent-type-assertions
+      withSignal: (nextSignal: AbortSignal) =>
+        withSignalOp(coerceNever(inner), nextSignal, localRuntime),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -795,14 +1081,24 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
   };
 
   const out = Object.assign(g, {
-    run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (nextSignal: AbortSignal) => withSignalOp(out as never, nextSignal),
+    run: (...rawArgs: unknown[]) => {
+      const [args, runOptions] = splitRunArgs<A>(rawArgs);
+      return runOp(coerceNever(g(...args)), mergeRuntimeConfig(localRuntime, runOptions));
+    },
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, nextOptions?: RunOptions) =>
+      withRetryOp(coerceNever(out), strategy, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, nextOptions?: RunOptions) =>
+      withTimeoutOp(coerceNever(out), timeoutMs, mergeRuntimeConfig(localRuntime, nextOptions)),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (nextSignal: AbortSignal) =>
+      withSignalOp(coerceNever(out), nextSignal, localRuntime),
     type: "Op" as const,
   });
 
-  return out as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(out);
 };
 
 const raceTimeout = <T, E>(
@@ -850,6 +1146,24 @@ const abortableDelay = (ms: number, signal: AbortSignal): Promise<void> =>
 type NullaryOp = Op<unknown, unknown, readonly []>;
 type SuccessOf<O> = O extends Op<infer T, unknown, readonly []> ? T : never;
 type ErrorOf<O> = O extends Op<unknown, infer E, readonly []> ? E : never;
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
+const getConcurrencyLimit = (runtime: RuntimeConfig): number =>
+  runtime.concurrencyMode === ConcurrencyMode.Sequential ? 1 : runtime.maxConcurrency;
+
+const abortedResult = <T>(reason: unknown): Result<T, UnexpectedError> =>
+  err(new UnexpectedError(reason ?? new DOMException("Aborted", "AbortError")));
 
 /**
  * Runs every op concurrently with an `AbortController` per child, cascading aborts from
@@ -860,40 +1174,92 @@ type ErrorOf<O> = O extends Op<unknown, infer E, readonly []> ? E : never;
 const fanOut = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  runtime: RuntimeConfig,
 ): {
   runs: readonly Promise<Result<T, E | UnexpectedError>>[];
   controllers: readonly AbortController[];
   detach: () => void;
+  stop: (reason?: unknown) => void;
 } => {
-  const entries = ops.map((op) => ({ op, controller: new AbortController() }));
+  const entries = ops.map((op) => ({
+    op,
+    controller: new AbortController(),
+    started: false,
+    deferred: deferred<Result<T, E | UnexpectedError>>(),
+  }));
+  const limit = getConcurrencyLimit(runtime);
+  let nextIndex = 0;
+  let active = 0;
+  let stopped = false;
+
+  const stop = (reason: unknown = outerSignal.reason) => {
+    stopped = true;
+    for (const entry of entries) {
+      if (!entry.started) {
+        entry.started = true;
+        entry.deferred.resolve(abortedResult(reason));
+      }
+    }
+  };
+
   const cascade = () => {
+    stop(outerSignal.reason);
     for (const e of entries) e.controller.abort(outerSignal.reason);
   };
+
+  const schedule = () => {
+    while (active < limit && nextIndex < entries.length) {
+      if (stopped) break;
+      const entry = entries.at(nextIndex);
+      if (entry === undefined) break;
+      nextIndex += 1;
+      entry.started = true;
+      active += 1;
+      driveWithRuntime(entry.op, entry.controller.signal, runtime)
+        .then((result) => {
+          entry.deferred.resolve(result);
+        })
+        .finally(() => {
+          active -= 1;
+          schedule();
+        });
+    }
+  };
+
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
   const detach = () => outerSignal.removeEventListener("abort", cascade);
   const controllers = entries.map((e) => e.controller);
-  const runs = entries.map((e) => drive(e.op, e.controller.signal));
-  return { runs, controllers, detach };
+  const runs = entries.map((e) => e.deferred.promise);
+  schedule();
+  return { runs, controllers, detach, stop };
 };
 
 /**
- * Wraps a generator in the standard fluent `Op` interface (`run`, `withRetry`, `withTimeout`,
- * `withSignal`).
+ * Builds the fluent `Op` object around a generator so it shares the same shape as
+ * {@link succeed} / {@link fail} / {@link _try} — `type: "Op"`, callable, iterable, with
+ * `run` / `withRetry` / `withTimeout` / `withSignal`.
  */
 const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
 ): Op<T, E, readonly []> => {
   const self = {
     [Symbol.iterator]: gen,
-    run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    run: (options?: RunOptions) => runOp(coerceNever(self), options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withRetry: (strategy?: RetryStrategy, options?: RunOptions) =>
+      withRetryOp(coerceNever(self), strategy, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withTimeout: (timeoutMs: number, options?: RunOptions) =>
+      withTimeoutOp(coerceNever(self), timeoutMs, options),
+    // oxlint-disable-next-line typescript/consistent-type-assertions
+    withSignal: (signal: AbortSignal) => withSignalOp(coerceNever(self), signal),
     type: "Op" as const,
   };
   const op = () => self;
-  return Object.assign(op, self) as never;
+  // oxlint-disable-next-line typescript/consistent-type-assertions
+  return coerceNever(Object.assign(op, self));
 };
 
 /**
@@ -911,6 +1277,7 @@ const makeNullaryOp = <T, E>(
  */
 export const allOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  options?: RunOptions,
 ): Op<
   { [K in keyof Ops]: SuccessOf<Ops[K]> },
   ErrorOf<Ops[number]> | UnexpectedError,
@@ -920,14 +1287,17 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   type V = { [K in keyof Ops]: SuccessOf<Ops[K]> };
   type E = ErrorOf<Ops[number]> | UnexpectedError;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveAll(snapshot, outerSignal),
+      suspend: (outerSignal, runtime) =>
+        driveAll(snapshot, outerSignal, mergeRuntimeConfig(runtime, options)),
     }) as Result<unknown[], E>;
     if (!result.ok) {
       yield err(result.error);
       throw new UnreachableError();
     }
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     return result.value as V;
   });
 };
@@ -935,9 +1305,10 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
 const driveAll = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  runtime: RuntimeConfig,
 ): Promise<Result<T[], E | UnexpectedError>> => {
   if (ops.length === 0) return ok([]);
-  const { runs, controllers, detach } = fanOut(ops, outerSignal);
+  const { runs, controllers, detach, stop } = fanOut(ops, outerSignal, runtime);
 
   let firstErr: Err<E | UnexpectedError> | undefined;
 
@@ -945,6 +1316,7 @@ const driveAll = async <T, E>(
     p.then((res) => {
       if (!res.ok && firstErr === undefined) {
         firstErr = res;
+        stop(res.error);
         controllers.forEach((c, j) => {
           if (j !== i) c.abort();
         });
@@ -977,6 +1349,7 @@ const driveAll = async <T, E>(
  */
 export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  options?: RunOptions,
 ): Op<
   { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> },
   never,
@@ -985,9 +1358,11 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   const snapshot = ops.slice();
   type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> };
   return makeNullaryOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     const value = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal),
+      suspend: (outerSignal, runtime) =>
+        driveAllSettled(snapshot, outerSignal, mergeRuntimeConfig(runtime, options)),
     }) as V;
     return value;
   });
@@ -996,9 +1371,10 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
 const driveAllSettled = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  runtime: RuntimeConfig,
 ): Promise<Result<T, E | UnexpectedError>[]> => {
   if (ops.length === 0) return [];
-  const fan = fanOut(ops, outerSignal);
+  const fan = fanOut(ops, outerSignal, runtime);
   const results = await Promise.all(fan.runs);
   fan.detach();
   return results;
@@ -1010,7 +1386,8 @@ const driveAllSettled = async <T, E>(
  * fails with {@link ErrorGroup} whose `errors` array holds each child's failure in
  * input index order.
  *
- * `Op.any([])` fails with an {@link ErrorGroup} containing no child errors.
+ * `Op.any([])` fails with `new ErrorGroup()`, matching `Promise.any`'s
+ * "no candidates" semantics.
  *
  * @example
  * const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
@@ -1018,14 +1395,17 @@ const driveAllSettled = async <T, E>(
  */
 export const anyOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  options?: RunOptions,
 ): Op<SuccessOf<Ops[number]>, ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>, readonly []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
   type E = ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveAny(snapshot, outerSignal),
+      suspend: (outerSignal, runtime) =>
+        driveAny(snapshot, outerSignal, mergeRuntimeConfig(runtime, options)),
     }) as Result<V, E>;
     if (!result.ok) {
       yield err(result.error);
@@ -1038,11 +1418,12 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
 const driveAny = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  runtime: RuntimeConfig,
 ): Promise<Result<T, ErrorGroup<E | UnexpectedError>>> => {
   if (ops.length === 0) {
-    return Promise.resolve(err(new ErrorGroup([], "Op.any requires at least one operation")));
+    return Promise.resolve(err(new ErrorGroup([], "No operations to run")));
   }
-  const fan = fanOut(ops, outerSignal);
+  const fan = fanOut(ops, outerSignal, runtime);
 
   return new Promise<Result<T, ErrorGroup<E | UnexpectedError>>>((resolve) => {
     let winnerDecided = false;
@@ -1051,6 +1432,7 @@ const driveAny = <T, E>(
       p.then((res) => {
         if (!winnerDecided && res.ok) {
           winnerDecided = true;
+          fan.stop();
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
           });
@@ -1066,30 +1448,35 @@ const driveAny = <T, E>(
       fan.detach();
       const errors: (E | UnexpectedError)[] = [];
       for (const r of results) if (!r.ok) errors.push(r.error);
-      resolve(err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
+      resolve(err(new ErrorGroup(errors, "All operations failed")));
     });
   });
 };
 
 /**
  * Runs every op concurrently and propagates whichever child settles first — success or
- * failure. Remaining siblings are aborted after a winner is known.
+ * failure. Remaining siblings are aborted with no library-specific reason (the default
+ * `AbortError` DOMException), so nothing observes a synthetic internal cancellation error
+ * from `@prodkit/op` itself.
  *
- * `Op.race([])` fails fast with an {@link UnexpectedError}.
+ * `Op.race([])` fails fast with `UnexpectedError("No operations to run")`.
  *
  * @example
  * const r = await Op.race([slow(), fast()]).run();
  */
 export const raceOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  options?: RunOptions,
 ): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnexpectedError, readonly []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
   type E = ErrorOf<Ops[number]> | UnexpectedError;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
+    // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveRace(snapshot, outerSignal),
+      suspend: (outerSignal, runtime) =>
+        driveRace(snapshot, outerSignal, mergeRuntimeConfig(runtime, options)),
     }) as Result<V, E>;
     if (!result.ok) {
       yield err(result.error);
@@ -1102,11 +1489,10 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
 const driveRace = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  runtime: RuntimeConfig,
 ): Promise<Result<T, E | UnexpectedError>> => {
-  if (ops.length === 0) {
-    return Promise.resolve(err(new UnexpectedError("Op.race requires at least one operation")));
-  }
-  const { runs, controllers, detach } = fanOut(ops, outerSignal);
+  if (ops.length === 0) return Promise.resolve(err(new UnexpectedError("No operations to run")));
+  const { runs, controllers, detach, stop } = fanOut(ops, outerSignal, runtime);
 
   return new Promise((resolve) => {
     let settled = false;
@@ -1114,6 +1500,7 @@ const driveRace = <T, E>(
       p.then((res) => {
         if (settled) return;
         settled = true;
+        stop(res.ok ? undefined : res.error);
         controllers.forEach((c, j) => {
           if (j !== i) c.abort();
         });

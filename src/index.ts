@@ -12,12 +12,21 @@ import {
   TimeoutError,
   UnexpectedError,
   UnreachableError,
+  ConcurrencyMode,
   TypedError,
+  configureRuntime,
+  getRuntimeConfig,
+  resetRuntimeConfig,
+  type RunOptions,
+  type RuntimeConfig,
   type Op as _Op,
 } from "./lib.js";
 
 export const Op = Object.assign(fromGenFn, {
   type: "OpFactory" as const,
+  configure: configureRuntime,
+  getConfig: getRuntimeConfig,
+  resetConfig: resetRuntimeConfig,
   run: runOp,
   of: succeed,
   fail,
@@ -44,4 +53,13 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export { TypedError, TimeoutError, UnexpectedError, UnreachableError, ErrorGroup };
+export {
+  TypedError,
+  TimeoutError,
+  UnexpectedError,
+  UnreachableError,
+  ErrorGroup,
+  ConcurrencyMode,
+  type RunOptions,
+  type RuntimeConfig,
+};

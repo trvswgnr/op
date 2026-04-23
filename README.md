@@ -62,6 +62,37 @@ if (result.ok) {
 }
 ```
 
+## Runtime configuration
+
+Runtime execution can be tuned globally through `Op.configure(...)` and overridden per call with a
+trailing `.run(...)` options object.
+
+```ts
+import { ConcurrencyMode, Op } from "@prodkit/op";
+
+Op.configure({
+  concurrencyMode: ConcurrencyMode.Parallel,
+  maxConcurrency: 4,
+});
+
+const batch = Op.all([
+  Op.try(() => fetch("https://example.com/a")),
+  Op.try(() => fetch("https://example.com/b")),
+  Op.try(() => fetch("https://example.com/c")),
+]);
+
+const result = await batch.run({ maxConcurrency: 2 });
+```
+
+Available runtime settings:
+
+- `concurrencyMode`: `ConcurrencyMode.Parallel` or `ConcurrencyMode.Sequential`
+- `maxConcurrency`: upper bound used by fan-out combinators such as `Op.all`, `Op.allSettled`,
+  `Op.any`, and `Op.race`
+
+Use `Op.getConfig()` to inspect the current defaults and `Op.resetConfig()` to restore the library
+defaults.
+
 ## Core API
 
 ### `Op(fn)`
@@ -99,6 +130,12 @@ Executes the operation and returns:
 
 ```ts
 type Result<T, E> = { type: "Ok"; ok: true; value: T } | { type: "Err"; ok: false; error: E };
+```
+
+`run` also accepts a trailing runtime options object:
+
+```ts
+const result = await batch.run({ maxConcurrency: 2 });
 ```
 
 ### `.withRetry(strategy?)`
@@ -187,7 +224,7 @@ Run multiple ops concurrently and compose them back into one `Op`.
 When a result is decided early (`all` after a failure, `any` after a success, `race` on first
 settle), remaining work is cancelled through `AbortSignal`.
 
-### `Op.all(ops)`
+### `Op.all(ops, options?)`
 
 Runs every op concurrently and succeeds with a tuple of their success values. Fails fast
 on the first failure; in-flight siblings receive an abort and the combinator waits for
@@ -200,7 +237,13 @@ if (r.ok) {
 }
 ```
 
-### `Op.allSettled(ops)`
+The optional `options` argument can override runtime concurrency for just that combinator:
+
+```ts
+const r = await Op.all([Op.of(1), Op.of(2), Op.of(3)], { maxConcurrency: 1 }).run();
+```
+
+### `Op.allSettled(ops, options?)`
 
 Waits for every op and returns a tuple of their `Result`s in input order. Never fails and
 never aborts siblings.
@@ -212,7 +255,7 @@ if (r.ok) {
 }
 ```
 
-### `Op.any(ops)`
+### `Op.any(ops, options?)`
 
 Succeeds with the first op to succeed; remaining siblings are aborted. If every op fails,
 the combinator fails with `ErrorGroup` whose `errors` array holds each child failure
@@ -226,7 +269,7 @@ if (r.ok) console.log(r.value); // 42
 if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
 ```
 
-### `Op.race(ops)`
+### `Op.race(ops, options?)`
 
 Propagates whichever op settles first — success or failure. Remaining siblings are
 aborted with no library-specific reason. `Op.race([])` fails fast with

@@ -1,6 +1,7 @@
 import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
 import {
   Op,
+  ConcurrencyMode,
   TimeoutError,
   UnexpectedError,
   TypedError,
@@ -19,6 +20,11 @@ describe("public API (index)", () => {
     });
     test("pure is a function", () => {
       expect(Op.of).toBeInstanceOf(Function);
+    });
+    test("config helpers are exposed", () => {
+      expect(Op.configure).toBeInstanceOf(Function);
+      expect(Op.getConfig).toBeInstanceOf(Function);
+      expect(Op.resetConfig).toBeInstanceOf(Function);
     });
   });
   describe("UnexpectedError", () => {
@@ -351,6 +357,50 @@ describe("public API (index)", () => {
       const r2 = await Op.run(nullary);
       assert(r2.ok === true, "r2.ok");
       expect(r2.value).toBe(1);
+    });
+
+    test("accepts runtime overrides as the trailing argument", async () => {
+      let active = 0;
+      let maxActive = 0;
+      const makeChild = (value: number, ms: number) =>
+        Op.try(
+          () =>
+            new Promise<number>((resolve) => {
+              active += 1;
+              maxActive = Math.max(maxActive, active);
+              setTimeout(() => {
+                active -= 1;
+                resolve(value);
+              }, ms);
+            }),
+        );
+
+      const combined = Op.all([makeChild(1, 10), makeChild(2, 5), makeChild(3, 1)]);
+      const result = await combined.run({ maxConcurrency: 1 });
+
+      assert(result.ok === true, "result.ok");
+      expect(result.value).toEqual([1, 2, 3]);
+      expect(maxActive).toBe(1);
+    });
+  });
+
+  describe("runtime config", () => {
+    test("configure/get/reset round-trip", () => {
+      const initial = Op.getConfig();
+      expect(initial.concurrencyMode).toBe(ConcurrencyMode.Parallel);
+      expect(initial.maxConcurrency).toBe(Number.POSITIVE_INFINITY);
+
+      const updated = Op.configure({
+        concurrencyMode: ConcurrencyMode.Sequential,
+        maxConcurrency: 2,
+      });
+      expect(updated.concurrencyMode).toBe(ConcurrencyMode.Sequential);
+      expect(updated.maxConcurrency).toBe(2);
+      expect(Op.getConfig()).toEqual(updated);
+
+      const reset = Op.resetConfig();
+      expect(reset.concurrencyMode).toBe(ConcurrencyMode.Parallel);
+      expect(reset.maxConcurrency).toBe(Number.POSITIVE_INFINITY);
     });
   });
 
