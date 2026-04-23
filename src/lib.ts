@@ -215,18 +215,30 @@ export interface WithTimeout<T, E, A extends readonly unknown[]> {
   withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
 }
 
+export interface WithSignal<T, E, A extends readonly unknown[]> {
+  /**
+   * Returns an op bound to an external {@link AbortSignal}. When the signal aborts, in-flight
+   * `Op.try` callbacks and combinator children receive the cancellation through their own signal.
+   */
+  withSignal(signal: AbortSignal): Op<T, E, A>;
+}
+
 export interface OpBase<T, E> {
   type: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
-export interface OpNullary<T, E> extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []> {
+export interface OpNullary<T, E>
+  extends OpBase<T, E>,
+    WithRetry<T, E, []>,
+    WithTimeout<T, E, []>,
+    WithSignal<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnexpectedError>>;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>
-  extends WithRetry<T, E, A>, WithTimeout<T, E, A> {
+  extends WithRetry<T, E, A>, WithTimeout<T, E, A>, WithSignal<T, E, A> {
   (...args: A): OpNullary<T, E>;
   run(...args: A): Promise<Result<T, E | UnexpectedError>>;
 }
@@ -267,6 +279,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     run: () => runOp(self as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op",
   };
   const op = () => self;
@@ -302,6 +315,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
     run: () => runOp(self as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,
   };
   const op = () => self;
@@ -359,6 +373,7 @@ export const _try = <T, E = UnexpectedError>(
     run: () => runOp(self as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,
   };
   const op = () => self;
@@ -366,13 +381,11 @@ export const _try = <T, E = UnexpectedError>(
 };
 
 /**
- * Drives a nullary operation to completion and returns a {@link Result} (this function does not
- * throw; failures are `ok: false`).
+ * Executes a nullary operation and returns a settled {@link Result}.
  *
- * If `op` is a function, it is called once to get the iterable (same as `op()` before iterating).
- * Each yielded `Err` becomes an error result. Each `Suspended` step awaits `promise` and resumes
- * the generator. If the iterator throws, or awaiting the suspension promise throws, the result is
- * `Err` with {@link UnexpectedError}.
+ * Use this as the low-level runner behind `.run()`. It never throws for operation failures:
+ * failures are returned as `ok: false` (with unexpected throws wrapped as
+ * {@link UnexpectedError}).
  *
  * @template E Error type from yielded `Err` values.
  * @template T Success return type from the generator.
@@ -457,6 +470,7 @@ export const fromGenFn: FromGenFn = (
       run: () => runOp(inner as never),
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op",
     };
     const _op = () => inner;
@@ -466,6 +480,7 @@ export const fromGenFn: FromGenFn = (
     run: (...args: unknown[]) => runOp(g(...args) as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
     type: "Op" as const,
   }) as never;
   return out;
@@ -501,17 +516,12 @@ export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
 };
 
 /**
- * Internal engine backing the fluent `op.withRetry(strategy)` API.
+ * Implements `op.withRetry(strategy)`.
  *
  * Attempts begin at 1 and continue while `attempt < strategy.maxAttempts`.
- * After each failed attempt, `strategy.shouldRetry` decides whether another
- * attempt is allowed. If retrying is allowed, `strategy.getDelay(attempt)` is
- * used to compute a wait before the next attempt (negative delays are clamped
- * to 0).
- *
- * On success, the wrapped operation returns the successful value immediately.
- * On terminal failure (no attempts remaining or non-retryable cause), the
- * original failure is yielded as `err(cause)`.
+ * After each failure, `strategy.shouldRetry` decides whether to continue.
+ * When retrying, `strategy.getDelay(attempt)` controls the wait before the next attempt
+ * (negative delays are clamped to 0).
  */
 const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
@@ -563,6 +573,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(self as never),
       withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
       withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -618,6 +629,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(inner as never),
       withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -628,6 +640,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
     run: (...args: A) => runOp(g(...args) as never),
     withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
     type: "Op" as const,
   });
 
@@ -661,6 +674,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(self as never),
       withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
       type: "Op" as const,
     };
     const _op = () => self;
@@ -688,6 +702,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
       run: () => runOp(inner as never),
       withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op" as const,
     };
     const _op = () => inner;
@@ -698,6 +713,91 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
     run: (...args: A) => runOp(g(...args) as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
     withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    type: "Op" as const,
+  });
+
+  return out as never;
+};
+
+const runWithBoundSignal = <T, E>(
+  run: (signal: AbortSignal) => Promise<Result<T, E>>,
+  boundSignal: AbortSignal,
+  outerSignal: AbortSignal,
+): Promise<Result<T, E>> => {
+  const controller = new AbortController();
+  const forwardBoundAbort = () => controller.abort(boundSignal.reason);
+  const forwardOuterAbort = () => controller.abort(outerSignal.reason);
+
+  if (boundSignal.aborted) forwardBoundAbort();
+  else boundSignal.addEventListener("abort", forwardBoundAbort, { once: true });
+
+  if (outerSignal.aborted) forwardOuterAbort();
+  else outerSignal.addEventListener("abort", forwardOuterAbort, { once: true });
+
+  return run(controller.signal).finally(() => {
+    boundSignal.removeEventListener("abort", forwardBoundAbort);
+    outerSignal.removeEventListener("abort", forwardOuterAbort);
+  });
+};
+
+const withSignalOp = <T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  signal: AbortSignal,
+): Op<T, E, A> => {
+  if (Symbol.iterator in op) {
+    const self = {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
+        const result = (yield {
+          type: "Suspended" as const,
+          suspend: (outerSignal: AbortSignal) =>
+            runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
+        }) as Result<T, E | UnexpectedError>;
+        if (!result.ok) {
+          yield err(result.error);
+          throw new UnreachableError();
+        }
+        return result.value;
+      },
+      run: () => runOp(self as never),
+      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+      withSignal: (nextSignal: AbortSignal) => withSignalOp(self as never, nextSignal),
+      type: "Op" as const,
+    };
+    const _op = () => self;
+    return Object.assign(_op, self) as never;
+  }
+
+  const g = (...args: A) => {
+    const inner = {
+      *[Symbol.iterator](): Generator<Instruction<E | UnexpectedError>, T, unknown> {
+        const result = (yield {
+          type: "Suspended" as const,
+          suspend: (outerSignal: AbortSignal) =>
+            runWithBoundSignal((mergedSignal) => drive(op(...args), mergedSignal), signal, outerSignal),
+        }) as Result<T, E | UnexpectedError>;
+        if (!result.ok) {
+          yield err(result.error);
+          throw new UnreachableError();
+        }
+        return result.value;
+      },
+      run: () => runOp(inner as never),
+      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
+      withSignal: (nextSignal: AbortSignal) => withSignalOp(inner as never, nextSignal),
+      type: "Op" as const,
+    };
+    const _op = () => inner;
+    return Object.assign(_op, inner);
+  };
+
+  const out = Object.assign(g, {
+    run: (...args: A) => runOp(g(...args) as never),
+    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
+    withSignal: (nextSignal: AbortSignal) => withSignalOp(out as never, nextSignal),
     type: "Op" as const,
   });
 
@@ -777,9 +877,8 @@ const fanOut = <T, E>(
 };
 
 /**
- * Builds the fluent `Op` object around a generator so it shares the same shape as
- * {@link succeed} / {@link fail} / {@link _try} — `type: "Op"`, callable, iterable, with
- * `run` / `withRetry` / `withTimeout`.
+ * Wraps a generator in the standard fluent `Op` interface (`run`, `withRetry`, `withTimeout`,
+ * `withSignal`).
  */
 const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
@@ -789,6 +888,7 @@ const makeNullaryOp = <T, E>(
     run: () => runOp(self as never),
     withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,
   };
   const op = () => self;
@@ -909,8 +1009,7 @@ const driveAllSettled = async <T, E>(
  * fails with {@link ErrorGroup} whose `errors` array holds each child's failure in
  * input index order.
  *
- * `Op.any([])` fails with `new ErrorGroup()`, matching `Promise.any`'s
- * "no candidates" semantics.
+ * `Op.any([])` fails with an {@link ErrorGroup} containing no child errors.
  *
  * @example
  * const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
@@ -940,7 +1039,7 @@ const driveAny = <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T, ErrorGroup<E | UnexpectedError>>> => {
   if (ops.length === 0) {
-    return Promise.resolve(err(new ErrorGroup([], "No operations to run")));
+    return Promise.resolve(err(new ErrorGroup([], "Op.any requires at least one operation")));
   }
   const fan = fanOut(ops, outerSignal);
 
@@ -966,18 +1065,16 @@ const driveAny = <T, E>(
       fan.detach();
       const errors: (E | UnexpectedError)[] = [];
       for (const r of results) if (!r.ok) errors.push(r.error);
-      resolve(err(new ErrorGroup(errors, "All operations failed")));
+      resolve(err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
     });
   });
 };
 
 /**
  * Runs every op concurrently and propagates whichever child settles first — success or
- * failure. Remaining siblings are aborted with no library-specific reason (the default
- * `AbortError` DOMException), so nothing observes a synthetic internal cancellation error
- * from `@prodkit/op` itself.
+ * failure. Remaining siblings are aborted after a winner is known.
  *
- * `Op.race([])` fails fast with `UnexpectedError("No operations to run")`.
+ * `Op.race([])` fails fast with an {@link UnexpectedError}.
  *
  * @example
  * const r = await Op.race([slow(), fast()]).run();
@@ -1005,7 +1102,9 @@ const driveRace = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>> => {
-  if (ops.length === 0) return Promise.resolve(err(new UnexpectedError("No operations to run")));
+  if (ops.length === 0) {
+    return Promise.resolve(err(new UnexpectedError("Op.race requires at least one operation")));
+  }
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
   return new Promise((resolve) => {

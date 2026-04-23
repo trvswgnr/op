@@ -29,11 +29,11 @@ export const sqrt = Op(function* (n: number) {
   return Math.sqrt(n);
 });
 
-// Errors compose automatically through yield*
+// Compose domain operations with typed failures.
 // TypeScript infers: Op<number, DivisionByZeroError | NegativeError, []>
 export const mathComposeProgram = Op(function* () {
-  const quotient = yield* divide(10, 3); // unwraps or short-circuits
-  const rooted = yield* sqrt(quotient - 4); // same - different error type
+  const quotient = yield* divide(10, 3); // use value or return early on failure
+  const rooted = yield* sqrt(quotient - 4);
   return rooted * 2;
 });
 
@@ -115,7 +115,7 @@ export const fetchData = Op(function* (url: string) {
   return parsedBody;
 });
 
-// Errors accumulate through the union automatically
+// Error unions stay explicit as the workflow grows.
 export const userProgram = Op(function* (id: string) {
   const userPayload = yield* fetchData(`/api/users/${id}`);
   const user = yield* parseUser(userPayload);
