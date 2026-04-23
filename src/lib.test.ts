@@ -9,7 +9,7 @@ import {
   TimeoutError,
   UnexpectedError,
   TypedError,
-  RetryStrategy,
+  RetryPolicy,
 } from "./lib.js";
 
 describe("UnexpectedError", () => {
@@ -372,7 +372,7 @@ describe("withRetry", () => {
     };
   };
 
-  const retryFetchError: RetryStrategy = {
+  const retryFetchError: RetryPolicy = {
     maxAttempts: 3,
     shouldRetry: (cause) => cause instanceof FetchError,
     getDelay: () => 0,
@@ -380,11 +380,11 @@ describe("withRetry", () => {
 
   const createFetchProgram = (
     fetcher: (url: string) => Promise<{ url: string }>,
-    strategy?: RetryStrategy,
+    policy?: RetryPolicy,
   ) =>
     fromGenFn(function* (id: string) {
       return yield* _try(() => fetcher(`https://example.com/${id}`));
-    }).withRetry(strategy);
+    }).withRetry(policy);
 
   test("retries on failure with default options", async () => {
     const fetcher = vi.fn(createFetcher());
@@ -398,12 +398,12 @@ describe("withRetry", () => {
 
   test("retries until success with custom retry predicate and delay", async () => {
     const fetcher = vi.fn(createFetcher());
-    const strategy: RetryStrategy = {
+    const policy: RetryPolicy = {
       maxAttempts: 3,
       shouldRetry: (cause) => cause instanceof FetchError,
       getDelay: (attempt) => attempt * 100,
     };
-    const program = createFetchProgram(fetcher, strategy);
+    const program = createFetchProgram(fetcher, policy);
 
     const result = await program.run("123");
     assert(result.ok === true, "result.ok should be true");
@@ -428,13 +428,13 @@ describe("withRetry", () => {
       throw new FetchError("retry denied");
     });
 
-    const strategy: RetryStrategy = {
+    const policy: RetryPolicy = {
       maxAttempts: 5,
       shouldRetry: () => false,
       getDelay: () => 0,
     };
 
-    const program = createFetchProgram(fetcher, strategy);
+    const program = createFetchProgram(fetcher, policy);
 
     const result = await program.run("123");
     assert(result.ok === false, "result.ok should be false");
@@ -446,12 +446,12 @@ describe("withRetry", () => {
     vi.useFakeTimers();
     try {
       const fetcher = vi.fn(createFetcher());
-      const strategy: RetryStrategy = {
+      const policy: RetryPolicy = {
         maxAttempts: 2,
         shouldRetry: () => true,
         getDelay: () => 100,
       };
-      const program = createFetchProgram(fetcher, strategy);
+      const program = createFetchProgram(fetcher, policy);
 
       const runPromise = program.run("123");
 

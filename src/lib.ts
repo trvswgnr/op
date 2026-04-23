@@ -204,7 +204,7 @@ export interface WithRetry<T, E, A extends readonly unknown[]> {
    * const result = await op.run();
    * if (!result.ok) console.log(result.error);
    */
-  withRetry(strategy?: RetryStrategy): Op<T, E, A>;
+  withRetry(policy?: RetryPolicy): Op<T, E, A>;
 }
 
 export interface WithTimeout<T, E, A extends readonly unknown[]> {
@@ -274,7 +274,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       return value;
     },
     run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op",
@@ -310,7 +310,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       throw new UnreachableError();
     },
     run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,
@@ -368,7 +368,7 @@ export const _try = <T, E = UnexpectedError>(
       return result.value;
     },
     run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,
@@ -465,7 +465,7 @@ export const fromGenFn: FromGenFn = (
     const inner = {
       [Symbol.iterator]: () => f(...args),
       run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op",
@@ -475,7 +475,7 @@ export const fromGenFn: FromGenFn = (
   };
   const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
     run: (...args: unknown[]) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
     type: "Op" as const,
@@ -483,8 +483,8 @@ export const fromGenFn: FromGenFn = (
   return out;
 };
 
-/** Retry policy for `op.withRetry(strategy)`. */
-export interface RetryStrategy {
+/** Retry policy for `op.withRetry(policy)`. */
+export interface RetryPolicy {
   /** Total tries, including the first attempt. */
   maxAttempts: number;
   /** Whether to retry after a failure (receives the root cause). */
@@ -506,23 +506,23 @@ export function exponentialBackoff(opts?: {
   };
 }
 
-export const DEFAULT_RETRY_STRATEGY: RetryStrategy = {
+export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxAttempts: 3,
   shouldRetry: () => true,
   getDelay: exponentialBackoff(),
 };
 
 /**
- * Implements `op.withRetry(strategy)`.
+ * Implements `op.withRetry(policy)`.
  *
- * Attempts begin at 1 and continue while `attempt < strategy.maxAttempts`.
- * After each failure, `strategy.shouldRetry` decides whether to continue.
- * When retrying, `strategy.getDelay(attempt)` controls the wait before the next attempt
+ * Attempts begin at 1 and continue while `attempt < policy.maxAttempts`.
+ * After each failure, `policy.shouldRetry` decides whether to continue.
+ * When retrying, `policy.getDelay(attempt)` controls the wait before the next attempt
  * (negative delays are clamped to 0).
  */
 const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
-  strategy: RetryStrategy = DEFAULT_RETRY_STRATEGY,
+  policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, A> => {
   if (Symbol.iterator in op) {
     const self = {
@@ -544,15 +544,13 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const cause = result.error;
           const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
           const canRetry =
-            !attemptStep.aborted &&
-            attempt < strategy.maxAttempts &&
-            strategy.shouldRetry(retryCause);
+            !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw new UnreachableError();
           }
 
-          const delayMs = Math.max(0, strategy.getDelay(attempt));
+          const delayMs = Math.max(0, policy.getDelay(attempt));
           if (delayMs > 0) {
             const delayAborted = (yield {
               type: "Suspended",
@@ -568,7 +566,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         }
       },
       run: () => runOp(self as never),
-      withRetry: (next?: RetryStrategy) => withRetryOp(self as never, next),
+      withRetry: (next?: RetryPolicy) => withRetryOp(self as never, next),
       withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
       type: "Op" as const,
@@ -600,15 +598,13 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
           const cause = result.error;
           const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
           const canRetry =
-            !attemptStep.aborted &&
-            attempt < strategy.maxAttempts &&
-            strategy.shouldRetry(retryCause);
+            !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
           if (!canRetry) {
             yield err(cause);
             throw new UnreachableError();
           }
 
-          const delayMs = Math.max(0, strategy.getDelay(attempt));
+          const delayMs = Math.max(0, policy.getDelay(attempt));
           if (delayMs > 0) {
             const delayAborted = (yield {
               type: "Suspended",
@@ -624,7 +620,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
         }
       },
       run: () => runOp(inner as never),
-      withRetry: (next?: RetryStrategy) => withRetryOp(inner as never, next),
+      withRetry: (next?: RetryPolicy) => withRetryOp(inner as never, next),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op" as const,
@@ -635,7 +631,7 @@ const withRetryOp = <T, E, A extends readonly unknown[]>(
 
   const out = Object.assign(g, {
     run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (next?: RetryStrategy) => withRetryOp(out as never, next),
+    withRetry: (next?: RetryPolicy) => withRetryOp(out as never, next),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
     type: "Op" as const,
@@ -669,7 +665,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       run: () => runOp(self as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(self as never, nextTimeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
       type: "Op" as const,
@@ -697,7 +693,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
       withTimeout: (nextTimeoutMs: number) => withTimeoutOp(inner as never, nextTimeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
       type: "Op" as const,
@@ -708,7 +704,7 @@ const withTimeoutOp = <T, E, A extends readonly unknown[]>(
 
   const out = Object.assign(g, {
     run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (nextTimeoutMs: number) => withTimeoutOp(out as never, nextTimeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
     type: "Op" as const,
@@ -757,7 +753,7 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       run: () => runOp(self as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
       withSignal: (nextSignal: AbortSignal) => withSignalOp(self as never, nextSignal),
       type: "Op" as const,
@@ -785,7 +781,7 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
         return result.value;
       },
       run: () => runOp(inner as never),
-      withRetry: (strategy?: RetryStrategy) => withRetryOp(inner as never, strategy),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       withSignal: (nextSignal: AbortSignal) => withSignalOp(inner as never, nextSignal),
       type: "Op" as const,
@@ -796,7 +792,7 @@ const withSignalOp = <T, E, A extends readonly unknown[]>(
 
   const out = Object.assign(g, {
     run: (...args: A) => runOp(g(...args) as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(out as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (nextSignal: AbortSignal) => withSignalOp(out as never, nextSignal),
     type: "Op" as const,
@@ -887,7 +883,7 @@ const makeNullaryOp = <T, E>(
   const self = {
     [Symbol.iterator]: gen,
     run: () => runOp(self as never),
-    withRetry: (strategy?: RetryStrategy) => withRetryOp(self as never, strategy),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
     type: "Op" as const,

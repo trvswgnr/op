@@ -101,19 +101,19 @@ Executes the operation and returns:
 type Result<T, E> = { type: "Ok"; ok: true; value: T } | { type: "Err"; ok: false; error: E };
 ```
 
-### `.withRetry(strategy?)`
+### `.withRetry(policy?)`
 
 Wraps an operation with retries.
 Useful for transient IO failures while preserving typed control flow.
 
 ```ts
-const strategy = {
+const policy = {
   maxAttempts: 3,
   shouldRetry: (cause: unknown) => cause instanceof Error,
   getDelay: (attempt: number) => attempt * 100,
 };
 
-const fetchWithRetry = Op.try(() => fetch("https://example.com")).withRetry(strategy);
+const fetchWithRetry = Op.try(() => fetch("https://example.com")).withRetry(policy);
 ```
 
 ### `.withTimeout(timeoutMs)`
@@ -126,13 +126,13 @@ Composition order determines semantics:
 ```ts
 // timeout applies to the ENTIRE retried run
 const totalBudget = Op.try(() => fetch("https://example.com"))
-  .withRetry(strategy)
+  .withRetry(policy)
   .withTimeout(5000);
 
 // timeout applies to EACH attempt
 const perAttempt = Op.try(() => fetch("https://example.com"))
   .withTimeout(5000)
-  .withRetry(strategy);
+  .withRetry(policy);
 ```
 
 ### `.withSignal(signal)`
@@ -173,7 +173,7 @@ const validate = Op(function* (name: string) {
 
 ## Retry defaults
 
-`withRetry()` with no strategy uses:
+`withRetry()` with no policy uses:
 
 - `maxAttempts: 3`
 - `shouldRetry: () => true`
