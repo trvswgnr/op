@@ -4,6 +4,11 @@ import {
   _try,
   fromGenFn,
   runOp,
+  allOp,
+  allSettledOp,
+  anyOp,
+  raceOp,
+  AllFailedError,
   TimeoutError,
   UnexpectedError,
   UnreachableError,
@@ -17,6 +22,10 @@ export const Op = Object.assign(fromGenFn, {
   of: succeed,
   fail,
   try: _try,
+  all: allOp,
+  allSettled: allSettledOp,
+  any: anyOp,
+  race: raceOp,
   get empty(): Op<void, never, readonly []> {
     return succeed(undefined);
   },
@@ -36,4 +45,4 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export { TypedError, TimeoutError, UnexpectedError, UnreachableError };
+export { TypedError, TimeoutError, UnexpectedError, UnreachableError, AllFailedError };
