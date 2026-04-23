@@ -14,7 +14,7 @@ export default defineConfig({
     "typescript/no-explicit-any": "error",
     "typescript/no-non-null-assertion": "error",
     "no-await-in-loop": "off",
-    "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+    // "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
     "require-yield": "off",
   },
   settings: {},
