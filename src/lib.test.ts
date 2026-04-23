@@ -14,23 +14,23 @@ import {
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
-    const err = new UnexpectedError({ cause: "test" });
+    const err = new UnexpectedError("test");
     expect(err.message).toBe("An unexpected error occurred");
   });
 
   test("accepts and preserves cause in constructor options", () => {
     const cause = new Error("original");
-    const err = new UnexpectedError({ cause });
+    const err = new UnexpectedError(cause);
     expect(err.cause).toBe(cause);
   });
 
   test("type discriminant is 'UnexpectedError'", () => {
-    const err = new UnexpectedError({ cause: null });
+    const err = new UnexpectedError(null);
     expect(err.type).toBe("UnexpectedError");
   });
 
   test("instanceof Error and UnexpectedError", () => {
-    const err = new UnexpectedError({ cause: "x" });
+    const err = new UnexpectedError("x");
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(UnexpectedError);
   });

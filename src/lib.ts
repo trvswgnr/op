@@ -11,7 +11,7 @@ export interface Typed<TypeName extends string> {
  * @param cause The underlying reason for the error (often the value a promise rejected with).
  *
  * @example
- * const e = new UnexpectedError({ cause: original });
+ * const e = new UnexpectedError(cause, "something went wrong");
  *
  * @example
  * const result = await Op.try(() => Promise.reject("oops")).run();
@@ -21,8 +21,8 @@ export interface Typed<TypeName extends string> {
  */
 export class UnexpectedError extends Error implements Typed<"UnexpectedError"> {
   readonly type = "UnexpectedError";
-  constructor({ cause }: { cause: unknown }) {
-    super("An unexpected error occurred", { cause });
+  constructor(cause: unknown, message?: string) {
+    super(message ?? "An unexpected error occurred", { cause });
   }
 }
 
@@ -32,21 +32,6 @@ export class TimeoutError extends Error implements Typed<"TimeoutError"> {
   constructor({ timeoutMs }: { timeoutMs: number }) {
     super(`Operation timed out after ${timeoutMs}ms`);
     this.timeoutMs = timeoutMs;
-  }
-}
-
-/**
- * Failure surfaced by {@link anyOp} when every input operation fails.
- *
- * `errors` preserves the input index order, so `errors[i]` is the failure produced by the
- * operation at position `i` in the array passed to `Op.any`.
- */
-export class AllFailedError<E> extends Error implements Typed<"AllFailedError"> {
-  readonly type = "AllFailedError";
-  readonly errors: readonly E[];
-  constructor({ errors }: { errors: readonly E[] }) {
-    super(`All ${errors.length} operation(s) failed`);
-    this.errors = errors;
   }
 }
 
@@ -90,6 +75,27 @@ export interface TypedErrorConstructor<TypeName extends string> {
     data: Data & { message?: string | undefined; cause?: unknown },
   ): TypedError<TypeName, Data>;
 }
+
+interface ErrorGroupConstructor {
+  new <E>(errors: Iterable<E>, message: string): ErrorGroup<E>;
+  readonly prototype: ErrorGroup<unknown>;
+}
+
+export interface ErrorGroup<E> extends AggregateError, Typed<"ErrorGroup"> {
+  readonly errors: E[];
+}
+
+export const ErrorGroup: ErrorGroupConstructor = class<E>
+  extends AggregateError
+  implements Typed<"ErrorGroup">
+{
+  readonly type = "ErrorGroup";
+  override readonly errors: E[];
+  constructor(errors: Iterable<E>, message: string) {
+    super(errors, message);
+    this.errors = Array.from(errors);
+  }
+};
 
 interface Ok<T> extends Typed<"Ok"> {
   readonly ok: true;
@@ -286,7 +292,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
  *
  * @example
  * const op = Op(function* () {
- *   yield* Op.fail(new Error("abort"));
+ *   yield* Op.fail(new CustomError("failed"));
  *   return 1;
  * });
  */
@@ -348,7 +354,7 @@ export const _try = <T, E = UnexpectedError>(
             .then(() => f(signal))
             .then(
               (a) => ok(a),
-              (e) => err(onError ? onError(e) : new UnexpectedError({ cause: e })),
+              (cause) => err(onError ? onError(cause) : new UnexpectedError(cause)),
               // oxlint-disable-next-line typescript/consistent-type-assertions
             ) as Promise<Result<T, E>>,
       };
@@ -406,13 +412,13 @@ async function drive<E, T>(
         if (step.value.type === "Err") return err(step.value.error);
         step = iter.next(await step.value.suspend(signal));
       } catch (cause) {
-        return err(new UnexpectedError({ cause }));
+        return err(new UnexpectedError(cause));
       }
     }
     const value = await step.value;
     return ok(value);
   } catch (cause) {
-    return err(new UnexpectedError({ cause }));
+    return err(new UnexpectedError(cause));
   }
 }
 
@@ -788,7 +794,6 @@ const abortableDelay = (ms: number, signal: AbortSignal): Promise<void> =>
 type NullaryOp = Op<unknown, unknown, readonly []>;
 type SuccessOf<O> = O extends Op<infer T, unknown, readonly []> ? T : never;
 type ErrorOf<O> = O extends Op<unknown, infer E, readonly []> ? E : never;
-type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 /**
  * Runs every op concurrently with an `AbortController` per child, cascading aborts from
@@ -855,12 +860,12 @@ const makeNullaryOp = <T, E>(
 export const allOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
 ): Op<
-  Mutable<{ [K in keyof Ops]: SuccessOf<Ops[K]> }>,
+  { [K in keyof Ops]: SuccessOf<Ops[K]> },
   ErrorOf<Ops[number]> | UnexpectedError,
   readonly []
 > => {
   const snapshot = ops.slice();
-  type V = Mutable<{ [K in keyof Ops]: SuccessOf<Ops[K]> }>;
+  type V = { [K in keyof Ops]: SuccessOf<Ops[K]> };
   type E = ErrorOf<Ops[number]> | UnexpectedError;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
     // oxlint-disable-next-line typescript/consistent-type-assertions
@@ -923,14 +928,12 @@ const driveAll = async <T, E>(
 export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
 ): Op<
-  Mutable<{ [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> }>,
+  { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> },
   never,
   readonly []
 > => {
   const snapshot = ops.slice();
-  type V = Mutable<{
-    [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError>;
-  }>;
+  type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> };
   return makeNullaryOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
     // oxlint-disable-next-line typescript/consistent-type-assertions
     const value = (yield {
@@ -946,19 +949,19 @@ const driveAllSettled = async <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>[]> => {
   if (ops.length === 0) return [];
-  const { runs, detach } = fanOut(ops, outerSignal);
-  const results = await Promise.all(runs);
-  detach();
+  const fan = fanOut(ops, outerSignal);
+  const results = await Promise.all(fan.runs);
+  fan.detach();
   return results;
 };
 
 /**
  * Runs every op concurrently and succeeds with the first child to succeed. Remaining
  * siblings are aborted as soon as a winner is known. If every child fails, the combinator
- * fails with {@link AllFailedError} whose `errors` array holds each child's failure in
+ * fails with {@link ErrorGroup} whose `errors` array holds each child's failure in
  * input index order.
  *
- * `Op.any([])` fails with `new AllFailedError({ errors: [] })`, matching `Promise.any`'s
+ * `Op.any([])` fails with `new ErrorGroup()`, matching `Promise.any`'s
  * "no candidates" semantics.
  *
  * @example
@@ -967,14 +970,10 @@ const driveAllSettled = async <T, E>(
  */
 export const anyOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
-): Op<
-  SuccessOf<Ops[number]>,
-  AllFailedError<ErrorOf<Ops[number]> | UnexpectedError>,
-  readonly []
-> => {
+): Op<SuccessOf<Ops[number]>, ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>, readonly []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
-  type E = AllFailedError<ErrorOf<Ops[number]> | UnexpectedError>;
+  type E = ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>;
   return makeNullaryOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
     // oxlint-disable-next-line typescript/consistent-type-assertions
     const result = (yield {
@@ -992,35 +991,35 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
 const driveAny = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, AllFailedError<E | UnexpectedError>>> => {
+): Promise<Result<T, ErrorGroup<E | UnexpectedError>>> => {
   if (ops.length === 0) {
-    return Promise.resolve(err(new AllFailedError<E | UnexpectedError>({ errors: [] })));
+    return Promise.resolve(err(new ErrorGroup([], "No operations to run")));
   }
-  const { runs, controllers, detach } = fanOut(ops, outerSignal);
+  const fan = fanOut(ops, outerSignal);
 
-  return new Promise<Result<T, AllFailedError<E | UnexpectedError>>>((resolve) => {
+  return new Promise<Result<T, ErrorGroup<E | UnexpectedError>>>((resolve) => {
     let winnerDecided = false;
 
-    const observed = runs.map((p, i) =>
+    const observed = fan.runs.map((p, i) =>
       p.then((res) => {
         if (!winnerDecided && res.ok) {
           winnerDecided = true;
-          controllers.forEach((c, j) => {
+          fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
           });
-          detach();
+          fan.detach();
           resolve(ok(res.value));
         }
         return res;
       }),
     );
 
-    void Promise.all(observed).then((results) => {
+    Promise.all(observed).then((results) => {
       if (winnerDecided) return;
-      detach();
+      fan.detach();
       const errors: (E | UnexpectedError)[] = [];
       for (const r of results) if (!r.ok) errors.push(r.error);
-      resolve(err(new AllFailedError({ errors })));
+      resolve(err(new ErrorGroup(errors, "All operations failed")));
     });
   });
 };
@@ -1061,10 +1060,10 @@ const driveRace = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnexpectedError>> => {
-  if (ops.length === 0) return new Promise(() => {});
+  if (ops.length === 0) return Promise.resolve(err(new UnexpectedError("No operations to run")));
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
-  return new Promise<Result<T, E | UnexpectedError>>((resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     runs.forEach((p, i) => {
       p.then((res) => {
