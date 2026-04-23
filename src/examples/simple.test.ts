@@ -63,7 +63,7 @@ describe("examples/simple (fetch + parse)", () => {
     if (r.ok) expect(r.value).toEqual({ name: "Ada" });
   });
 
-  test("parseUser fails with ParseError when shape is invalid", async () => {
+  test("parseUser fails with ParseError when payload is invalid", async () => {
     const r = await parseUser.run({ notName: 1 });
     expect(r.ok).toBe(false);
     if (!r.ok) {

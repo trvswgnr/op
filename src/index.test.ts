@@ -237,6 +237,42 @@ describe("public API (index)", () => {
     });
   });
 
+  describe("op.withSignal", () => {
+    test("supports caller-driven cancellation through index exports", async () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new AbortController();
+        const op = Op.try(
+          (signal) =>
+            new Promise<number>((resolve, reject) => {
+              if (signal.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              const id = setTimeout(() => resolve(69), 200);
+              signal.addEventListener("abort", () => {
+                clearTimeout(id);
+                reject(signal.reason);
+              });
+            }),
+          (cause) => String(cause instanceof Error ? cause.message : cause),
+        ).withSignal(controller.signal);
+
+        expectTypeOf(op.run()).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
+
+        const runPromise = op.run();
+        controller.abort(new Error("cancelled"));
+        await vi.advanceTimersByTimeAsync(0);
+
+        const result = await runPromise;
+        assert(result.ok === false, "result.ok should be false");
+        expect(result.error).toBe("cancelled");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("Op (generator)", () => {
     test("yield* Op.pure composes", async () => {
       {
