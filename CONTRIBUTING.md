@@ -21,14 +21,17 @@ All examples are consumer-level and live under `examples/*`.
 
 - Public package entrypoint stays at `src/index.ts`.
 - Internal runtime concerns are split into focused modules under `src/`:
-  - `core-op.ts` (core operation contracts and execution)
-  - `op-builders.ts` (primitive operation constructors)
-  - `op-policies.ts` (retry, timeout, and signal policies)
-  - `op-combinators.ts` (all/any/race combinators)
+  - `core.ts` (core operation contracts and execution)
+  - `builders.ts` (primitive operation constructors)
+  - `policies.ts` (retry, timeout, and signal policies)
+  - `combinators.ts` (all/any/race combinators)
   - `errors.ts`, `result.ts`, `typed.ts` (shared domain contracts)
 - Test layout follows intent:
   - `src/index.test.ts` for public API contract coverage
-  - `src/core-op.test.ts` for internal runtime behavior
+  - `src/errors.test.ts` for typed error contracts
+  - `src/builders.test.ts` for operation builders, runtime composition, and builder type-inference contracts
+  - `src/policies.test.ts` for retry/timeout/signal behavior
+  - `src/core.test.ts` for core execution invariants
 
 You can run consumer install path checks directly:
 

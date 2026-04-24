@@ -1,7 +1,7 @@
-import { succeed, fail, _try, fromGenFn } from "./op-builders.js";
-import { allOp, allSettledOp, anyOp, raceOp } from "./op-combinators.js";
-import { runOp, type Op as _Op } from "./core-op.js";
-import { exponentialBackoff } from "./op-policies.js";
+import { succeed, fail, _try, fromGenFn } from "./builders.js";
+import { allOp, allSettledOp, anyOp, raceOp } from "./combinators.js";
+import { runOp, type Op as _Op } from "./core.js";
+import { exponentialBackoff } from "./policies.js";
 import {
   ErrorGroup,
   TimeoutError,
