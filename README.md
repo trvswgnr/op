@@ -247,6 +247,16 @@ if (r.ok) {
 }
 ```
 
+### `Op.settle(op)`
+
+Runs one op and returns its settled `Result` as a success value. This never fails, which makes it
+useful for optional/best-effort reads where fallback logic should continue in the same generator.
+
+```ts
+const settled = yield* Op.settle(loadPolicyVersion);
+const policy = settled.ok ? settled.value : "unknown";
+```
+
 ### `Op.any(ops)`
 
 Succeeds with the first op to succeed; remaining siblings are aborted. If every op fails,

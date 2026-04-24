@@ -1,5 +1,5 @@
 import { succeed, fail, _try, fromGenFn } from "./builders.js";
-import { allOp, allSettledOp, anyOp, raceOp } from "./combinators.js";
+import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { runOp, type Op as _Op } from "./core.js";
 import { exponentialBackoff } from "./policies.js";
 import {
@@ -18,6 +18,7 @@ export const Op = Object.assign(fromGenFn, {
   try: _try,
   all: allOp,
   allSettled: allSettledOp,
+  settle: settleOp,
   any: anyOp,
   race: raceOp,
   get empty(): Op<void, never, readonly []> {
