@@ -20,9 +20,9 @@ All examples are consumer-level and live under `examples/*`.
 You can run consumer install path checks directly:
 
 ```bash
-npm run examples:consumer:test:pack
-npm run examples:consumer:test:github
-npm run examples:consumer:test:npm
+npm run examples:test:pack
+npm run examples:test:github
+npm run examples:test:npm
 ```
 
 ## Release Workflow (Recommended)
@@ -46,9 +46,10 @@ git push && git push --tags
 ```
 
 1. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
-  - installs with `npm ci`
-  - runs `npm run check`
-  - publishes with provenance (`npm publish --provenance --access public`)
+
+- installs with `npm ci`
+- runs `npm run check`
+- publishes with provenance (`npm publish --provenance --access public`)
 
 ## Manual Publish Fallback
 
@@ -56,4 +57,3 @@ git push && git push --tags
 npm run release:prepare
 npm publish --access public --no-provenance
 ```
-

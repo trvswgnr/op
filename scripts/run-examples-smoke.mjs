@@ -57,8 +57,10 @@ const ensureInstalledPackageReady = ({ sourceLabel, allowBuildFallback }) => {
 const installFromPack = () => {
   run("npm", ["run", "build"]);
 
-  const packOutput = run("npm", ["pack", "--json"], repoRoot, true);
-  const jsonMatch = packOutput.match(/\[[\s\S]*\]\s*$/);
+  // --ignore-scripts: we just built above, and letting `prepare` run tsdown
+  // again would pollute stdout (including ANSI escapes) and corrupt --json.
+  const packOutput = run("npm", ["pack", "--json", "--ignore-scripts"], repoRoot, true);
+  const jsonMatch = packOutput.match(/\[\s*\{[\s\S]*\}\s*\]/);
   if (!jsonMatch) {
     throw new Error(`Unable to parse npm pack output:\n${packOutput}`);
   }
