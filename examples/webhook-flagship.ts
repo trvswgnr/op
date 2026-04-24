@@ -55,6 +55,8 @@ const retryTransient = {
   getDelay: (attempt: number) => Math.min(50 * 2 ** (attempt - 1), 200),
 };
 
+const BEST_EFFORT_SIDE_EFFECT_CONCURRENCY = 1;
+
 const isString = (value: unknown): value is string => typeof value === "string";
 
 const parseWebhook = (raw: unknown): WebhookPayload | null => {
@@ -213,6 +215,7 @@ export const createApp = (deps: AppDeps) => {
       });
     }
 
+    // Unbounded fan-out is right when every child should start immediately and fail-fast together.
     const [reservation, payment] = yield* Op.all([
       reserveInventory(payload),
       authorizePayment(payload),
@@ -245,16 +248,20 @@ export const createApp = (deps: AppDeps) => {
       .withRetry(retryTransient)
       .withTimeout(300);
 
-    const [receiptResult, analyticsResult] = yield* Op.allSettled([
-      Op.try(
-        (signal) => deps.sendReceipt(processed, signal),
-        (cause) => ServiceCallError.from("email", cause),
-      ).withTimeout(300),
-      Op.try(
-        (signal) => deps.publishAnalytics(processed, signal),
-        (cause) => ServiceCallError.from("analytics", cause),
-      ).withTimeout(300),
-    ]);
+    // Bounded fan-out is useful for best-effort side effects that may share provider limits.
+    const [receiptResult, analyticsResult] = yield* Op.allSettled(
+      [
+        Op.try(
+          (signal) => deps.sendReceipt(processed, signal),
+          (cause) => ServiceCallError.from("email", cause),
+        ).withTimeout(300),
+        Op.try(
+          (signal) => deps.publishAnalytics(processed, signal),
+          (cause) => ServiceCallError.from("analytics", cause),
+        ).withTimeout(300),
+      ],
+      BEST_EFFORT_SIDE_EFFECT_CONCURRENCY,
+    );
 
     const warnings: string[] = [];
     if (!receiptResult.ok) warnings.push(String(receiptResult.error));
