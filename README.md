@@ -2,6 +2,9 @@
 
 A simple, composable, and predictable library for writing operations in TypeScript.
 
+> [!WARNING]
+> This library is currently in alpha. The API will almost certainly change between releases while it stabilizes.
+
 Write code that stays readable as it grows and keep predictable
 behavior in production. Compose steps top-to-bottom, apply retry, timeout, and cancellation as
 policy, and run parallel work without scattering reliability logic across your app.
