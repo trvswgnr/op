@@ -64,6 +64,29 @@ interface ErrorGroupConstructor {
   readonly prototype: ErrorGroup<unknown>;
 }
 
+const blockedTypedErrorDataKeys = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+  "type",
+  "name",
+  "stack",
+]);
+
+function attachTypedErrorData(target: Error, data: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(data)) {
+    if (blockedTypedErrorDataKeys.has(key)) {
+      continue;
+    }
+    Object.defineProperty(target, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+}
+
 /**
  * Built-in typed aggregate error used by combinators that need to preserve multiple failures.
  */
@@ -104,7 +127,7 @@ export function TypedError<TType extends string>(
       const { message, cause, ...data } = _data;
       super(message ?? defaultMessage, { cause });
       this.name = type;
-      Object.assign(this, data);
+      attachTypedErrorData(this, data);
     }
 
     *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
