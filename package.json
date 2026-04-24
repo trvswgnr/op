@@ -50,7 +50,7 @@
     "prepublishOnly": "npm run check",
     "release:prepare": "npm run check && npm pack --dry-run",
     "release:version": "npm version patch",
-    "release:publish": "npm publish --access public --no-provenance",
+    "release:publish": "npm publish --access public --provenance",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
