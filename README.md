@@ -29,13 +29,13 @@ import { Op, TypedError } from "@prodkit/op";
 class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
 
 const divide = Op(function* (a: number, b: number) {
-  if (b === 0) return yield* new DivisionByZeroError();
+  if (b === 0) yield* new DivisionByZeroError();
   return a / b;
 });
 
 const sqrt = Op(function* (n: number) {
   // any value can be passed to Op.fail, but it should be discriminative
-  if (n < 0) return yield* Op.fail("Negative");
+  if (n < 0) yield* Op.fail("Negative");
   return Math.sqrt(n);
 });
 
@@ -174,7 +174,7 @@ class ValidationError extends TypedError("ValidationError")<{
 
 const validate = Op(function* (name: string) {
   if (name.trim().length === 0) {
-    return yield* new ValidationError({ field: "name", message: "Name is required" });
+    yield* new ValidationError({ field: "name", message: "Name is required" });
   }
   return name;
 });
