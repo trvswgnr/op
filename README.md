@@ -1,17 +1,14 @@
 # @prodkit/op
 
-A simple, composable, and predictable operations toolkit for TypeScript.
+A simple, composable, and predictable library for writing operations in TypeScript.
 
-Use `@prodkit/op` when you want async workflows that stay readable as they grow and keep predictable
-behavior in production. You can compose steps top-to-bottom, apply retry, timeout, and cancellation as
+Write code that stays readable as it grows and keep predictable
+behavior in production. Compose steps top-to-bottom, apply retry, timeout, and cancellation as
 policy, and run parallel work without scattering reliability logic across your app.
 
 ## Why this exists
 
-Most async production code spreads control flow across thrown exceptions, ad-hoc retry/timeout
-wrappers, and cancellation that does not consistently reach in-flight work. This package exists to
-unify that runtime behavior at the operation boundary so orchestration stays explicit under load and
-failure. `Result` is the output transport format, keeping your code easy to read and test.
+Async TypeScript has two huge flaws: you can't see from a function's type what it might fail with, and the standard concurrency helpers happily let sibling tasks keep running after one of them blows up. `@prodkit/op` fixes both. Operations are written as generator functions, which lets the library infer the full error channel straight into the signature, so the compiler tells you exactly which failures you haven't handled yet. Concurrency combinators thread cancellation through every child, so when one fails the rest actually stop instead of burning quota in the background. Retry, timeout, and external cancellation are one chained method each. Zero dependencies, 6kb gzipped, no runtime to bootstrap, and an API that's easy to learn and use.
 
 ## Installation
 
@@ -28,24 +25,14 @@ import { Op, TypedError } from "@prodkit/op";
 
 class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
 
-class NegativeError extends Error {
-  readonly type = "NegativeError";
-  readonly n: number;
-  constructor(n: number) {
-    super("Should not be a negative number");
-    this.n = n;
-  }
-}
-
 const divide = Op(function* (a: number, b: number) {
   if (b === 0) return yield* new DivisionByZeroError();
   return a / b;
 });
 
 const sqrt = Op(function* (n: number) {
-  // any value can be passed to Op.fail, but it should have a discriminator
-  // (e.g. `readonly type = "NegativeError"`)
-  if (n < 0) return yield* Op.fail(new NegativeError(n));
+  // any value can be passed to Op.fail, but it should be discriminative
+  if (n < 0) return yield* Op.fail("Negative");
   return Math.sqrt(n);
 });
 
@@ -56,6 +43,7 @@ const program = Op(function* () {
 });
 
 const result = await program.run();
+//    ^? Result<number, DivisionByZeroError | "Negative">
 if (result.ok) {
   console.log(result.value);
 } else {
@@ -105,7 +93,7 @@ const result = await Op.run(Op.of(7));
 
 ### `Op.empty`
 
-Reusable no-op that succeeds with `undefined`.
+Reusable no-op that succeeds with `void`.
 
 ```ts
 const result = await Op.empty.run();
@@ -172,7 +160,7 @@ const result = await runPromise;
 ## Typed errors
 
 Use `TypedError("Name")` for discriminated domain errors that still behave like real `Error` objects.
-You can raise one directly with `yield* new MyError()` inside an op.
+You can fail with one directly with `yield* new MyError()` inside an op.
 
 ```ts
 import { TypedError, Op } from "@prodkit/op";
@@ -289,7 +277,7 @@ that demonstrates:
 Run the consumer-level checks:
 
 ```bash
-npm run examples:consumer:test:pack
+npm run examples:test:pack
 ```
 
 ## More examples
@@ -305,17 +293,17 @@ Prefer the tarball smoke test for release confidence (it validates the exact fil
 published):
 
 ```bash
-npm run examples:consumer:test:pack
+npm run examples:test:pack
 ```
 
 You can also validate alternative install paths:
 
 ```bash
 # install directly from GitHub repo
-npm run examples:consumer:test:github
+npm run examples:test:github
 
 # install from latest published npm package
-npm run examples:consumer:test:npm
+npm run examples:test:npm
 ```
 
 ## Scripts
@@ -325,7 +313,7 @@ npm run test
 npm run typecheck
 npm run lint
 npm run build
-npm run examples:consumer:test:pack
+npm run examples:test:pack
 ```
 
 ## Contributing
