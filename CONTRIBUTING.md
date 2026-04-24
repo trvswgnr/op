@@ -33,22 +33,22 @@ npm run examples:consumer:test:npm
 npm run release:prepare
 ```
 
-2. Bump package version (`patch`, `minor`, or `major`):
+1. Bump package version (`patch`, `minor`, or `major`):
 
 ```bash
 npm version patch
 ```
 
-3. Push commit and tag:
+1. Push commit and tag:
 
 ```bash
 git push && git push --tags
 ```
 
-4. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
-   - installs with `npm ci`
-   - runs `npm run check`
-   - publishes with provenance (`npm publish --provenance --access public`)
+1. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
+  - installs with `npm ci`
+  - runs `npm run check`
+  - publishes with provenance (`npm publish --provenance --access public`)
 
 ## Manual Publish Fallback
 
@@ -56,3 +56,4 @@ git push && git push --tags
 npm run release:prepare
 npm publish --access public --no-provenance
 ```
+
