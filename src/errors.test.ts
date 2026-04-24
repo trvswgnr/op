@@ -81,6 +81,26 @@ describe("TypedError", () => {
     expect(err).toHaveProperty("extra", true);
   });
 
+  test("does not allow payload to override core fields or prototype", () => {
+    const E = TypedError("E");
+    const payload = {
+      type: "OverriddenType",
+      name: "OverriddenName",
+      stack: "spoofed",
+      __proto__: { poisoned: true },
+      safe: "ok",
+    } as unknown as Record<string, unknown>;
+
+    const err = new E(payload);
+
+    expect(err.type).toBe("E");
+    expect(err.name).toBe("E");
+    expect(err.stack).not.toBe("spoofed");
+    expect(Object.getPrototypeOf(err)).toBe(E.prototype);
+    expect(err).toHaveProperty("safe", "ok");
+    expect(Object.prototype.hasOwnProperty.call(err, "poisoned")).toBe(false);
+  });
+
   test("type narrowing: distinct factories produce distinct classes", () => {
     const A = TypedError("A");
     const B = TypedError("B");
