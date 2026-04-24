@@ -1,6 +1,6 @@
 import { UnexpectedError, type TimeoutError } from "./errors.js";
 import { err, ok, type Result, type Err, type ExtractErr } from "./result.js";
-import type { RetryPolicy } from "./op-policies.js";
+import type { RetryPolicy } from "./policies.js";
 import type { Typed } from "./typed.js";
 
 export interface Suspended {
