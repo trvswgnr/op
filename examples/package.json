@@ -4,9 +4,9 @@
   "description": "Consumer-level smoke checks for @prodkit/op installation paths.",
   "type": "module",
   "scripts": {
-    "smoke": "node ./smoke.mjs"
+    "smoke": "node ./smoke.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   }
 }

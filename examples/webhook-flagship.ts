@@ -1,54 +1,117 @@
 import { Op, TypedError } from "@prodkit/op";
 
-const retryTransient = {
-  maxAttempts: 3,
-  shouldRetry: (cause) => cause instanceof ServiceCallError && cause.retryable,
-  getDelay: (attempt) => Math.min(50 * 2 ** (attempt - 1), 200),
+type WebhookPayload = {
+  eventId: string;
+  orderId: string;
+  userId: string;
+  currency: string;
+  totalCents: number;
+  itemSkus: string[];
 };
 
-const isString = (value) => typeof value === "string";
+type InventoryReservation = {
+  reservationId: string;
+  reserved: boolean;
+};
 
-const parseWebhook = (raw) => {
+type PaymentAuthorization = {
+  approved: boolean;
+  authorizationId?: string;
+  declineReason?: string;
+};
+
+type ProcessedOrder = {
+  orderId: string;
+  reservationId: string;
+  authorizationId: string;
+  riskScore: number;
+  fraudPolicyVersion: string;
+  warnings: string[];
+};
+
+type PersistedOrder = ProcessedOrder & {
+  eventId: string;
+  processedAt: string;
+};
+
+export type AppDeps = {
+  isDuplicateEvent: (eventId: string, signal: AbortSignal) => Promise<boolean>;
+  reserveInventory: (payload: WebhookPayload, signal: AbortSignal) => Promise<InventoryReservation>;
+  authorizePayment: (payload: WebhookPayload, signal: AbortSignal) => Promise<PaymentAuthorization>;
+  riskPrimary: (userId: string, signal: AbortSignal) => Promise<number>;
+  riskSecondary: (userId: string, signal: AbortSignal) => Promise<number>;
+  loadFraudPolicyFromCache: (signal: AbortSignal) => Promise<string>;
+  loadFraudPolicyFromConfig: (signal: AbortSignal) => Promise<string>;
+  persistOrder: (order: PersistedOrder, signal: AbortSignal) => Promise<void>;
+  markEventProcessed: (eventId: string, signal: AbortSignal) => Promise<void>;
+  sendReceipt: (order: ProcessedOrder, signal: AbortSignal) => Promise<void>;
+  publishAnalytics: (order: ProcessedOrder, signal: AbortSignal) => Promise<void>;
+  nowIso: () => string;
+};
+
+const retryTransient = {
+  maxAttempts: 3,
+  shouldRetry: (cause: unknown) => cause instanceof ServiceCallError && cause.retryable,
+  getDelay: (attempt: number) => Math.min(50 * 2 ** (attempt - 1), 200),
+};
+
+const isString = (value: unknown): value is string => typeof value === "string";
+
+const parseWebhook = (raw: unknown): WebhookPayload | null => {
   if (typeof raw !== "object" || raw === null) return null;
-  if (!isString(raw.eventId)) return null;
-  if (!isString(raw.orderId)) return null;
-  if (!isString(raw.userId)) return null;
-  if (!isString(raw.currency)) return null;
-  if (typeof raw.totalCents !== "number") return null;
-  if (!Array.isArray(raw.itemSkus)) return null;
-  if (raw.itemSkus.some((sku) => !isString(sku))) return null;
+  const payload = raw as Record<string, unknown>;
+  if (!isString(payload.eventId)) return null;
+  if (!isString(payload.orderId)) return null;
+  if (!isString(payload.userId)) return null;
+  if (!isString(payload.currency)) return null;
+  if (typeof payload.totalCents !== "number") return null;
+  if (!Array.isArray(payload.itemSkus)) return null;
+  if (payload.itemSkus.some((sku) => !isString(sku))) return null;
   return {
-    eventId: raw.eventId,
-    orderId: raw.orderId,
-    userId: raw.userId,
-    currency: raw.currency,
-    totalCents: raw.totalCents,
-    itemSkus: raw.itemSkus,
+    eventId: payload.eventId,
+    orderId: payload.orderId,
+    userId: payload.userId,
+    currency: payload.currency,
+    totalCents: payload.totalCents,
+    itemSkus: payload.itemSkus,
   };
 };
 
-export class InvalidWebhookError extends TypedError("InvalidWebhookError") {}
-export class DuplicateEventError extends TypedError("DuplicateEventError") {}
-export class FraudRiskTooHighError extends TypedError("FraudRiskTooHighError") {}
-export class InventoryUnavailableError extends TypedError("InventoryUnavailableError") {}
-export class PaymentDeclinedError extends TypedError("PaymentDeclinedError") {}
+export class InvalidWebhookError extends TypedError("InvalidWebhookError")<{
+  issues: string;
+}> {}
+export class DuplicateEventError extends TypedError("DuplicateEventError")<{ eventId: string }> {}
+export class FraudRiskTooHighError extends TypedError("FraudRiskTooHighError")<{
+  userId: string;
+  score: number;
+  threshold: number;
+}> {}
+export class InventoryUnavailableError extends TypedError("InventoryUnavailableError")<{
+  orderId: string;
+}> {}
+export class PaymentDeclinedError extends TypedError("PaymentDeclinedError")<{
+  orderId: string;
+}> {}
 
-export class ServiceCallError extends TypedError("ServiceCallError") {
-  static from(service, cause) {
+export class ServiceCallError extends TypedError("ServiceCallError")<{
+  service: string;
+  retryable: boolean;
+}> {
+  static from(service: string, cause: unknown) {
     if (cause instanceof ServiceCallError) return cause;
     const retryable =
       typeof cause === "object" &&
       cause !== null &&
       "retryable" in cause &&
-      typeof cause.retryable === "boolean"
-        ? cause.retryable
+      typeof (cause as { retryable?: unknown }).retryable === "boolean"
+        ? (cause as { retryable: boolean }).retryable
         : false;
     return new ServiceCallError({ service, retryable, cause });
   }
 }
 
-export const createApp = (deps) => {
-  const parseWebhookPayload = Op(function* (raw) {
+export const createApp = (deps: AppDeps) => {
+  const parseWebhookPayload = Op(function* (raw: unknown) {
     const payload = parseWebhook(raw);
     if (payload === null) {
       return yield* new InvalidWebhookError({ issues: "Invalid webhook payload shape" });
@@ -56,7 +119,7 @@ export const createApp = (deps) => {
     return payload;
   });
 
-  const checkDuplicate = Op(function* (eventId) {
+  const checkDuplicate = Op(function* (eventId: string) {
     const duplicate = yield* Op.try(
       (signal) => deps.isDuplicateEvent(eventId, signal),
       (cause) => new ServiceCallError({ service: "idempotency-store", retryable: false, cause }),
@@ -68,7 +131,11 @@ export const createApp = (deps) => {
     return;
   });
 
-  const riskFromProvider = Op(function* (providerName, readRisk, userId) {
+  const riskFromProvider = Op(function* (
+    providerName: string,
+    readRisk: (userId: string, signal: AbortSignal) => Promise<number>,
+    userId: string,
+  ) {
     return yield* Op.try(
       (signal) => readRisk(userId, signal),
       (cause) => ServiceCallError.from(providerName, cause),
@@ -77,7 +144,7 @@ export const createApp = (deps) => {
       .withTimeout(250);
   });
 
-  const pickRiskScore = Op(function* (userId) {
+  const pickRiskScore = Op(function* (userId: string) {
     return yield* Op.any([
       riskFromProvider("risk-primary", deps.riskPrimary, userId),
       riskFromProvider("risk-secondary", deps.riskSecondary, userId),
@@ -97,7 +164,7 @@ export const createApp = (deps) => {
     ]);
   });
 
-  const reserveInventory = Op(function* (payload) {
+  const reserveInventory = Op(function* (payload: WebhookPayload) {
     const reservation = yield* Op.try(
       (signal) => deps.reserveInventory(payload, signal),
       (cause) => ServiceCallError.from("inventory", cause),
@@ -111,7 +178,7 @@ export const createApp = (deps) => {
     return reservation;
   });
 
-  const authorizePayment = Op(function* (payload) {
+  const authorizePayment = Op(function* (payload: WebhookPayload) {
     const payment = yield* Op.try(
       (signal) => deps.authorizePayment(payload, signal),
       (cause) => ServiceCallError.from("payment", cause),
@@ -129,7 +196,7 @@ export const createApp = (deps) => {
     return { ...payment, authorizationId: payment.authorizationId };
   });
 
-  const processOrderWebhook = Op(function* (raw) {
+  const processOrderWebhook = Op(function* (raw: unknown) {
     const payload = yield* parseWebhookPayload(raw);
     yield* checkDuplicate(payload.eventId);
 
@@ -189,7 +256,7 @@ export const createApp = (deps) => {
       ).withTimeout(300),
     ]);
 
-    const warnings = [];
+    const warnings: string[] = [];
     if (!receiptResult.ok) warnings.push(String(receiptResult.error));
     if (!analyticsResult.ok) warnings.push(String(analyticsResult.error));
     return { ...processed, warnings };
