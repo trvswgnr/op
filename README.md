@@ -1,23 +1,18 @@
 # @prodkit/op
 
-`@prodkit/op` is a small TypeScript library for composing effectful workflows with generator functions.
-It gives you predictable `Ok`/`Err` results, typed error unions across `yield*` boundaries, async suspension with `Op.try`, retry policies with `withRetry`, and execution budgets with `withTimeout`.
-
-If you like writing workflows that read top to bottom without throwing exceptions through your app layer, this library is built for that.
+`@prodkit/op` is a generator-first operations toolkit for TypeScript that gives you typed
+success/failure results, fluent reliability policies (`withRetry`, `withTimeout`, `withSignal`),
+and concurrent composition (`all`, `any`, `race`, `allSettled`) without exception-driven control
+flow.
 
 ## Why this exists
 
-JavaScript async control flow often spreads error handling across `try/catch`, rejected promises, and inconsistent return values.
-`@prodkit/op` centralizes that into one model:
+Most async production code mixes thrown exceptions, ad-hoc retry/timeout logic, and cancellation
+that does not consistently propagate to in-flight work. This package exists to make execution
+semantics explicit: every run returns a `Result`, domain errors stay typed, and reliability policy
+is composed at the operation boundary so behavior is predictable, observable, and testable.
 
-- describe a workflow as an `Op`
-- compose child operations with `yield*`
-- run once with `.run(...)`
-- handle a discriminated `Result<T, E>`
-
-The result is code that stays explicit under growth, including retry, timeout budgets, and typed domain errors.
-
-## Install
+## Installation
 
 ```bash
 npm install @prodkit/op
@@ -214,7 +209,7 @@ const policy = {
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
 - `UnreachableError`: internal sentinel used by control flow; exported for completeness, but most
-  consumers should not instantiate it directly.
+consumers should not instantiate it directly.
 
 ## Concurrent combinators
 
