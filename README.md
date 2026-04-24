@@ -209,7 +209,7 @@ const policy = {
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
 - `UnreachableError`: internal sentinel used by control flow; exported for completeness, but most
-consumers should not instantiate it directly.
+  consumers should not instantiate it directly.
 
 ## Concurrent combinators
 
