@@ -202,7 +202,7 @@ export const createApp = (deps: AppDeps) => {
     const payload = yield* parseWebhookPayload(raw);
     yield* checkDuplicate(payload.eventId);
 
-    const [policyVersionResult] = yield* Op.allSettled([loadFraudPolicyVersion]);
+    const policyVersionResult = yield* Op.settle(loadFraudPolicyVersion);
     const fraudPolicyVersion = policyVersionResult.ok ? policyVersionResult.value : "unknown";
 
     const riskScore = yield* pickRiskScore(payload.userId);

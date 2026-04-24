@@ -695,6 +695,31 @@ describe("Op.allSettled", () => {
   });
 });
 
+describe("Op.settle", () => {
+  test("wraps success in a settled Result", async () => {
+    const r = await Op.settle(Op.of(42)).run();
+    assert(r.ok === true, "outer op is always ok");
+    const settled = r.value;
+    assert(settled.ok === true, "inner op succeeded");
+    expect(settled.value).toBe(42);
+  });
+
+  test("wraps failure in a settled Result", async () => {
+    const r = await Op.settle(Op.fail("nope" as const)).run();
+    assert(r.ok === true, "outer op is always ok");
+    const settled = r.value;
+    assert(settled.ok === false, "inner op failed");
+    expect(settled.error).toBe("nope");
+  });
+
+  test("preserves child result typing", async () => {
+    const combined = Op.settle(Op.fail(1));
+    const r = await combined.run();
+    assert(r.ok === true, "outer op is always ok");
+    expectTypeOf(r.value).toEqualTypeOf<Result<never, number | UnexpectedError>>();
+  });
+});
+
 describe("Op.any", () => {
   test("returns first success and aborts siblings", async () => {
     let slowAborted = false;
