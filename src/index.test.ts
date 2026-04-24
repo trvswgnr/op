@@ -454,6 +454,16 @@ const resolveAfter = <T>(value: T, ms: number) =>
 const rejectAfter = (reason: unknown, ms: number) =>
   new Promise<never>((_, reject) => setTimeout(() => reject(reason), ms));
 
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+};
+
+const invalidConcurrencies = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY];
+
 describe("Op.all", () => {
   test("tuple of successes in input order", async () => {
     const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
@@ -469,6 +479,12 @@ describe("Op.all", () => {
     const r = await Op.all([]).run();
     assert(r.ok === true, "ok");
     expect(r.value).toEqual([]);
+  });
+
+  test.each(invalidConcurrencies)("rejects invalid concurrency %s", (concurrency) => {
+    expect(() => Op.all([Op.of(1)], concurrency)).toThrow(
+      new RangeError("concurrency must be a positive integer"),
+    );
   });
 
   test("fails fast on first Err and aborts siblings", async () => {
@@ -529,6 +545,77 @@ describe("Op.all", () => {
     await Op.all([slow, fast]).run();
     expect(slowObservedAbort).toBe(true);
   });
+
+  test("limits active children while preserving input order", async () => {
+    const firstGate = deferred<number>();
+    const secondGate = deferred<number>();
+    const thirdGate = deferred<number>();
+    const fourthGate = deferred<number>();
+    const gates = [firstGate, secondGate, thirdGate, fourthGate];
+    const started: number[] = [];
+    let active = 0;
+    let maxActive = 0;
+
+    const ops = gates.map((gate, i) =>
+      Op.try(async () => {
+        started.push(i);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        try {
+          return await gate.promise;
+        } finally {
+          active -= 1;
+        }
+      }),
+    );
+
+    const run = Op.all(ops, 2).run();
+    await Promise.resolve();
+
+    expect(started).toEqual([0, 1]);
+    expect(maxActive).toBe(2);
+
+    secondGate.resolve(1);
+    await vi.waitFor(() => expect(started).toEqual([0, 1, 2]));
+    expect(active).toBe(2);
+
+    firstGate.resolve(0);
+    thirdGate.resolve(2);
+    await vi.waitFor(() => expect(started).toEqual([0, 1, 2, 3]));
+
+    fourthGate.resolve(3);
+    const r = await run;
+
+    assert(r.ok === true, "ok");
+    expect(r.value).toEqual([0, 1, 2, 3]);
+    expect(maxActive).toBeLessThanOrEqual(2);
+  });
+
+  test("does not start queued children after bounded failure", async () => {
+    let slowObservedAbort = false;
+    let queuedStarted = false;
+    const slow = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          signal.addEventListener("abort", () => {
+            slowObservedAbort = true;
+            resolve(-1);
+          });
+        }),
+    );
+    const fast = Op.fail("boom" as const);
+    const queued = Op.try(() => {
+      queuedStarted = true;
+      return 3;
+    });
+
+    const r = await Op.all([slow, fast, queued], 2).run();
+
+    assert(r.ok === false, "err");
+    expect(r.error).toBe("boom");
+    expect(slowObservedAbort).toBe(true);
+    expect(queuedStarted).toBe(false);
+  });
 });
 
 describe("Op.allSettled", () => {
@@ -546,6 +633,12 @@ describe("Op.allSettled", () => {
     const r = await Op.allSettled([]).run();
     assert(r.ok === true, "ok");
     expect(r.value).toEqual([]);
+  });
+
+  test.each(invalidConcurrencies)("rejects invalid concurrency %s", (concurrency) => {
+    expect(() => Op.allSettled([Op.of(1)], concurrency)).toThrow(
+      new RangeError("concurrency must be a positive integer"),
+    );
   });
 
   test("never fails", async () => {
@@ -578,6 +671,27 @@ describe("Op.allSettled", () => {
     const [first] = r.value;
     assert(first.ok === true, "slow sibling completed normally");
     expect(first.value).toBe(1);
+  });
+
+  test("limits active children and keeps draining after failures", async () => {
+    const started: number[] = [];
+    const first = Op(function* () {
+      started.push(0);
+      return yield* Op.fail("boom" as const);
+    });
+    const second = Op(function* () {
+      started.push(1);
+      return yield* Op.of("ok" as const);
+    });
+
+    const r = await Op.allSettled([first, second], 1).run();
+
+    assert(r.ok === true, "ok");
+    expect(started).toEqual([0, 1]);
+    const [a, b] = r.value;
+    assert(a.ok === false && b.ok === true, "branches");
+    expect(a.error).toBe("boom");
+    expect(b.value).toBe("ok");
   });
 });
 
