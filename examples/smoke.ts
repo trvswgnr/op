@@ -189,10 +189,14 @@ const runSimpleExampleSmoke = async () => {
 };
 
 const runWebhookExampleSmoke = async () => {
+  let analyticsPublished = false;
   const appWithWarning = createApp(
     createDeps({
       sendReceipt: async () => {
         throw new Error("smtp unavailable");
+      },
+      publishAnalytics: async () => {
+        analyticsPublished = true;
       },
     }),
   );
@@ -203,6 +207,7 @@ const runWebhookExampleSmoke = async () => {
     assert(happyPath.value.authorizationId === "auth-1", "happy path authorization check failed");
     assert(happyPath.value.warnings.length === 1, "happy path warnings check failed");
   }
+  assert(analyticsPublished, "bounded allSettled drain check failed");
 
   const duplicateApp = createApp(createDeps({ isDuplicateEvent: async () => true }));
   const duplicate = await duplicateApp.processOrderWebhook.run(webhookPayload);
