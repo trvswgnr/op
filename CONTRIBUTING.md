@@ -17,12 +17,26 @@ tarball via `examples/`.
 
 All examples are consumer-level and live under `examples/*`.
 
+## Source Layout
+
+- Public package entrypoint stays at `src/index.ts`.
+- Internal runtime concerns are split into focused modules under `src/`:
+  - `core-op.ts` (core operation contracts and execution)
+  - `op-builders.ts` (primitive operation constructors)
+  - `op-policies.ts` (retry, timeout, and signal policies)
+  - `op-combinators.ts` (all/any/race combinators)
+  - `errors.ts`, `result.ts`, `typed.ts` (shared domain contracts)
+- Test layout follows intent:
+  - `src/index.test.ts` for public API contract coverage
+  - `src/core-op.test.ts` for internal runtime behavior
+
 You can run consumer install path checks directly:
 
 ```bash
 npm run examples:test:pack
 npm run examples:test:github
 npm run examples:test:npm
+npm run test
 ```
 
 ## Release Workflow (Recommended)

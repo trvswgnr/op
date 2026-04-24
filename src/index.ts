@@ -1,21 +1,14 @@
+import { succeed, fail, _try, fromGenFn } from "./op-builders.js";
+import { allOp, allSettledOp, anyOp, raceOp } from "./op-combinators.js";
+import { runOp, type Op as _Op } from "./core-op.js";
+import { exponentialBackoff } from "./op-policies.js";
 import {
-  succeed,
-  fail,
-  _try,
-  fromGenFn,
-  runOp,
-  exponentialBackoff,
-  allOp,
-  allSettledOp,
-  anyOp,
-  raceOp,
   ErrorGroup,
   TimeoutError,
   UnexpectedError,
   UnreachableError,
   TypedError,
-  type Op as _Op,
-} from "./lib.js";
+} from "./errors.js";
 
 export const Op = Object.assign(fromGenFn, {
   type: "OpFactory" as const,
