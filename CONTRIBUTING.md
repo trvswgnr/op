@@ -66,11 +66,11 @@ git push && git push --tags
 
 - installs with `npm ci`
 - runs `npm run check`
-- publishes with provenance (`npm publish --provenance --access public`)
+- publishes with npm trusted publishing (OIDC) and provenance (`npm publish --provenance --access public`)
 
 ## Manual Publish Fallback
 
 ```bash
 npm run release:prepare
-npm publish --access public --no-provenance
+npm publish --access public --provenance
 ```
