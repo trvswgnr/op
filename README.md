@@ -1,16 +1,17 @@
 # @prodkit/op
 
-`@prodkit/op` is a generator-first operations toolkit for TypeScript that gives you typed
-success/failure results, fluent reliability policies (`withRetry`, `withTimeout`, `withSignal`),
-and concurrent composition (`all`, `any`, `race`, `allSettled`) without exception-driven control
-flow.
+A simple, composable, and predictable operations toolkit for TypeScript.
+
+Use `@prodkit/op` when you want async workflows that stay readable as they grow and keep predictable
+behavior in production. You can compose steps top-to-bottom, apply retry, timeout, and cancellation as
+policy, and run parallel work without scattering reliability logic across your app.
 
 ## Why this exists
 
-Most async production code mixes thrown exceptions, ad-hoc retry/timeout logic, and cancellation
-that does not consistently propagate to in-flight work. This package exists to make execution
-semantics explicit: every run returns a `Result`, domain errors stay typed, and reliability policy
-is composed at the operation boundary so behavior is predictable, observable, and testable.
+Most async production code spreads control flow across thrown exceptions, ad-hoc retry/timeout
+wrappers, and cancellation that does not consistently reach in-flight work. This package exists to
+unify that runtime behavior at the operation boundary so orchestration stays explicit under load and
+failure. `Result` is the output transport format, keeping your code easy to read and test.
 
 ## Installation
 
@@ -26,10 +27,13 @@ Runtime requirement for consumers: Node `>=20`.
 import { Op, TypedError } from "@prodkit/op";
 
 class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
+
 class NegativeError extends Error {
   readonly type = "NegativeError";
-  constructor(readonly n: number) {
-    super();
+  readonly n: number;
+  constructor(n: number) {
+    super("Should not be a negative number");
+    this.n = n;
   }
 }
 
@@ -39,6 +43,8 @@ const divide = Op(function* (a: number, b: number) {
 });
 
 const sqrt = Op(function* (n: number) {
+  // any value can be passed to Op.fail, but it should have a discriminator
+  // (e.g. `readonly type = "NegativeError"`)
   if (n < 0) return yield* Op.fail(new NegativeError(n));
   return Math.sqrt(n);
 });
