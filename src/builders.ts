@@ -1,6 +1,6 @@
 import { UnexpectedError, UnreachableError } from "./errors.js";
-import { type FromGenFn, type Instruction, type Op, runOp } from "./core-op.js";
-import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./op-policies.js";
+import { type FromGenFn, type Instruction, type Op, runOp } from "./core.js";
+import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
 
 /**
