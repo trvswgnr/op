@@ -171,6 +171,18 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   });
 };
 
+export const settleOp = <T, E>(
+  op: Op<T, E, readonly []>,
+): Op<Result<T, E | UnexpectedError>, never, readonly []> => {
+  return makeCombinatorOp<Result<T, E | UnexpectedError>, never>(function* () {
+    const value = (yield {
+      type: "Suspended" as const,
+      suspend: (outerSignal) => drive(op, outerSignal),
+    }) as Result<T, E | UnexpectedError>;
+    return value;
+  });
+};
+
 const driveAllSettled = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
