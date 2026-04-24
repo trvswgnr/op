@@ -522,6 +522,14 @@ export interface RetryPolicy {
   getDelay: (attempt: number) => number;
 }
 
+/**
+ * Creates a retry delay function with exponential growth and optional jitter.
+ *
+ * Defaults: `baseMs=100`, `maxMs=1000`, `jitterMs=0`. Attempt numbering starts at `1`.
+ *
+ * @param opts Optional tuning for base delay, cap, and random jitter.
+ * @returns Delay calculator suitable for `RetryPolicy.getDelay`.
+ */
 export function exponentialBackoff(opts?: {
   baseMs?: number;
   maxMs?: number;

@@ -43,7 +43,7 @@ const program = Op(function* () {
 });
 
 const result = await program.run();
-//    ^? Result<number, DivisionByZeroError | "Negative">
+//    ^? Result<number, DivisionByZeroError | "Negative" | UnexpectedError>
 if (result.ok) {
   console.log(result.value);
 } else {
