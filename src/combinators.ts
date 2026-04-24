@@ -39,18 +39,28 @@ const fanOut = <T, E>(
   return { runs, controllers, detach };
 };
 
+const concurrencyLimit = (concurrency: number | undefined, size: number): number => {
+  if (concurrency === undefined) return size;
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new RangeError("concurrency must be a positive integer");
+  }
+  return Math.min(concurrency, size);
+};
+
 export const allOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  concurrency?: number,
 ): Op<
   { [K in keyof Ops]: SuccessOf<Ops[K]> },
   ErrorOf<Ops[number]> | UnexpectedError,
   readonly []
 > => {
   const snapshot = ops.slice();
+  const limit = concurrencyLimit(concurrency, snapshot.length);
   return makeCombinatorOp(function* () {
     const result = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveAll(snapshot, outerSignal),
+      suspend: (outerSignal) => driveAll(snapshot, outerSignal, limit),
     }) as Result<never, never>;
     if (!result.ok) {
       yield err(result.error);
@@ -63,8 +73,59 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
 const driveAll = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  concurrency: number,
 ): Promise<Result<T[], E | UnexpectedError>> => {
   if (ops.length === 0) return ok([]);
+  if (concurrency >= ops.length) return driveAllUnbounded(ops, outerSignal);
+
+  const results: (Result<T, E | UnexpectedError> | undefined)[] = new Array(ops.length);
+  const controllers = new Set<AbortController>();
+  const cascade = () => {
+    for (const c of controllers) c.abort(outerSignal.reason);
+  };
+  if (outerSignal.aborted) cascade();
+  else outerSignal.addEventListener("abort", cascade, { once: true });
+
+  let nextIndex = 0;
+  let firstErr: Err<E | UnexpectedError> | undefined;
+
+  const worker = async () => {
+    while (firstErr === undefined) {
+      const i = nextIndex;
+      nextIndex += 1;
+      const op = ops[i];
+      if (op === undefined) return;
+
+      const controller = new AbortController();
+      controllers.add(controller);
+      if (outerSignal.aborted) controller.abort(outerSignal.reason);
+      const res = await drive(op, controller.signal);
+      controllers.delete(controller);
+      results[i] = res;
+
+      if (!res.ok && firstErr === undefined) {
+        firstErr = res;
+        for (const c of controllers) c.abort();
+      }
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  } finally {
+    outerSignal.removeEventListener("abort", cascade);
+  }
+
+  if (firstErr !== undefined) return firstErr;
+  const values: T[] = [];
+  for (const r of results) if (r?.ok) values.push(r.value);
+  return ok(values);
+};
+
+const driveAllUnbounded = async <T, E>(
+  ops: readonly Op<T, E, readonly []>[],
+  outerSignal: AbortSignal,
+): Promise<Result<T[], E | UnexpectedError>> => {
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
   let firstErr: Err<E | UnexpectedError> | undefined;
@@ -92,17 +153,19 @@ const driveAll = async <T, E>(
 
 export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
+  concurrency?: number,
 ): Op<
   { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> },
   never,
   readonly []
 > => {
   const snapshot = ops.slice();
+  const limit = concurrencyLimit(concurrency, snapshot.length);
   type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> };
   return makeCombinatorOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
     const value = (yield {
       type: "Suspended" as const,
-      suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal),
+      suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal, limit),
     }) as V;
     return value;
   });
@@ -111,8 +174,48 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
 const driveAllSettled = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
+  concurrency: number,
 ): Promise<Result<T, E | UnexpectedError>[]> => {
   if (ops.length === 0) return [];
+  if (concurrency >= ops.length) return driveAllSettledUnbounded(ops, outerSignal);
+
+  const results: (Result<T, E | UnexpectedError> | undefined)[] = new Array(ops.length);
+  const controllers = new Set<AbortController>();
+  const cascade = () => {
+    for (const c of controllers) c.abort(outerSignal.reason);
+  };
+  if (outerSignal.aborted) cascade();
+  else outerSignal.addEventListener("abort", cascade, { once: true });
+
+  let nextIndex = 0;
+  const worker = async () => {
+    while (true) {
+      const i = nextIndex;
+      nextIndex += 1;
+      const op = ops[i];
+      if (op === undefined) return;
+
+      const controller = new AbortController();
+      controllers.add(controller);
+      if (outerSignal.aborted) controller.abort(outerSignal.reason);
+      results[i] = await drive(op, controller.signal);
+      controllers.delete(controller);
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  } finally {
+    outerSignal.removeEventListener("abort", cascade);
+  }
+
+  return results.filter((r): r is Result<T, E | UnexpectedError> => r !== undefined);
+};
+
+const driveAllSettledUnbounded = async <T, E>(
+  ops: readonly Op<T, E, readonly []>[],
+  outerSignal: AbortSignal,
+): Promise<Result<T, E | UnexpectedError>[]> => {
   const fan = fanOut(ops, outerSignal);
   const results = await Promise.all(fan.runs);
   fan.detach();
