@@ -253,7 +253,7 @@ Runs one op and returns its settled `Result` as a success value. This never fail
 useful for optional/best-effort reads where fallback logic should continue in the same generator.
 
 ```ts
-const settled = yield* Op.settle(loadPolicyVersion);
+const settled = yield * Op.settle(loadPolicyVersion);
 const policy = settled.ok ? settled.value : "unknown";
 ```
 
