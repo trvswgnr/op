@@ -52,9 +52,6 @@
     "release:version": "npm version patch",
     "release:publish": "npm publish --access public --no-provenance",
     "test": "vitest run",
-    "test:e2e": "vitest run **/*.e2e.test.ts",
-    "test:integration": "vitest run **/*.integration.test.ts",
-    "test:unit": "vitest run --exclude '**/*.e2e.test.ts' --exclude '**/*.integration.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {},
