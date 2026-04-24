@@ -1,6 +1,6 @@
 import { TimeoutError, UnexpectedError, UnreachableError } from "./errors.js";
 import { err, type Result } from "./result.js";
-import { drive, makeNullaryOp, type Op, type OpArity, type Instruction } from "./core-op.js";
+import { drive, makeNullaryOp, type Op, type OpArity, type Instruction } from "./core.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {

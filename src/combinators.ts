@@ -1,6 +1,6 @@
 import { ErrorGroup, UnexpectedError, UnreachableError } from "./errors.js";
-import { drive, makeNullaryOp, type Instruction, type Op } from "./core-op.js";
-import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./op-policies.js";
+import { drive, makeNullaryOp, type Instruction, type Op } from "./core.js";
+import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Err, type Result } from "./result.js";
 
 type NullaryOp = Op<unknown, unknown, readonly []>;

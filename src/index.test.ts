@@ -8,7 +8,7 @@ import {
   exponentialBackoff,
   type Op as OpT,
 } from "./index.js";
-import type { RetryPolicy } from "./op-policies.js";
+import type { RetryPolicy } from "./policies.js";
 import type { Result } from "./result.js";
 
 describe("public API (index)", () => {
