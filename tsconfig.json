@@ -15,7 +15,8 @@
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
-    "noErrorTruncation": true
+    "noErrorTruncation": true,
+    "erasableSyntaxOnly": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
