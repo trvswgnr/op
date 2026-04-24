@@ -1,0 +1,103 @@
+import { UnexpectedError, type TimeoutError } from "./errors.js";
+import { err, ok, type Result, type Err, type ExtractErr } from "./result.js";
+import type { RetryPolicy } from "./op-policies.js";
+import type { Typed } from "./typed.js";
+
+export interface Suspended {
+  readonly type: "Suspended";
+  readonly suspend: (signal: AbortSignal) => Promise<unknown>;
+}
+
+export type Instruction<E> = Err<E> | Suspended;
+
+export interface WithRetry<T, E, A extends readonly unknown[]> {
+  withRetry(policy?: RetryPolicy): Op<T, E, A>;
+}
+
+export interface WithTimeout<T, E, A extends readonly unknown[]> {
+  withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
+}
+
+export interface WithSignal<T, E, A extends readonly unknown[]> {
+  withSignal(signal: AbortSignal): Op<T, E, A>;
+}
+
+export interface OpBase<T, E> {
+  type: "Op";
+  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
+}
+
+export interface OpNullary<T, E>
+  extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []>, WithSignal<T, E, []> {
+  (): OpBase<T, E>;
+  run(): Promise<Result<T, E | UnexpectedError>>;
+}
+
+export interface OpArity<T, E, A extends readonly unknown[]>
+  extends WithRetry<T, E, A>, WithTimeout<T, E, A>, WithSignal<T, E, A> {
+  (...args: A): OpNullary<T, E>;
+  run(...args: A): Promise<Result<T, E | UnexpectedError>>;
+}
+
+type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
+
+export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
+
+export function runOp<T, E>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
+  return drive(op, new AbortController().signal);
+}
+
+export async function drive<T, E>(
+  op: Op<T, E, readonly []>,
+  signal: AbortSignal,
+): Promise<Result<T, E | UnexpectedError>> {
+  try {
+    const ef = typeof op === "function" ? op() : op;
+    const iter = ef[Symbol.iterator]();
+    let step = iter.next();
+    while (!step.done) {
+      try {
+        if (step.value.type === "Err") return err(step.value.error);
+        step = iter.next(await step.value.suspend(signal));
+      } catch (cause) {
+        return err(new UnexpectedError(cause));
+      }
+    }
+    const value = await step.value;
+    return ok(value);
+  } catch (cause) {
+    return err(new UnexpectedError(cause));
+  }
+}
+
+export interface FromGenFn {
+  <Y extends Instruction<unknown>, T>(f: () => Generator<Y, T, unknown>): Op<T, ExtractErr<Y>, []>;
+  <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
+    f: (...args: A) => Generator<Y, T, unknown>,
+  ): Op<T, ExtractErr<Y>, A>;
+  (
+    f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
+  ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
+}
+
+export interface OpHooks<T, E> {
+  withRetry: (policy?: RetryPolicy) => Op<T, E, readonly []>;
+  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, readonly []>;
+  withSignal: (signal: AbortSignal) => Op<T, E, readonly []>;
+}
+
+export const makeNullaryOp = <T, E>(
+  gen: () => Generator<Instruction<E>, T, unknown>,
+  hooks: OpHooks<T, E>,
+): Op<T, E, readonly []> => {
+  const self = {
+    [Symbol.iterator]: gen,
+    run: () => runOp(self as never),
+    withRetry: hooks.withRetry,
+    withTimeout: hooks.withTimeout,
+    withSignal: hooks.withSignal,
+    type: "Op" as const,
+  };
+  const op = () => self;
+  return Object.assign(op, self) as never;
+};

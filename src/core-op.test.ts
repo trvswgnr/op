@@ -1,16 +1,9 @@
 import { describe, expect, test, assert, expectTypeOf, vi } from "vitest";
-import {
-  fail,
-  fromGenFn,
-  Op,
-  Result,
-  succeed,
-  _try,
-  TimeoutError,
-  UnexpectedError,
-  TypedError,
-  RetryPolicy,
-} from "./lib.js";
+import { fail, fromGenFn, succeed, _try } from "./op-builders.js";
+import type { Op } from "./core-op.js";
+import type { Result } from "./result.js";
+import { TimeoutError, UnexpectedError, TypedError } from "./errors.js";
+import type { RetryPolicy } from "./op-policies.js";
 
 describe("UnexpectedError", () => {
   test("creates error with message 'An unexpected error occurred'", () => {
