@@ -262,7 +262,7 @@ const r = await Op.race([slow, fast]).run();
 
 ## Flagship production example: webhook consumer
 
-See `examples/webhook-flagship.mjs` for a complete order webhook pipeline
+See `examples/webhook-flagship.ts` for a complete order webhook pipeline
 that demonstrates:
 
 - input validation with typed domain errors
@@ -282,8 +282,8 @@ npm run examples:test:pack
 
 ## More examples
 
-- `examples/simple.mjs`: minimal composition and typed error walkthrough.
-- `examples/smoke.mjs`: consumer-level scenario assertions for simple + webhook flows.
+- `examples/simple.ts`: minimal composition and typed error walkthrough.
+- `examples/smoke.ts`: consumer-level scenario assertions for simple + webhook flows.
 
 ## Consumer smoke project
 
