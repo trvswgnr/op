@@ -214,23 +214,31 @@ Run multiple ops concurrently and compose them back into one `Op`.
 When a result is decided early (`all` after a failure, `any` after a success, `race` on first
 settle), remaining work is cancelled through `AbortSignal`.
 
-### `Op.all(ops)`
+### `Op.all(ops, concurrency?)`
 
-Runs every op concurrently and succeeds with a tuple of their success values. Fails fast
-on the first failure; in-flight siblings receive an abort and the combinator waits for
-them to settle before returning. Empty input succeeds with `[]`.
+Runs ops concurrently and succeeds with a tuple of their success values. Fails fast on the first
+failure; in-flight siblings receive an abort and the combinator waits for them to settle before
+returning. Empty input succeeds with `[]`.
+
+Pass a positive integer `concurrency` to cap how many children run at once. Without it, every child
+starts immediately. With a cap, `Op.all` stops launching queued children after the first failure.
 
 ```ts
 const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
 if (r.ok) {
   const [n, s, b] = r.value; // [number, string, boolean]
 }
+
+const bounded = await Op.all(fetchOps, 5).run(); // at most 5 active children
 ```
 
-### `Op.allSettled(ops)`
+### `Op.allSettled(ops, concurrency?)`
 
 Waits for every op and returns a tuple of their `Result`s in input order. Never fails and
 never aborts siblings.
+
+Pass a positive integer `concurrency` to cap how many children run at once. Unlike `Op.all`,
+`Op.allSettled` keeps launching queued children after failures so every input gets a `Result`.
 
 ```ts
 const r = await Op.allSettled([Op.of(1), Op.fail("nope")]).run();
