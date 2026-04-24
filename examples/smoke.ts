@@ -11,21 +11,30 @@ import {
   parseUser,
   sqrt,
   userProgram,
-} from "./simple.mjs";
+} from "./simple.ts";
 import {
   DuplicateEventError,
   FraudRiskTooHighError,
   ServiceCallError,
   createApp,
-} from "./webhook-flagship.mjs";
+} from "./webhook-flagship.ts";
 
-const assert = (condition, message) => {
+const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
 };
 
-const retryableError = (message) => Object.assign(new Error(message), { retryable: true });
+const isNamedUser = (value: unknown): value is { name: string } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
+  );
+};
 
-const neverSettlesUntilAborted = (signal) =>
+const retryableError = (message: string) => Object.assign(new Error(message), { retryable: true });
+
+const neverSettlesUntilAborted = (signal: AbortSignal) =>
   new Promise((_, reject) => {
     if (signal.aborted) return reject(retryableError("aborted"));
     signal.addEventListener("abort", () => reject(retryableError("aborted")), { once: true });
@@ -59,12 +68,12 @@ const webhookPayload = {
 const runCoreApiSmoke = async () => {
   class TooSmallError extends TypedError("TooSmallError") {}
 
-  const localDivide = Op(function* (a, b) {
+  const localDivide = Op(function* (a: number, b: number) {
     if (b === 0) return yield* Op.fail(new TooSmallError({ message: "division by zero" }));
     return a / b;
   });
 
-  const localSqrt = Op(function* (n) {
+  const localSqrt = Op(function* (n: number) {
     if (n < 0) return yield* new TooSmallError({ message: "negative input" });
     return Math.sqrt(n);
   });
@@ -150,7 +159,10 @@ const runSimpleExampleSmoke = async () => {
         statusText: "OK",
       });
     const fetchOk = await fetchData.run("https://example.test/api/users/1");
-    assert(fetchOk.ok && fetchOk.value.name === "Ada", "fetchData success check failed");
+    assert(
+      fetchOk.ok && isNamedUser(fetchOk.value) && fetchOk.value.name === "Ada",
+      "fetchData success check failed",
+    );
 
     globalThis.fetch = async () => new Response(null, { status: 404, statusText: "Not Found" });
     const fetchErr = await fetchData.run("https://example.test/missing");
@@ -247,7 +259,7 @@ const runWebhookExampleSmoke = async () => {
   let inventoryAborted = false;
   const abortedInventoryApp = createApp(
     createDeps({
-      reserveInventory: async (_, signal) => {
+      reserveInventory: async (_: unknown, signal: AbortSignal) => {
         try {
           await neverSettlesUntilAborted(signal);
           throw new Error("unreachable");
