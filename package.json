@@ -1,6 +1,6 @@
 {
   "name": "@prodkit/op",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A simple, composable library for writing predictable operations in TypeScript.",
   "keywords": [
     "composition",
