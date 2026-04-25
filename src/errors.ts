@@ -1,98 +1,17 @@
 import type { Err } from "./result.js";
 import { err } from "./result.js";
 import type { Typed } from "./typed.js";
+import { TaggedError, UnhandledException } from "better-result";
 
-const blockedTypedErrorDataKeys = new Set([
-  "__proto__",
-  "prototype",
-  "constructor",
-  "type",
-  "name",
-  "stack",
-]);
-
-function attachTypedErrorData(target: Error, data: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(data)) {
-    if (blockedTypedErrorDataKeys.has(key)) {
-      continue;
-    }
-    Object.defineProperty(target, key, {
-      value,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-  }
-}
-
-/**
- * Instance type for classes created by {@link TypedError}.
- */
-export type TypedError<
-  TypeName extends string,
-  Data extends Record<string, unknown> & { message?: string | undefined; cause?: unknown } = {},
-> = _TypedError<TypeName> & ({} extends Data ? {} : { [K in keyof Data]: Data[K] });
-interface _TypedError<TypeName extends string> extends Error {
-  readonly type: TypeName;
-  [Symbol.iterator](): Generator<Err<this>, never, unknown>;
-}
-
-type WithDefaultErrorData<T> = T & { message?: string | undefined; cause?: unknown };
-
-type TypedErrorCtorParams<Data extends WithDefaultErrorData<Record<string, unknown>>> =
-  {} extends Data ? [data?: WithDefaultErrorData<{}>] : [data: WithDefaultErrorData<Data>];
-
-export interface TypedErrorConstructor<TypeName extends string> {
-  new (data?: WithDefaultErrorData<{}>): TypedError<TypeName, {}>;
-  new <Data extends WithDefaultErrorData<Record<string, unknown>>>(
-    data: WithDefaultErrorData<Data>,
-  ): TypedError<TypeName, Data>;
-}
-
-/**
- * Creates a new typed error class with the given type name and optional default message.
- */
-export function TypedError<TType extends string>(
-  type: TType,
-  defaultMessage?: string,
-): TypedErrorConstructor<TType> {
-  return class<Data extends WithDefaultErrorData<Record<string, unknown>> = {}>
-    extends Error
-    implements Typed<TType>
-  {
-    readonly type = type;
-
-    constructor(...args: TypedErrorCtorParams<Data>) {
-      const _data = args[0] ?? ({} as Data);
-      const { message, cause, ...data } = _data;
-      super(message ?? defaultMessage, { cause });
-      this.name = type;
-      attachTypedErrorData(this, data);
-    }
-
-    *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
-      yield err(this);
-      throw new UnreachableError();
-    }
-  };
-}
-TypedError.is = (error: unknown): error is TypedError<string> => {
-  return error instanceof Error && "type" in error && typeof error.type === "string";
-};
-
-/**
- * Built-in typed error for failures that are not mapped to a domain-specific error.
- */
-export class UnexpectedError extends TypedError("UnexpectedError") {
-  constructor(cause: unknown, message?: string) {
-    super({ cause, message: message ?? "An unexpected error occurred" });
-  }
-}
+export { TaggedError, UnhandledException };
 
 /**
  * Built-in typed error emitted when an operation exceeds a timeout budget.
  */
-export class TimeoutError extends TypedError("TimeoutError")<{ timeoutMs: number }> {
+export class TimeoutError extends TaggedError("TimeoutError")<{
+  message: string;
+  timeoutMs: number;
+}>() {
   constructor({ timeoutMs }: { timeoutMs: number }) {
     super({ message: `Operation timed out after ${timeoutMs}ms`, timeoutMs });
   }
@@ -101,7 +20,11 @@ export class TimeoutError extends TypedError("TimeoutError")<{ timeoutMs: number
 /**
  * Internal control-flow sentinel used to mark logically impossible paths.
  */
-export class UnreachableError extends TypedError("UnreachableError", "Unreachable code path") {}
+export class UnreachableError extends TaggedError("UnreachableError")<{ message: string }>() {
+  constructor() {
+    super({ message: "Unreachable code path" });
+  }
+}
 
 interface ErrorGroupConstructor {
   new <E>(errors: Iterable<E>, message: string): ErrorGroup<E>;
@@ -113,7 +36,7 @@ interface ErrorGroupConstructor {
  */
 export interface ErrorGroup<E> extends AggregateError, Typed<"ErrorGroup"> {
   readonly errors: E[];
-  [Symbol.iterator](): Generator<Err<this>, never, unknown>;
+  [Symbol.iterator](): Generator<Err<never, this>, never, unknown>;
 }
 
 /**
@@ -123,15 +46,15 @@ export const ErrorGroup: ErrorGroupConstructor = class<E>
   extends AggregateError
   implements Typed<"ErrorGroup">
 {
-  readonly type = "ErrorGroup";
+  readonly _tag = "ErrorGroup";
   override readonly errors: E[];
   constructor(errors: Iterable<E>, message: string) {
     super(errors, message);
     this.errors = Array.from(errors);
-    this.name = this.type;
+    this.name = this._tag;
   }
 
-  *[Symbol.iterator](): Generator<Err<this>, never, unknown> {
+  *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
     yield err(this);
     throw new UnreachableError();
   }

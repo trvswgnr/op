@@ -5,13 +5,13 @@ import { exponentialBackoff } from "./policies.js";
 import {
   ErrorGroup,
   TimeoutError,
-  UnexpectedError,
+  UnhandledException,
   UnreachableError,
-  TypedError,
+  TaggedError,
 } from "./errors.js";
 
 export const Op = Object.assign(fromGenFn, {
-  type: "OpFactory" as const,
+  _tag: "OpFactory" as const,
   run: runOp,
   of: succeed,
   fail,
@@ -34,15 +34,15 @@ export const Op = Object.assign(fromGenFn, {
  * `withRetry(policy)`, `withTimeout(ms)`, and `withSignal(signal)`.
  *
  * @template T Value returned when the operation succeeds.
- * @template E Error type from yielded failures (not counting {@link UnexpectedError} from throws).
+ * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws).
  * @template A Argument tuple for parameterized operations.
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
 export {
-  TypedError,
+  TaggedError,
   TimeoutError,
-  UnexpectedError,
+  UnhandledException,
   UnreachableError,
   ErrorGroup,
   exponentialBackoff,

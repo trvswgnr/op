@@ -1,4 +1,4 @@
-import { ErrorGroup, Op, TimeoutError, TypedError, UnexpectedError } from "@prodkit/op";
+import { ErrorGroup, Op, TimeoutError, TaggedError, UnhandledException } from "@prodkit/op";
 import {
   DivisionByZeroError,
   FetchError,
@@ -18,7 +18,7 @@ import {
   InvalidWebhookError,
   ServiceCallError,
   createApp,
-} from "./webhook-flagship.ts";
+} from "./webhook.ts";
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) throw new Error(message);
@@ -67,7 +67,7 @@ const webhookPayload = {
 };
 
 const runCoreApiSmoke = async () => {
-  class TooSmallError extends TypedError("TooSmallError") {}
+  class TooSmallError extends TaggedError("TooSmallError")<{ message: string }>() {}
 
   const localDivide = Op(function* (a: number, b: number) {
     if (b === 0) return yield* Op.fail(new TooSmallError({ message: "division by zero" }));
@@ -75,7 +75,7 @@ const runCoreApiSmoke = async () => {
   });
 
   const localSqrt = Op(function* (n: number) {
-    if (n < 0) return yield* new TooSmallError({ message: "negative input" });
+    if (n < 0) return yield* Op.fail(new TooSmallError({ message: "negative input" }));
     return Math.sqrt(n);
   });
 
@@ -94,7 +94,7 @@ const runCoreApiSmoke = async () => {
     .withTimeout(500)
     .run();
 
-  assert(result.ok && result.value === Math.sqrt(5), "core smoke computation failed");
+  assert(result.isOk() && result.value === Math.sqrt(5), "core smoke computation failed");
 
   const timeoutResult = await Op.try(
     (signal) =>
@@ -109,48 +109,51 @@ const runCoreApiSmoke = async () => {
     .withTimeout(1)
     .run();
 
-  assert(!timeoutResult.ok && timeoutResult.error instanceof TimeoutError, "timeout smoke failed");
+  assert(
+    timeoutResult.isErr() && timeoutResult.error instanceof TimeoutError,
+    "timeout smoke failed",
+  );
 
   const unexpectedResult = await Op.try(() => {
     throw "boom";
   }).run();
 
   assert(
-    !unexpectedResult.ok && unexpectedResult.error instanceof UnexpectedError,
+    unexpectedResult.isErr() && unexpectedResult.error instanceof UnhandledException,
     "unexpected error smoke failed",
   );
 };
 
 const runSimpleExampleSmoke = async () => {
   const divideOk = await divide.run(10, 2);
-  assert(divideOk.ok && divideOk.value === 5, "divide success check failed");
+  assert(divideOk.isOk() && divideOk.value === 5, "divide success check failed");
 
   const divideErr = await divide.run(10, 0);
   assert(
-    !divideErr.ok && divideErr.error instanceof DivisionByZeroError,
+    divideErr.isErr() && divideErr.error instanceof DivisionByZeroError,
     "divide error check failed",
   );
 
   const sqrtOk = await sqrt.run(9);
-  assert(sqrtOk.ok && sqrtOk.value === 3, "sqrt success check failed");
+  assert(sqrtOk.isOk() && sqrtOk.value === 3, "sqrt success check failed");
 
   const sqrtErr = await sqrt.run(-1);
-  assert(!sqrtErr.ok && sqrtErr.error instanceof NegativeError, "sqrt error check failed");
-  if (!sqrtErr.ok && sqrtErr.error instanceof NegativeError) {
+  assert(sqrtErr.isErr() && sqrtErr.error instanceof NegativeError, "sqrt error check failed");
+  if (sqrtErr.isErr() && sqrtErr.error instanceof NegativeError) {
     assert(sqrtErr.error.n === -1, "negative error payload check failed");
   }
 
   const composeResult = await mathComposeProgram.run();
   assert(
-    !composeResult.ok && composeResult.error instanceof NegativeError,
+    composeResult.isErr() && composeResult.error instanceof NegativeError,
     "mathComposeProgram failure check failed",
   );
 
   const parseOk = await parseUser.run({ name: "Ada" });
-  assert(parseOk.ok && parseOk.value.name === "Ada", "parseUser success check failed");
+  assert(parseOk.isOk() && parseOk.value.name === "Ada", "parseUser success check failed");
 
   const parseErr = await parseUser.run({ notName: 1 });
-  assert(!parseErr.ok && parseErr.error instanceof ParseError, "parseUser error check failed");
+  assert(parseErr.isErr() && parseErr.error instanceof ParseError, "parseUser error check failed");
 
   const originalFetch = globalThis.fetch;
   try {
@@ -161,17 +164,17 @@ const runSimpleExampleSmoke = async () => {
       });
     const fetchOk = await fetchData.run("https://example.test/api/users/1");
     assert(
-      fetchOk.ok && isNamedUser(fetchOk.value) && fetchOk.value.name === "Ada",
+      fetchOk.isOk() && isNamedUser(fetchOk.value) && fetchOk.value.name === "Ada",
       "fetchData success check failed",
     );
 
     globalThis.fetch = async () => new Response(null, { status: 404, statusText: "Not Found" });
     const fetchErr = await fetchData.run("https://example.test/missing");
     assert(
-      !fetchErr.ok && fetchErr.error instanceof FetchError,
+      fetchErr.isErr() && fetchErr.error instanceof FetchError,
       "fetchData error type check failed",
     );
-    if (!fetchErr.ok) {
+    if (fetchErr.isErr()) {
       assert(fetchErr.error.cause instanceof HttpError, "fetchData cause type check failed");
     }
 
@@ -183,7 +186,7 @@ const runSimpleExampleSmoke = async () => {
       });
     };
     const userOk = await userProgram.run("123");
-    assert(userOk.ok && userOk.value.name === "Ada", "userProgram composition check failed");
+    assert(userOk.isOk() && userOk.value.name === "Ada", "userProgram composition check failed");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -202,8 +205,8 @@ const runWebhookExampleSmoke = async () => {
     }),
   );
   const happyPath = await appWithWarning.processOrderWebhook.run(webhookPayload);
-  assert(happyPath.ok, "webhook happy path check failed");
-  if (happyPath.ok) {
+  assert(happyPath.isOk(), "webhook happy path check failed");
+  if (happyPath.isOk()) {
     assert(happyPath.value.orderId === "ord-123", "happy path order id check failed");
     assert(happyPath.value.authorizationId === "auth-1", "happy path authorization check failed");
     assert(happyPath.value.warnings.length === 1, "happy path warnings check failed");
@@ -213,7 +216,7 @@ const runWebhookExampleSmoke = async () => {
   const duplicateApp = createApp(createDeps({ isDuplicateEvent: async () => true }));
   const duplicate = await duplicateApp.processOrderWebhook.run(webhookPayload);
   assert(
-    !duplicate.ok && duplicate.error instanceof DuplicateEventError,
+    duplicate.isErr() && duplicate.error instanceof DuplicateEventError,
     "duplicate event check failed",
   );
 
@@ -222,7 +225,7 @@ const runWebhookExampleSmoke = async () => {
     totalCents: -1,
   });
   assert(
-    !invalidNegativeCents.ok && invalidNegativeCents.error instanceof InvalidWebhookError,
+    invalidNegativeCents.isErr() && invalidNegativeCents.error instanceof InvalidWebhookError,
     "negative totalCents validation check failed",
   );
 
@@ -231,7 +234,7 @@ const runWebhookExampleSmoke = async () => {
     totalCents: Number.NaN,
   });
   assert(
-    !invalidNaNCents.ok && invalidNaNCents.error instanceof InvalidWebhookError,
+    invalidNaNCents.isErr() && invalidNaNCents.error instanceof InvalidWebhookError,
     "NaN totalCents validation check failed",
   );
 
@@ -246,7 +249,7 @@ const runWebhookExampleSmoke = async () => {
     }),
   );
   const retryPayment = await retryPaymentApp.processOrderWebhook.run(webhookPayload);
-  assert(retryPayment.ok, "retry payment check failed");
+  assert(retryPayment.isOk(), "retry payment check failed");
   assert(paymentAttempts === 2, "retry payment attempts check failed");
 
   const fallbackRiskApp = createApp(
@@ -258,7 +261,7 @@ const runWebhookExampleSmoke = async () => {
     }),
   );
   const fallbackRisk = await fallbackRiskApp.processOrderWebhook.run(webhookPayload);
-  assert(fallbackRisk.ok && fallbackRisk.value.riskScore === 0.2, "risk fallback check failed");
+  assert(fallbackRisk.isOk() && fallbackRisk.value.riskScore === 0.2, "risk fallback check failed");
 
   const allRiskFailApp = createApp(
     createDeps({
@@ -271,12 +274,15 @@ const runWebhookExampleSmoke = async () => {
     }),
   );
   const allRiskFail = await allRiskFailApp.processOrderWebhook.run(webhookPayload);
-  assert(!allRiskFail.ok && allRiskFail.error instanceof ErrorGroup, "all-risk-fail check failed");
+  assert(
+    allRiskFail.isErr() && allRiskFail.error instanceof ErrorGroup,
+    "all-risk-fail check failed",
+  );
 
   const fraudApp = createApp(createDeps({ riskPrimary: async () => 0.97 }));
   const fraudResult = await fraudApp.processOrderWebhook.run(webhookPayload);
   assert(
-    !fraudResult.ok && fraudResult.error instanceof FraudRiskTooHighError,
+    fraudResult.isErr() && fraudResult.error instanceof FraudRiskTooHighError,
     "fraud gate check failed",
   );
 
@@ -299,7 +305,7 @@ const runWebhookExampleSmoke = async () => {
   );
   const abortedInventoryResult = await abortedInventoryApp.processOrderWebhook.run(webhookPayload);
   assert(
-    !abortedInventoryResult.ok && abortedInventoryResult.error instanceof ServiceCallError,
+    abortedInventoryResult.isErr() && abortedInventoryResult.error instanceof ServiceCallError,
     "inventory abort error type check failed",
   );
   assert(inventoryAborted, "inventory abort propagation check failed");
