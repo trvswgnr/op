@@ -1,23 +1,9 @@
-import type { Typed } from "./typed.js";
+import { Result, type Err, type Ok } from "better-result";
 
-export interface Ok<T> extends Typed<"Ok"> {
-  readonly ok: true;
-  readonly value: T;
-}
+export type ExtractErr<Y> = Y extends Err<unknown, infer U> ? U : never;
 
-export interface Err<E> extends Typed<"Err"> {
-  readonly ok: false;
-  readonly error: E;
-}
+export const ok = Result.ok;
+export const err = Result.err;
 
-/**
- * Discriminated result of operation execution.
- *
- * When `ok` is `true`, read `value`. When `ok` is `false`, read `error`.
- */
-export type Result<T, E> = Ok<T> | Err<E>;
-
-export type ExtractErr<Y> = Y extends Err<infer U> ? U : never;
-
-export const ok = <T>(value: T): Ok<T> => Object.freeze({ type: "Ok", ok: true, value });
-export const err = <E>(error: E): Err<E> => Object.freeze({ type: "Err", ok: false, error });
+export type { Ok, Err };
+export { Result };

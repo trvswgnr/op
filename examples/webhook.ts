@@ -1,4 +1,4 @@
-import { Op, TypedError } from "@prodkit/op";
+import { Op, TaggedError } from "@prodkit/op";
 
 type WebhookPayload = {
   eventId: string;
@@ -58,6 +58,15 @@ const retryTransient = {
 const BEST_EFFORT_SIDE_EFFECT_CONCURRENCY = 1;
 
 const isString = (value: unknown): value is string => typeof value === "string";
+const formatWarning = (error: unknown): string => {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
 
 const parseWebhook = (raw: unknown): WebhookPayload | null => {
   if (typeof raw !== "object" || raw === null) return null;
@@ -86,26 +95,29 @@ const parseWebhook = (raw: unknown): WebhookPayload | null => {
   };
 };
 
-export class InvalidWebhookError extends TypedError("InvalidWebhookError")<{
+export class InvalidWebhookError extends TaggedError("InvalidWebhookError")<{
   issues: string;
-}> {}
-export class DuplicateEventError extends TypedError("DuplicateEventError")<{ eventId: string }> {}
-export class FraudRiskTooHighError extends TypedError("FraudRiskTooHighError")<{
+}>() {}
+export class DuplicateEventError extends TaggedError("DuplicateEventError")<{
+  eventId: string;
+}>() {}
+export class FraudRiskTooHighError extends TaggedError("FraudRiskTooHighError")<{
   userId: string;
   score: number;
   threshold: number;
-}> {}
-export class InventoryUnavailableError extends TypedError("InventoryUnavailableError")<{
+}>() {}
+export class InventoryUnavailableError extends TaggedError("InventoryUnavailableError")<{
   orderId: string;
-}> {}
-export class PaymentDeclinedError extends TypedError("PaymentDeclinedError")<{
+}>() {}
+export class PaymentDeclinedError extends TaggedError("PaymentDeclinedError")<{
   orderId: string;
-}> {}
-
-export class ServiceCallError extends TypedError("ServiceCallError")<{
+  message: string;
+}>() {}
+export class ServiceCallError extends TaggedError("ServiceCallError")<{
   service: string;
   retryable: boolean;
-}> {
+  cause?: unknown;
+}>() {
   static from(service: string, cause: unknown) {
     if (cause instanceof ServiceCallError) return cause;
     const retryable =
@@ -123,7 +135,7 @@ export const createApp = (deps: AppDeps) => {
   const parseWebhookPayload = Op(function* (raw: unknown) {
     const payload = parseWebhook(raw);
     if (payload === null) {
-      return yield* new InvalidWebhookError({ issues: "Invalid webhook payload shape" });
+      return yield* Op.fail(new InvalidWebhookError({ issues: "Invalid webhook payload shape" }));
     }
     return payload;
   });
@@ -136,7 +148,7 @@ export const createApp = (deps: AppDeps) => {
       .withRetry(retryTransient)
       .withTimeout(300);
 
-    if (duplicate) return yield* new DuplicateEventError({ eventId });
+    if (duplicate) return yield* Op.fail(new DuplicateEventError({ eventId }));
     return;
   });
 
@@ -182,7 +194,7 @@ export const createApp = (deps: AppDeps) => {
       .withTimeout(500);
 
     if (!reservation.reserved) {
-      return yield* new InventoryUnavailableError({ orderId: payload.orderId });
+      return yield* Op.fail(new InventoryUnavailableError({ orderId: payload.orderId }));
     }
     return reservation;
   });
@@ -196,30 +208,40 @@ export const createApp = (deps: AppDeps) => {
       .withTimeout(500);
 
     if (!payment.approved || payment.authorizationId === undefined) {
-      return yield* new PaymentDeclinedError({
-        orderId: payload.orderId,
-        message: payment.declineReason ?? "Payment provider declined authorization",
-      });
+      return yield* Op.fail(
+        new PaymentDeclinedError({
+          orderId: payload.orderId,
+          message: payment.declineReason ?? "Payment provider declined authorization",
+        }),
+      );
     }
 
-    return { ...payment, authorizationId: payment.authorizationId };
+    return { approved: true as const, authorizationId: payment.authorizationId };
   });
 
   const processOrderWebhook = Op(function* (raw: unknown) {
     const payload = yield* parseWebhookPayload(raw);
     yield* checkDuplicate(payload.eventId);
 
+    const warnings: string[] = [];
     const policyVersionResult = yield* Op.settle(loadFraudPolicyVersion);
-    const fraudPolicyVersion = policyVersionResult.ok ? policyVersionResult.value : "unknown";
+    const fraudPolicyVersion = policyVersionResult.isOk()
+      ? policyVersionResult.value
+      : "policy-unavailable";
+    if (policyVersionResult.isErr()) {
+      warnings.push(`fraud policy fallback: ${formatWarning(policyVersionResult.error)}`);
+    }
 
     const riskScore = yield* pickRiskScore(payload.userId);
     const riskThreshold = 0.9;
     if (riskScore >= riskThreshold) {
-      return yield* new FraudRiskTooHighError({
-        userId: payload.userId,
-        score: riskScore,
-        threshold: riskThreshold,
-      });
+      return yield* Op.fail(
+        new FraudRiskTooHighError({
+          userId: payload.userId,
+          score: riskScore,
+          threshold: riskThreshold,
+        }),
+      );
     }
 
     // Unbounded fan-out is right when every child should start immediately and fail-fast together.
@@ -270,9 +292,8 @@ export const createApp = (deps: AppDeps) => {
       BEST_EFFORT_SIDE_EFFECT_CONCURRENCY,
     );
 
-    const warnings: string[] = [];
-    if (!receiptResult.ok) warnings.push(String(receiptResult.error));
-    if (!analyticsResult.ok) warnings.push(String(analyticsResult.error));
+    if (receiptResult.isErr()) warnings.push(formatWarning(receiptResult.error));
+    if (analyticsResult.isErr()) warnings.push(formatWarning(analyticsResult.error));
     return { ...processed, warnings };
   });
 
