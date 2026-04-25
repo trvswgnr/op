@@ -66,7 +66,14 @@ const parseWebhook = (raw: unknown): WebhookPayload | null => {
   if (!isString(payload.orderId)) return null;
   if (!isString(payload.userId)) return null;
   if (!isString(payload.currency)) return null;
-  if (typeof payload.totalCents !== "number") return null;
+  if (
+    typeof payload.totalCents !== "number" ||
+    !Number.isFinite(payload.totalCents) ||
+    !Number.isInteger(payload.totalCents) ||
+    payload.totalCents < 0
+  ) {
+    return null;
+  }
   if (!Array.isArray(payload.itemSkus)) return null;
   if (payload.itemSkus.some((sku) => !isString(sku))) return null;
   return {
