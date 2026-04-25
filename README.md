@@ -24,9 +24,9 @@ Runtime requirement for consumers: Node `>=20`.
 ## Quick start
 
 ```ts
-import { Op, TypedError } from "@prodkit/op";
+import { Op, TaggedError } from "@prodkit/op";
 
-class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
+class DivisionByZeroError extends TaggedError("DivisionByZeroError") {}
 
 const divide = Op(function* (a: number, b: number) {
   if (b === 0) yield* new DivisionByZeroError();
@@ -46,7 +46,7 @@ const program = Op(function* () {
 });
 
 const result = await program.run();
-//    ^? Result<number, DivisionByZeroError | "Negative" | UnexpectedError>
+//    ^? Result<number, DivisionByZeroError | "Negative" | UnhandledException>
 if (result.ok) {
   console.log(result.value);
 } else {
@@ -73,7 +73,7 @@ Creates an op that always fails with `error`.
 ### `Op.try(f, onError?)`
 
 Runs an async or sync function and converts failures into `Err`.
-If `onError` is omitted, failures become `UnexpectedError`.
+If `onError` is omitted, failures become `UnhandledException`.
 
 `f` receives an `AbortSignal` that fires when the surrounding `withTimeout` expires. Forward it
 to cancellable APIs so in-flight work (e.g. `fetch`, DB queries) actually stops instead of
@@ -162,13 +162,13 @@ const result = await runPromise;
 
 ## Typed errors
 
-Use `TypedError("Name")` for discriminated domain errors that still behave like real `Error` objects.
+Use `TaggedError("Name")` for discriminated domain errors that still behave like real `Error` objects.
 You can fail with one directly with `yield* new MyError()` inside an op.
 
 ```ts
-import { TypedError, Op } from "@prodkit/op";
+import { TaggedError, Op } from "@prodkit/op";
 
-class ValidationError extends TypedError("ValidationError")<{
+class ValidationError extends TaggedError("ValidationError")<{
   field: string;
 }> {}
 
@@ -202,7 +202,7 @@ const policy = {
 
 ## Built-in errors
 
-- `UnexpectedError`: default wrapper when a thrown/rejected value is not mapped to a domain error.
+- `UnhandledException`: default wrapper when a thrown/rejected value is not mapped to a domain error.
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
 - `UnreachableError`: internal sentinel used by control flow; exported for completeness, but most
@@ -275,7 +275,7 @@ if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
 
 Propagates whichever op settles first — success or failure. Remaining siblings are
 aborted with no library-specific reason. `Op.race([])` fails fast with
-`UnexpectedError`.
+`UnhandledException`.
 
 ```ts
 const r = await Op.race([slow, fast]).run();
@@ -283,7 +283,7 @@ const r = await Op.race([slow, fast]).run();
 
 ## Flagship production example: webhook consumer
 
-See `examples/webhook-flagship.ts` for a complete order webhook pipeline
+See `examples/webhook.ts` for a complete order webhook pipeline
 that demonstrates:
 
 - input validation with typed domain errors

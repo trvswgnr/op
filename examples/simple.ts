@@ -1,20 +1,20 @@
-import { Op, TypedError } from "@prodkit/op";
+import { Op, TaggedError } from "@prodkit/op";
 
-export class DivisionByZeroError extends TypedError("DivisionByZeroError") {}
+export class DivisionByZeroError extends TaggedError("DivisionByZeroError")() {}
 
 export class NegativeError extends Error {
-  type: "NegativeError";
+  _tag: "NegativeError";
   n: number;
 
   constructor(n: number) {
     super();
-    this.type = "NegativeError";
+    this._tag = "NegativeError";
     this.n = n;
   }
 }
 
 export const divide = Op(function* (a: number, b: number) {
-  if (b === 0) return yield* new DivisionByZeroError();
+  if (b === 0) return yield* Op.fail(new DivisionByZeroError());
   return a / b;
 });
 
@@ -29,40 +29,9 @@ export const mathComposeProgram = Op(function* () {
   return rooted * 2;
 });
 
-export class FetchError extends Error {
-  type: "FetchError";
-  cause: unknown;
-
-  constructor({ cause }: { cause: unknown }) {
-    super();
-    this.type = "FetchError";
-    this.cause = cause;
-  }
-}
-
-export class HttpError extends Error {
-  type: "HttpError";
-  status: number;
-  statusText: string;
-
-  constructor({ status, statusText }: { status: number; statusText: string }) {
-    super();
-    this.type = "HttpError";
-    this.status = status;
-    this.statusText = statusText;
-  }
-}
-
-export class ParseError extends Error {
-  type: "ParseError";
-  raw: unknown;
-
-  constructor({ raw }: { raw: unknown }) {
-    super();
-    this.type = "ParseError";
-    this.raw = raw;
-  }
-}
+export class FetchError extends TaggedError("FetchError")() {}
+export class HttpError extends TaggedError("HttpError")<{ status: number; statusText: string }>() {}
+export class ParseError extends TaggedError("ParseError")<{ raw: unknown }>() {}
 
 export const parseUser = Op(function* (payload: unknown) {
   if (

@@ -1,4 +1,4 @@
-import { UnexpectedError, UnreachableError } from "./errors.js";
+import { UnhandledException, UnreachableError } from "./errors.js";
 import { type FromGenFn, type Instruction, type Op, runOp } from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
@@ -19,7 +19,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    type: "Op",
+    _tag: "Op",
   };
   const op = () => self;
   return Object.assign(op, self) as never;
@@ -38,7 +38,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    type: "Op" as const,
+    _tag: "Op" as const,
   };
   const op = () => self;
   return Object.assign(op, self) as never;
@@ -47,23 +47,23 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
 /**
  * Suspends until a promise settles, then continues with its value or a mapped failure.
  */
-export const _try = <T, E = UnexpectedError>(
+export const _try = <T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
 ): Op<Awaited<T>, E, readonly []> => {
   const self = {
     *[Symbol.iterator]() {
       const result: Result<T, E> = yield {
-        type: "Suspended" as const,
+        _tag: "Suspended" as const,
         suspend: (signal: AbortSignal) =>
           Promise.resolve()
             .then(() => f(signal))
             .then(
               (a) => ok(a),
-              (cause) => err(onError ? onError(cause) : new UnexpectedError(cause)),
+              (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
             ) as Promise<Result<T, E>>,
       };
-      if (result.type === "Err") {
+      if (result.isErr()) {
         yield result;
         throw new UnreachableError();
       }
@@ -73,7 +73,7 @@ export const _try = <T, E = UnexpectedError>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    type: "Op" as const,
+    _tag: "Op" as const,
   };
   const op = () => self;
   return Object.assign(op, self) as never;
@@ -92,7 +92,7 @@ export const fromGenFn: FromGenFn = (
       withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
-      type: "Op",
+      _tag: "Op",
     };
     const _op = () => inner;
     return Object.assign(_op, inner);
@@ -102,7 +102,7 @@ export const fromGenFn: FromGenFn = (
     withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    type: "Op" as const,
+    _tag: "Op" as const,
   }) as never;
 
   return out as Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
