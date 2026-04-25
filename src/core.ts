@@ -1,14 +1,14 @@
-import { UnexpectedError, type TimeoutError } from "./errors.js";
+import { UnhandledException, type TimeoutError } from "./errors.js";
 import { err, ok, type Result, type Err, type ExtractErr } from "./result.js";
 import type { RetryPolicy } from "./policies.js";
 import type { Typed } from "./typed.js";
 
 export interface Suspended {
-  readonly type: "Suspended";
+  readonly _tag: "Suspended";
   readonly suspend: (signal: AbortSignal) => Promise<unknown>;
 }
 
-export type Instruction<E> = Err<E> | Suspended;
+export type Instruction<E> = Err<unknown, E> | Suspended;
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
   withRetry(policy?: RetryPolicy): Op<T, E, A>;
@@ -23,50 +23,70 @@ export interface WithSignal<T, E, A extends readonly unknown[]> {
 }
 
 export interface OpBase<T, E> {
-  type: "Op";
+  readonly _tag: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
 export interface OpNullary<T, E>
   extends OpBase<T, E>, WithRetry<T, E, []>, WithTimeout<T, E, []>, WithSignal<T, E, []> {
   (): OpBase<T, E>;
-  run(): Promise<Result<T, E | UnexpectedError>>;
+  run(): Promise<Result<T, E | UnhandledException>>;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>
   extends WithRetry<T, E, A>, WithTimeout<T, E, A>, WithSignal<T, E, A> {
   (...args: A): OpNullary<T, E>;
-  run(...args: A): Promise<Result<T, E | UnexpectedError>>;
+  run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
 
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
 
-export function runOp<T, E>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnexpectedError>> {
+export function runOp<T, E>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnhandledException>> {
   return drive(op, new AbortController().signal);
+}
+
+function isSuspended(value: unknown): value is Suspended {
+  return (
+    typeof value === "object" && value !== null && "_tag" in value && value._tag === "Suspended"
+  );
+}
+
+function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
+  if (typeof value !== "object" || value === null || !("isErr" in value)) return false;
+  const hasIsErr = value as { isErr?: unknown };
+  return typeof hasIsErr.isErr === "function" && hasIsErr.isErr();
 }
 
 export async function drive<T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
-): Promise<Result<T, E | UnexpectedError>> {
+): Promise<Result<T, E | UnhandledException>> {
   try {
     const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
     let step = iter.next();
     while (!step.done) {
       try {
-        if (step.value.type === "Err") return err(step.value.error);
-        step = iter.next(await step.value.suspend(signal));
+        if (isSuspended(step.value)) {
+          step = iter.next(await step.value.suspend(signal));
+          continue;
+        }
+        if (isErrInstruction<E>(step.value)) return err(step.value.error);
+        return err(
+          new UnhandledException({
+            cause: new TypeError("Op generator yielded an invalid instruction"),
+          }),
+        );
       } catch (cause) {
-        return err(new UnexpectedError(cause));
+        return err(new UnhandledException({ cause }));
       }
     }
     const value = await step.value;
     return ok(value);
   } catch (cause) {
-    return err(new UnexpectedError(cause));
+    return err(new UnhandledException({ cause }));
   }
 }
 
@@ -96,7 +116,7 @@ export const makeNullaryOp = <T, E>(
     withRetry: hooks.withRetry,
     withTimeout: hooks.withTimeout,
     withSignal: hooks.withSignal,
-    type: "Op" as const,
+    _tag: "Op" as const,
   };
   const op = () => self;
   return Object.assign(op, self) as never;

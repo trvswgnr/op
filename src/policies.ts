@@ -1,4 +1,4 @@
-import { TimeoutError, UnexpectedError, UnreachableError } from "./errors.js";
+import { TimeoutError, UnreachableError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
 import { drive, makeNullaryOp, type Op, type OpArity, type Instruction } from "./core.js";
 
@@ -48,7 +48,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    type: "Op" as const,
+    _tag: "Op" as const,
   });
 
   return out as never;
@@ -70,23 +70,23 @@ const withRetryNullaryOp = <T, E>(
   op: Op<T, E, readonly []>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, readonly []> => {
-  return makePolicyNullaryOp<T, E | UnexpectedError>(function* () {
+  return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     let attempt = 1;
 
     while (true) {
       const attemptStep = (yield {
-        type: "Suspended",
+        _tag: "Suspended",
         suspend: (signal: AbortSignal) =>
           drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
-      }) as { result: Result<T, E | UnexpectedError>; aborted: boolean };
+      }) as { result: Result<T, E | UnhandledException>; aborted: boolean };
 
       const result = attemptStep.result;
-      if (result.ok) {
+      if (result.isOk()) {
         return result.value;
       }
 
       const cause = result.error;
-      const retryCause = cause instanceof UnexpectedError ? cause.cause : cause;
+      const retryCause = cause instanceof UnhandledException ? cause.cause : cause;
       const canRetry =
         !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
       if (!canRetry) {
@@ -97,7 +97,7 @@ const withRetryNullaryOp = <T, E>(
       const delayMs = Math.max(0, policy.getDelay(attempt));
       if (delayMs > 0) {
         const delayAborted = (yield {
-          type: "Suspended",
+          _tag: "Suspended",
           suspend: (signal: AbortSignal) =>
             abortableDelay(delayMs, signal).then(() => signal.aborted),
         }) as boolean;
@@ -117,13 +117,13 @@ const withTimeoutNullaryOp = <T, E>(
   timeoutMs: number,
 ): Op<T, E | TimeoutError, readonly []> => {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
-  return makePolicyNullaryOp<T, E | UnexpectedError | TimeoutError>(function* () {
+  return makePolicyNullaryOp<T, E | UnhandledException | TimeoutError>(function* () {
     const result = (yield {
-      type: "Suspended",
+      _tag: "Suspended",
       suspend: (outerSignal: AbortSignal) =>
         raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
-    }) as Result<T, E | UnexpectedError | TimeoutError>;
-    if (!result.ok) {
+    }) as Result<T, E | UnhandledException | TimeoutError>;
+    if (result.isErr()) {
       yield err(result.error);
       throw new UnreachableError();
     }
@@ -135,13 +135,13 @@ const withSignalNullaryOp = <T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
 ): Op<T, E, readonly []> => {
-  return makePolicyNullaryOp<T, E | UnexpectedError>(function* () {
+  return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     const result = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal: AbortSignal) =>
         runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-    }) as Result<T, E | UnexpectedError>;
-    if (!result.ok) {
+    }) as Result<T, E | UnhandledException>;
+    if (result.isErr()) {
       yield err(result.error);
       throw new UnreachableError();
     }
