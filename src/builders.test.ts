@@ -1,41 +1,41 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
-import { TimeoutError, UnexpectedError, TypedError } from "./errors.js";
+import { TimeoutError, UnhandledException, TaggedError } from "./errors.js";
 import type { Op } from "./core.js";
 import type { Result } from "./result.js";
 
 describe("succeed", () => {
   test("run returns Ok with value", async () => {
     const result = await succeed(69).run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(69);
   });
 
   test("handles various value types", async () => {
     const r1 = await succeed(0).run();
-    assert(r1.ok === true, "r1.ok should be true");
+    assert(r1.isOk() === true, "should be Ok");
     expect(r1.value).toBe(0);
 
     const r2 = await succeed("").run();
-    assert(r2.ok === true, "r2.ok should be true");
+    assert(r2.isOk() === true, "should be Ok");
     expect(r2.value).toBe("");
 
     const r3 = await succeed(null).run();
-    assert(r3.ok === true, "r3.ok should be true");
+    assert(r3.isOk() === true, "should be Ok");
     expect(r3.value).toBe(null);
 
     const r4 = await succeed({ foo: "bar" }).run();
-    assert(r4.ok === true, "r4.ok should be true");
+    assert(r4.isOk() === true, "should be Ok");
     expect(r4.value).toEqual({ foo: "bar" });
 
     const r5 = await succeed([1, 2, 3]).run();
-    assert(r5.ok === true, "r5.ok should be true");
+    assert(r5.isOk() === true, "should be Ok");
     expect(r5.value).toEqual([1, 2, 3]);
   });
 
   test("handles promises", async () => {
     const result = await succeed(Promise.resolve(69)).run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(69);
 
     const program = fromGenFn(function* () {
@@ -44,7 +44,7 @@ describe("succeed", () => {
       return a + b;
     });
     const result2 = await program.run();
-    assert(result2.ok === true, "result2.ok should be true");
+    assert(result2.isOk() === true, "should be Ok");
     expect(result2.value).toBe(3);
   });
 });
@@ -52,14 +52,14 @@ describe("succeed", () => {
 describe("fail", () => {
   test("run returns Err with error", async () => {
     const result = await fail("error").run();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBe("error");
   });
 
   test("preserves custom error objects", async () => {
     const customErr = new Error("custom message");
     const result = await fail(customErr).run();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBe(customErr);
     expect(result.error.message).toBe("custom message");
   });
@@ -72,7 +72,7 @@ describe("fail", () => {
       return yield* succeed(1);
     });
     const result = await program.run();
-    expect(result.ok).toBe(false);
+    expect(result.isErr()).toBe(true);
     expect(executed).toBe(false);
   });
 });
@@ -84,7 +84,7 @@ describe("_try", () => {
       () => "err",
     );
     const result = await program.run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(1);
   });
 
@@ -94,7 +94,7 @@ describe("_try", () => {
         () => Promise.reject("failed"),
         (e) => `mapped: ${e}`,
       ).run();
-      assert(result.ok === false, "result.ok should be false");
+      assert(result.isErr() === true, "should be Err");
       expect(result.error).toBe("mapped: failed");
     }
   });
@@ -107,11 +107,11 @@ describe("_try", () => {
       },
       (e) => `mapped: ${e}`,
     ).run();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBe(`mapped: ${syncThrow}`);
   });
 
-  test("UnexpectedError when promise rejects without proper handling", async () => {
+  test("UnhandledException when promise rejects without proper handling", async () => {
     const testError = new TypeError("whoops");
     const result = await fromGenFn(function* () {
       const x = yield* _try(
@@ -122,12 +122,12 @@ describe("_try", () => {
       );
       return x;
     }).run();
-    assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBeInstanceOf(UnexpectedError);
+    assert(result.isErr() === true, "should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
     expect(result.error.cause).toBe(testError);
   });
 
-  test("UnexpectedError when onError throws", async () => {
+  test("UnhandledException when onError throws", async () => {
     const error = new Error("onError threw");
     const result = await _try(
       () => Promise.reject("boom"),
@@ -135,8 +135,8 @@ describe("_try", () => {
         throw error;
       },
     ).run();
-    assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBeInstanceOf(UnexpectedError);
+    assert(result.isErr() === true, "should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
     expect(result.error.cause).toBeInstanceOf(Error);
     expect(result.error.cause).toBe(error);
   });
@@ -149,7 +149,7 @@ describe("gen", () => {
       const b = yield* succeed(2);
       return a + b;
     }).run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(3);
   });
 
@@ -163,7 +163,7 @@ describe("gen", () => {
       return yield* succeed(2);
     }).run();
     expect(firstRan).toBe(true);
-    assert(result.ok === false, "result.ok should be true");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBe("oops");
     expect(secondRan).toBe(false);
   });
@@ -177,7 +177,7 @@ describe("gen", () => {
       );
       return b;
     }).run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(20);
   });
 
@@ -190,7 +190,7 @@ describe("gen", () => {
       );
     });
     const result = await p.run();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toEqual({ mapped: "async fail" });
   });
 
@@ -199,8 +199,8 @@ describe("gen", () => {
       return yield* _try(() => Promise.reject("async fail"));
     });
     const result = await p.run();
-    assert(result.ok === false, "result.ok should be false");
-    expect(result.error).toBeInstanceOf(UnexpectedError);
+    assert(result.isErr() === true, "should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
   });
 
   test("parameterized gen - run passes args into the generator", async () => {
@@ -208,7 +208,7 @@ describe("gen", () => {
       return a + b;
     });
     const result = await add(2, 3).run();
-    assert(result.ok === true, "result.ok should be true");
+    assert(result.isOk() === true, "result should be Ok");
     expect(result.value).toBe(5);
   });
 
@@ -221,8 +221,8 @@ describe("gen", () => {
     });
     const viaRun = await program.run();
     const viaFreeRun = await program.run();
-    assert(viaRun.ok === true, "viaRun.ok should be true");
-    assert(viaFreeRun.ok === true, "viaFreeRun.ok should be true");
+    assert(viaRun.isOk() === true, "should be Ok");
+    assert(viaFreeRun.isOk() === true, "should be Ok");
     expect(viaRun.value).toBe(3);
     expect(viaFreeRun.value).toBe(3);
   });
@@ -233,8 +233,8 @@ describe("gen", () => {
     });
     const a = await program.run();
     const b = await program.run();
-    assert(a.ok === true, "a.ok should be true");
-    assert(b.ok === true, "b.ok should be true");
+    assert(a.isOk() === true, "should be Ok");
+    assert(b.isOk() === true, "should be Ok");
     expect(a.value).toBe(69);
     expect(b.value).toBe(69);
   });
@@ -255,7 +255,7 @@ describe("type inference", () => {
     const p4 = fail("error");
     expectTypeOf(p4).toEqualTypeOf<Op<never, string, []>>();
     const p5 = _try(() => Promise.resolve(1));
-    expectTypeOf(p5).toEqualTypeOf<Op<number, UnexpectedError, []>>();
+    expectTypeOf(p5).toEqualTypeOf<Op<number, UnhandledException, []>>();
     const p6 = _try(
       () => Promise.resolve(1),
       () => "error",
@@ -266,17 +266,17 @@ describe("type inference", () => {
     const p1 = fromGenFn(function* () {
       return yield* succeed(1);
     }).run();
-    expectTypeOf(p1).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+    expectTypeOf(p1).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
     const p2 = fromGenFn(function* (a: string) {
       return yield* succeed(a);
     }).run("hello");
-    expectTypeOf(p2).toEqualTypeOf<Promise<Result<string, UnexpectedError>>>();
+    expectTypeOf(p2).toEqualTypeOf<Promise<Result<string, UnhandledException>>>();
   });
   test("op.run() arity is enforced by the type checker", async () => {
     const p1 = fromGenFn(function* () {
       return yield* succeed(1);
     });
-    expect((await p1.run()).ok).toBe(true);
+    expect((await p1.run()).isOk()).toBe(true);
     // @ts-expect-error - nullary run does not accept arguments
     p1.run(1);
 
@@ -288,13 +288,13 @@ describe("type inference", () => {
     // @ts-expect-error - too many arguments
     p2.run(1, 2); // note: not enforced at runtime
     const r2 = await p2.run(69);
-    assert(r2.ok === true, "r2.ok should be true");
+    assert(r2.isOk() === true, "should be Ok");
     expect(r2.value).toBe(69);
   });
 
   test("withRetry preserves inferred op shapes", async () => {
     const p1 = _try(() => Promise.resolve(1)).withRetry();
-    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, []>>();
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnhandledException, []>>();
 
     const p2 = _try(
       () => Promise.resolve(1),
@@ -311,18 +311,18 @@ describe("type inference", () => {
       const v = yield* _try(() => Promise.resolve(1)).withRetry();
       return v + 1;
     });
-    expectTypeOf(nested).toEqualTypeOf<Op<number, UnexpectedError, []>>();
+    expectTypeOf(nested).toEqualTypeOf<Op<number, UnhandledException, []>>();
 
     const r1 = p1.run();
-    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const r2 = p2.run();
-    expectTypeOf(r2).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
+    expectTypeOf(r2).toEqualTypeOf<Promise<Result<number, string | UnhandledException>>>();
 
     const r3 = p3.run("abc");
-    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
-    expect((await p1.run()).ok).toBe(true);
+    expect((await p1.run()).isOk()).toBe(true);
 
     // @ts-expect-error - nullary retry op does not accept args
     p1.run(1);
@@ -336,8 +336,8 @@ describe("type inference", () => {
     const p1 = fromGenFn(function* (id: string) {
       return yield* _try(() => Promise.resolve(id.length));
     }).withRetry();
-    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError, [id: string]>>();
-    expectTypeOf(p1.run("abc")).toEqualTypeOf<Promise<Result<number, UnexpectedError>>>();
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnhandledException, [id: string]>>();
+    expectTypeOf(p1.run("abc")).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const p2 = fromGenFn(function* (id: string) {
       if (Math.random() < 0) {
@@ -346,9 +346,11 @@ describe("type inference", () => {
       return id.length;
     }).withRetry();
     expectTypeOf(p2).toEqualTypeOf<Op<number, string, [id: string]>>();
-    expectTypeOf(p2.run("abc")).toEqualTypeOf<Promise<Result<number, string | UnexpectedError>>>();
+    expectTypeOf(p2.run("abc")).toEqualTypeOf<
+      Promise<Result<number, string | UnhandledException>>
+    >();
 
-    expect((await p1.run("abcd")).ok).toBe(true);
+    expect((await p1.run("abcd")).isOk()).toBe(true);
   });
 
   test("distinguishes between multiple error types", async () => {
@@ -359,7 +361,7 @@ describe("type inference", () => {
     class CustomError2 extends Error {
       readonly alsoUnique = "CustomError2";
     }
-    class CustomError3 extends TypedError("CustomError3") {}
+    class CustomError3 extends TaggedError("CustomError3")() {}
     const alwaysFails1 = fromGenFn(function* () {
       if (Math.random() < 0) {
         return yield* succeed(1);
@@ -385,13 +387,13 @@ describe("type inference", () => {
       return a + b + c;
     });
     const result = await program.run();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBeInstanceOf(CustomError1);
   });
 
   test("withTimeout preserves inferred op shapes", async () => {
     const p1 = _try(() => Promise.resolve(1)).withTimeout(10);
-    expectTypeOf(p1).toEqualTypeOf<Op<number, UnexpectedError | TimeoutError, []>>();
+    expectTypeOf(p1).toEqualTypeOf<Op<number, UnhandledException | TimeoutError, []>>();
 
     const p2 = _try(
       () => Promise.resolve(1),
@@ -405,17 +407,17 @@ describe("type inference", () => {
     expectTypeOf(p3).toEqualTypeOf<Op<number, TimeoutError, [id: string]>>();
 
     const r1 = p1.run();
-    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, TimeoutError | UnexpectedError>>>();
+    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, TimeoutError | UnhandledException>>>();
 
     const r2 = p2.run();
     expectTypeOf(r2).toEqualTypeOf<
-      Promise<Result<number, string | TimeoutError | UnexpectedError>>
+      Promise<Result<number, string | TimeoutError | UnhandledException>>
     >();
 
     const r3 = p3.run("abc");
-    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, TimeoutError | UnexpectedError>>>();
+    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, TimeoutError | UnhandledException>>>();
 
-    expect((await p1.run()).ok).toBe(true);
+    expect((await p1.run()).isOk()).toBe(true);
 
     // @ts-expect-error - nullary timeout op does not accept args
     p1.run(1);
@@ -425,7 +427,7 @@ describe("type inference", () => {
     p3.run("abc", "extra");
 
     let attempts = 0;
-    class FetchError extends TypedError("FetchError") {}
+    class FetchError extends TaggedError("FetchError")() {}
     const fetcher = async () => {
       attempts++;
       if (attempts === 1) {
@@ -447,9 +449,9 @@ describe("type inference", () => {
     expectTypeOf(p4).toEqualTypeOf<Op<number, TimeoutError | FetchError, []>>();
     const result = await p4.run();
     expectTypeOf(result).toEqualTypeOf<
-      Result<number, TimeoutError | FetchError | UnexpectedError>
+      Result<number, TimeoutError | FetchError | UnhandledException>
     >();
-    assert(result.ok === false, "result.ok should be false");
+    assert(result.isErr() === true, "should be Err");
     expect(result.error).toBeInstanceOf(TimeoutError);
   });
 });

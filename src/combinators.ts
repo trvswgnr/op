@@ -1,7 +1,7 @@
-import { ErrorGroup, UnexpectedError, UnreachableError } from "./errors.js";
+import { ErrorGroup, UnhandledException, UnreachableError } from "./errors.js";
 import { drive, makeNullaryOp, type Instruction, type Op } from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { err, ok, type Err, type Result } from "./result.js";
+import { err, ok, type Result } from "./result.js";
 
 type NullaryOp = Op<unknown, unknown, readonly []>;
 type SuccessOf<O> = O extends Op<infer T, unknown, readonly []> ? T : never;
@@ -23,7 +23,7 @@ const fanOut = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
 ): {
-  runs: readonly Promise<Result<T, E | UnexpectedError>>[];
+  runs: readonly Promise<Result<T, E | UnhandledException>>[];
   controllers: readonly AbortController[];
   detach: () => void;
 } => {
@@ -52,17 +52,17 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   concurrency?: number,
 ): Op<
   { [K in keyof Ops]: SuccessOf<Ops[K]> },
-  ErrorOf<Ops[number]> | UnexpectedError,
+  ErrorOf<Ops[number]> | UnhandledException,
   readonly []
 > => {
   const snapshot = ops.slice();
   const limit = concurrencyLimit(concurrency, snapshot.length);
   return makeCombinatorOp(function* () {
     const result = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal) => driveAll(snapshot, outerSignal, limit),
     }) as Result<never, never>;
-    if (!result.ok) {
+    if (result.isErr()) {
       yield err(result.error);
       throw new UnreachableError();
     }
@@ -74,11 +74,11 @@ const driveAll = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
   concurrency: number,
-): Promise<Result<T[], E | UnexpectedError>> => {
+): Promise<Result<T[], E | UnhandledException>> => {
   if (ops.length === 0) return ok([]);
   if (concurrency >= ops.length) return driveAllUnbounded(ops, outerSignal);
 
-  const results: (Result<T, E | UnexpectedError> | undefined)[] = new Array(ops.length);
+  const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
   const cascade = () => {
     for (const c of controllers) c.abort(outerSignal.reason);
@@ -87,7 +87,7 @@ const driveAll = async <T, E>(
   else outerSignal.addEventListener("abort", cascade, { once: true });
 
   let nextIndex = 0;
-  let firstErr: Err<E | UnexpectedError> | undefined;
+  let firstErr: (E | UnhandledException) | undefined;
 
   const worker = async () => {
     while (firstErr === undefined) {
@@ -103,8 +103,8 @@ const driveAll = async <T, E>(
       controllers.delete(controller);
       results[i] = res;
 
-      if (!res.ok && firstErr === undefined) {
-        firstErr = res;
+      if (res.isErr() && firstErr === undefined) {
+        firstErr = res.error;
         for (const c of controllers) c.abort();
       }
     }
@@ -116,24 +116,24 @@ const driveAll = async <T, E>(
     outerSignal.removeEventListener("abort", cascade);
   }
 
-  if (firstErr !== undefined) return firstErr;
+  if (firstErr !== undefined) return err(firstErr);
   const values: T[] = [];
-  for (const r of results) if (r?.ok) values.push(r.value);
+  for (const r of results) if (r?.isOk()) values.push(r.value);
   return ok(values);
 };
 
 const driveAllUnbounded = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T[], E | UnexpectedError>> => {
+): Promise<Result<T[], E | UnhandledException>> => {
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
-  let firstErr: Err<E | UnexpectedError> | undefined;
+  let firstErr: (E | UnhandledException) | undefined;
 
   const observed = runs.map((p, i) =>
     p.then((res) => {
-      if (!res.ok && firstErr === undefined) {
-        firstErr = res;
+      if (res.isErr() && firstErr === undefined) {
+        firstErr = res.error;
         controllers.forEach((c, j) => {
           if (j !== i) c.abort();
         });
@@ -145,9 +145,9 @@ const driveAllUnbounded = async <T, E>(
   const results = await Promise.all(observed);
   detach();
 
-  if (firstErr !== undefined) return firstErr;
+  if (firstErr !== undefined) return err(firstErr);
   const values: T[] = [];
-  for (const r of results) if (r.ok) values.push(r.value);
+  for (const r of results) if (r.isOk()) values.push(r.value);
   return ok(values);
 };
 
@@ -155,16 +155,16 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
   concurrency?: number,
 ): Op<
-  { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> },
+  { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> },
   never,
   readonly []
 > => {
   const snapshot = ops.slice();
   const limit = concurrencyLimit(concurrency, snapshot.length);
-  type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnexpectedError> };
+  type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> };
   return makeCombinatorOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
     const value = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal, limit),
     }) as V;
     return value;
@@ -173,12 +173,12 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
 
 export const settleOp = <T, E>(
   op: Op<T, E, readonly []>,
-): Op<Result<T, E | UnexpectedError>, never, readonly []> => {
-  return makeCombinatorOp<Result<T, E | UnexpectedError>, never>(function* () {
+): Op<Result<T, E | UnhandledException>, never, readonly []> => {
+  return makeCombinatorOp<Result<T, E | UnhandledException>, never>(function* () {
     const value = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal) => drive(op, outerSignal),
-    }) as Result<T, E | UnexpectedError>;
+    }) as Result<T, E | UnhandledException>;
     return value;
   });
 };
@@ -187,11 +187,11 @@ const driveAllSettled = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
   concurrency: number,
-): Promise<Result<T, E | UnexpectedError>[]> => {
+): Promise<Result<T, E | UnhandledException>[]> => {
   if (ops.length === 0) return [];
   if (concurrency >= ops.length) return driveAllSettledUnbounded(ops, outerSignal);
 
-  const results: (Result<T, E | UnexpectedError> | undefined)[] = new Array(ops.length);
+  const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
   const cascade = () => {
     for (const c of controllers) c.abort(outerSignal.reason);
@@ -221,13 +221,13 @@ const driveAllSettled = async <T, E>(
     outerSignal.removeEventListener("abort", cascade);
   }
 
-  return results.filter((r): r is Result<T, E | UnexpectedError> => r !== undefined);
+  return results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined);
 };
 
 const driveAllSettledUnbounded = async <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, E | UnexpectedError>[]> => {
+): Promise<Result<T, E | UnhandledException>[]> => {
   const fan = fanOut(ops, outerSignal);
   const results = await Promise.all(fan.runs);
   fan.detach();
@@ -236,16 +236,20 @@ const driveAllSettledUnbounded = async <T, E>(
 
 export const anyOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
-): Op<SuccessOf<Ops[number]>, ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>, readonly []> => {
+): Op<
+  SuccessOf<Ops[number]>,
+  ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>,
+  readonly []
+> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
-  type E = ErrorGroup<ErrorOf<Ops[number]> | UnexpectedError>;
+  type E = ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>;
   return makeCombinatorOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
     const result = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal) => driveAny(snapshot, outerSignal),
     }) as Result<V, E>;
-    if (!result.ok) {
+    if (result.isErr()) {
       yield err(result.error);
       throw new UnreachableError();
     }
@@ -256,18 +260,18 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
 const driveAny = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, ErrorGroup<E | UnexpectedError>>> => {
+): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
   if (ops.length === 0) {
     return Promise.resolve(err(new ErrorGroup([], "Op.any requires at least one operation")));
   }
   const fan = fanOut(ops, outerSignal);
 
-  return new Promise<Result<T, ErrorGroup<E | UnexpectedError>>>((resolve) => {
+  return new Promise<Result<T, ErrorGroup<E | UnhandledException>>>((resolve) => {
     let winnerDecided = false;
 
     const observed = fan.runs.map((p, i) =>
       p.then((res) => {
-        if (!winnerDecided && res.ok) {
+        if (!winnerDecided && res.isOk()) {
           winnerDecided = true;
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
@@ -282,8 +286,8 @@ const driveAny = <T, E>(
     Promise.all(observed).then((results) => {
       if (winnerDecided) return;
       fan.detach();
-      const errors: (E | UnexpectedError)[] = [];
-      for (const r of results) if (!r.ok) errors.push(r.error);
+      const errors: (E | UnhandledException)[] = [];
+      for (const r of results) if (r.isErr()) errors.push(r.error);
       resolve(err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
     });
   });
@@ -291,16 +295,16 @@ const driveAny = <T, E>(
 
 export const raceOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
-): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnexpectedError, readonly []> => {
+): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnhandledException, readonly []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
-  type E = ErrorOf<Ops[number]> | UnexpectedError;
+  type E = ErrorOf<Ops[number]> | UnhandledException;
   return makeCombinatorOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
     const result = (yield {
-      type: "Suspended" as const,
+      _tag: "Suspended" as const,
       suspend: (outerSignal) => driveRace(snapshot, outerSignal),
     }) as Result<V, E>;
-    if (!result.ok) {
+    if (result.isErr()) {
       yield err(result.error);
       throw new UnreachableError();
     }
@@ -311,9 +315,11 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
 const driveRace = <T, E>(
   ops: readonly Op<T, E, readonly []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, E | UnexpectedError>> => {
+): Promise<Result<T, E | UnhandledException>> => {
   if (ops.length === 0) {
-    return Promise.resolve(err(new UnexpectedError("Op.race requires at least one operation")));
+    return Promise.resolve(
+      err(new UnhandledException({ cause: new Error("Op.race requires at least one operation") })),
+    );
   }
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
