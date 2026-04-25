@@ -15,6 +15,7 @@ import {
 import {
   DuplicateEventError,
   FraudRiskTooHighError,
+  InvalidWebhookError,
   ServiceCallError,
   createApp,
 } from "./webhook-flagship.ts";
@@ -214,6 +215,24 @@ const runWebhookExampleSmoke = async () => {
   assert(
     !duplicate.ok && duplicate.error instanceof DuplicateEventError,
     "duplicate event check failed",
+  );
+
+  const invalidNegativeCents = await appWithWarning.processOrderWebhook.run({
+    ...webhookPayload,
+    totalCents: -1,
+  });
+  assert(
+    !invalidNegativeCents.ok && invalidNegativeCents.error instanceof InvalidWebhookError,
+    "negative totalCents validation check failed",
+  );
+
+  const invalidNaNCents = await appWithWarning.processOrderWebhook.run({
+    ...webhookPayload,
+    totalCents: Number.NaN,
+  });
+  assert(
+    !invalidNaNCents.ok && invalidNaNCents.error instanceof InvalidWebhookError,
+    "NaN totalCents validation check failed",
   );
 
   let paymentAttempts = 0;
