@@ -14,7 +14,7 @@ export class NegativeError extends Error {
 }
 
 export const divide = Op(function* (a: number, b: number) {
-  if (b === 0) return yield* Op.fail(new DivisionByZeroError());
+  if (b === 0) return yield* new DivisionByZeroError();
   return a / b;
 });
 
@@ -40,7 +40,7 @@ export const parseUser = Op(function* (payload: unknown) {
     !("name" in payload) ||
     typeof payload.name !== "string"
   ) {
-    return yield* Op.fail(new ParseError({ raw: payload }));
+    return yield* new ParseError({ raw: payload });
   }
   return { name: payload.name };
 });

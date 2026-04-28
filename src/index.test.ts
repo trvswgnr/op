@@ -527,11 +527,11 @@ describe("Op.all", () => {
     const n: number = 1;
     const s: string = "x";
     const a = Op(function* () {
-      if (Math.random() > 2) return yield* Op.fail(new AErr());
+      if (Math.random() > 2) return yield* new AErr();
       return n;
     });
     const b = Op(function* () {
-      if (Math.random() > 2) return yield* Op.fail(new BErr());
+      if (Math.random() > 2) return yield* new BErr();
       return s;
     });
     const combined = Op.all([a, b]);

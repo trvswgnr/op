@@ -135,7 +135,7 @@ export const createApp = (deps: AppDeps) => {
   const parseWebhookPayload = Op(function* (raw: unknown) {
     const payload = parseWebhook(raw);
     if (payload === null) {
-      return yield* Op.fail(new InvalidWebhookError({ issues: "Invalid webhook payload shape" }));
+      return yield* new InvalidWebhookError({ issues: "Invalid webhook payload shape" });
     }
     return payload;
   });
@@ -148,7 +148,7 @@ export const createApp = (deps: AppDeps) => {
       .withRetry(retryTransient)
       .withTimeout(300);
 
-    if (duplicate) return yield* Op.fail(new DuplicateEventError({ eventId }));
+    if (duplicate) return yield* new DuplicateEventError({ eventId });
     return;
   });
 
@@ -194,7 +194,7 @@ export const createApp = (deps: AppDeps) => {
       .withTimeout(500);
 
     if (!reservation.reserved) {
-      return yield* Op.fail(new InventoryUnavailableError({ orderId: payload.orderId }));
+      return yield* new InventoryUnavailableError({ orderId: payload.orderId });
     }
     return reservation;
   });
@@ -208,12 +208,10 @@ export const createApp = (deps: AppDeps) => {
       .withTimeout(500);
 
     if (!payment.approved || payment.authorizationId === undefined) {
-      return yield* Op.fail(
-        new PaymentDeclinedError({
-          orderId: payload.orderId,
-          message: payment.declineReason ?? "Payment provider declined authorization",
-        }),
-      );
+      return yield* new PaymentDeclinedError({
+        orderId: payload.orderId,
+        message: payment.declineReason ?? "Payment provider declined authorization",
+      });
     }
 
     return { approved: true as const, authorizationId: payment.authorizationId };
@@ -235,13 +233,11 @@ export const createApp = (deps: AppDeps) => {
     const riskScore = yield* pickRiskScore(payload.userId);
     const riskThreshold = 0.9;
     if (riskScore >= riskThreshold) {
-      return yield* Op.fail(
-        new FraudRiskTooHighError({
-          userId: payload.userId,
-          score: riskScore,
-          threshold: riskThreshold,
-        }),
-      );
+      return yield* new FraudRiskTooHighError({
+        userId: payload.userId,
+        score: riskScore,
+        threshold: riskThreshold,
+      });
     }
 
     // Unbounded fan-out is right when every child should start immediately and fail-fast together.

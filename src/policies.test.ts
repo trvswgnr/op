@@ -7,7 +7,7 @@ import type { RetryPolicy } from "./policies.js";
 
 describe("withRetry", () => {
   class FetchError extends Error {
-    readonly type = "FetchError";
+    readonly _tag = "FetchError";
   }
 
   const createFetcher = (maxRetries = 1) => {
