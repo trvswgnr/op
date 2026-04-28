@@ -4,14 +4,38 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
+  validate-publish-source:
+    runs-on: ubuntu-latest
+    outputs:
+      allow_publish: ${{ steps.validate.outputs.allow_publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag points to main
+        id: validate
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+            echo "Tag ${GITHUB_REF_NAME} is not on main; skipping publish."
+            echo "allow_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "allow_publish=true" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: validate-publish-source
+    if: needs.validate-publish-source.outputs.allow_publish == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
