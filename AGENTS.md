@@ -19,3 +19,5 @@
 
 - This library supports Node >=20 for consumers; contributors need Node >=24.14.0.
 - npm publishing is configured with GitHub Actions trusted publishing (OIDC + provenance), not long-lived `NPM_TOKEN` auth.
+- The library is designed to be runtime-agnostic, not Node-specific in behavior.
+- The project is currently alpha-stage with no production users, so intentional breaking changes are acceptable.
