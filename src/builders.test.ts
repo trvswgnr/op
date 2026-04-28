@@ -378,7 +378,7 @@ describe("type inference", () => {
       if (Math.random() < 0) {
         return yield* succeed(1);
       }
-      return yield* fail(new CustomError3());
+      return yield* new CustomError3();
     });
     const program = fromGenFn(function* () {
       const a = yield* alwaysFails1();
