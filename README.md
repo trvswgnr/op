@@ -11,7 +11,7 @@ policy, and run parallel work without scattering reliability logic across your a
 
 ## Why this exists
 
-Async TypeScript has two huge flaws: you can't see from a function's type what it might fail with, and the standard concurrency helpers happily let sibling tasks keep running after one of them blows up. `@prodkit/op` fixes both. Operations are written as generator functions, which lets the library infer the full error channel straight into the signature, so the compiler tells you exactly which failures you haven't handled yet. Concurrency combinators thread cancellation through every child, so when one fails the rest actually stop instead of burning quota in the background. Retry, timeout, and external cancellation are one chained method each. Zero dependencies, 6kb gzipped, no runtime to bootstrap, and an API that's easy to learn and use.
+Async TypeScript has two huge flaws: you can't see from a function's type what it might fail with, and the standard concurrency helpers happily let sibling tasks keep running after one of them blows up. `@prodkit/op` fixes both. Operations are written as generator functions, which lets the library infer the full error channel straight into the signature, so the compiler tells you exactly which failures you haven't handled yet. Concurrency combinators thread cancellation through every child, so when one fails the rest actually stop instead of burning quota in the background. Retry, timeout, and external cancellation are one chained method each. Minimal runtime dependencies, a small footprint, no runtime to bootstrap, and an API that's easy to learn and use.
 
 ## Installation
 
@@ -26,7 +26,7 @@ Runtime requirement for consumers: Node `>=20`.
 ```ts
 import { Op, TaggedError } from "@prodkit/op";
 
-class DivisionByZeroError extends TaggedError("DivisionByZeroError") {}
+class DivisionByZeroError extends TaggedError("DivisionByZeroError")() {}
 
 const divide = Op(function* (a: number, b: number) {
   if (b === 0) yield* new DivisionByZeroError();
@@ -47,7 +47,7 @@ const program = Op(function* () {
 
 const result = await program.run();
 //    ^? Result<number, DivisionByZeroError | "Negative" | UnhandledException>
-if (result.ok) {
+if (result.isOk()) {
   console.log(result.value);
 } else {
   console.error(result.error);
@@ -75,8 +75,8 @@ Creates an op that always fails with `error`.
 Runs an async or sync function and converts failures into `Err`.
 If `onError` is omitted, failures become `UnhandledException`.
 
-`f` receives an `AbortSignal` that fires when the surrounding `withTimeout` expires. Forward it
-to cancellable APIs so in-flight work (e.g. `fetch`, DB queries) actually stops instead of
+`f` receives an `AbortSignal` tied to surrounding cancellation policy (`withTimeout`, `withSignal`,
+and combinator cancellation). Forward it to cancellable APIs so in-flight work (e.g. `fetch`, DB queries) actually stops instead of
 leaking after a timeout.
 
 ```ts
@@ -104,10 +104,15 @@ const result = await Op.empty.run();
 
 ### `.run(...args)`
 
-Executes the operation and returns:
+Executes the operation and returns `Result<T, E | UnhandledException>`.
 
 ```ts
-type Result<T, E> = { type: "Ok"; ok: true; value: T } | { type: "Err"; ok: false; error: E };
+const result = await op.run(...args);
+if (result.isOk()) {
+  console.log(result.value);
+} else {
+  console.error(result.error);
+}
 ```
 
 ### `.withRetry(policy?)`
@@ -170,7 +175,7 @@ import { TaggedError, Op } from "@prodkit/op";
 
 class ValidationError extends TaggedError("ValidationError")<{
   field: string;
-}> {}
+}>() {}
 
 const validate = Op(function* (name: string) {
   if (name.trim().length === 0) {
@@ -225,7 +230,7 @@ starts immediately. With a cap, `Op.all` stops launching queued children after t
 
 ```ts
 const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
-if (r.ok) {
+if (r.isOk()) {
   const [n, s, b] = r.value; // [number, string, boolean]
 }
 
@@ -234,15 +239,15 @@ const bounded = await Op.all(fetchOps, 5).run(); // at most 5 active children
 
 ### `Op.allSettled(ops, concurrency?)`
 
-Waits for every op and returns a tuple of their `Result`s in input order. Never fails and
-never aborts siblings.
+Waits for every op and returns a tuple of their `Result`s in input order. Never fails and does not
+short-circuit siblings on child failure.
 
 Pass a positive integer `concurrency` to cap how many children run at once. Unlike `Op.all`,
 `Op.allSettled` keeps launching queued children after failures so every input gets a `Result`.
 
 ```ts
 const r = await Op.allSettled([Op.of(1), Op.fail("nope")]).run();
-if (r.ok) {
+if (r.isOk()) {
   const [a, b] = r.value; // Result<number, ...>, Result<never, "nope" | ...>
 }
 ```
@@ -254,7 +259,7 @@ useful for optional/best-effort reads where fallback logic should continue in th
 
 ```ts
 const settled = yield * Op.settle(loadPolicyVersion);
-const policy = settled.ok ? settled.value : "unknown";
+const policy = settled.isOk() ? settled.value : "unknown";
 ```
 
 ### `Op.any(ops)`
@@ -267,8 +272,8 @@ in input index order. Empty input fails with an empty `ErrorGroup`.
 import { ErrorGroup } from "@prodkit/op";
 
 const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
-if (r.ok) console.log(r.value); // 42
-if (!r.ok && r.error instanceof ErrorGroup) console.log(r.error.errors);
+if (r.isOk()) console.log(r.value); // 42
+if (r.isErr() && r.error instanceof ErrorGroup) console.log(r.error.errors);
 ```
 
 ### `Op.race(ops)`
