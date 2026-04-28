@@ -1,6 +1,6 @@
 # @prodkit/op
 
-A simple, composable, and predictable library for writing operations in TypeScript.
+A simple, composable, and predictable library for writing operations in TypeScript, built on top of [`better-result`](https://github.com/dmmulroy/better-result).
 
 > [!WARNING]
 > This library is currently in alpha. The API will almost certainly change between releases while it stabilizes.
@@ -11,7 +11,7 @@ policy, and run parallel work without scattering reliability logic across your a
 
 ## Why this exists
 
-Async TypeScript has two huge flaws: you can't see from a function's type what it might fail with, and the standard concurrency helpers happily let sibling tasks keep running after one of them blows up. `@prodkit/op` fixes both. Operations are written as generator functions, which lets the library infer the full error channel straight into the signature, so the compiler tells you exactly which failures you haven't handled yet. Concurrency combinators thread cancellation through every child, so when one fails the rest actually stop instead of burning quota in the background. Retry, timeout, and external cancellation are one chained method each. Minimal runtime dependencies, a small footprint, no runtime to bootstrap, and an API that's easy to learn and use.
+Async TypeScript has two huge flaws: you can't see from a function's type what it might fail with, and the standard concurrency helpers happily let sibling tasks keep running after one of them blows up. `@prodkit/op` fixes both. It builds on `better-result` for the core `Result` model, then adds generator-based composition, typed error inference, and cancellation-aware concurrency on top. Concurrency combinators thread cancellation through every child, so when one fails the rest actually stop instead of burning quota in the background. Retry, timeout, and external cancellation are one chained method each. Minimal runtime dependencies, a small footprint, no runtime to bootstrap, and an API that's easy to learn and use.
 
 ## Installation
 
@@ -104,7 +104,7 @@ const result = await Op.empty.run();
 
 ### `.run(...args)`
 
-Executes the operation and returns `Result<T, E | UnhandledException>`.
+Executes the operation and returns `Result<T, E | UnhandledException>` from `better-result`.
 
 ```ts
 const result = await op.run(...args);
