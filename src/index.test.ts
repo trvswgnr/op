@@ -369,7 +369,7 @@ describe("public API (index)", () => {
   });
 
   describe("Op namespace value", () => {
-    test("Op.type is 'OpFactory'", () => {
+    test("Op._tag is 'OpFactory'", () => {
       expect(Op._tag).toBe("OpFactory");
     });
     test('callable Op has type discriminant Typed<"Op">', () => {
