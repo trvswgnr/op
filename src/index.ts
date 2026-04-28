@@ -2,13 +2,9 @@ import { succeed, fail, _try, fromGenFn } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { runOp, type Op as _Op } from "./core.js";
 import { exponentialBackoff } from "./policies.js";
-import {
-  ErrorGroup,
-  TimeoutError,
-  UnhandledException,
-  UnreachableError,
-  TaggedError,
-} from "./errors.js";
+import { ErrorGroup, TimeoutError, UnreachableError } from "./errors.js";
+
+export * from "better-result";
 
 export const Op = Object.assign(fromGenFn, {
   _tag: "OpFactory" as const,
@@ -39,11 +35,4 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export {
-  TaggedError,
-  TimeoutError,
-  UnhandledException,
-  UnreachableError,
-  ErrorGroup,
-  exponentialBackoff,
-};
+export { TimeoutError, UnreachableError, ErrorGroup, exponentialBackoff };
