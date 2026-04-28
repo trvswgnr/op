@@ -1,6 +1,6 @@
 import type { Err } from "./result.js";
 import { err } from "./result.js";
-import type { Typed } from "./typed.js";
+import type { Tagged } from "./tagged.js";
 import { TaggedError, UnhandledException } from "better-result";
 
 export { TaggedError, UnhandledException };
@@ -34,7 +34,7 @@ interface ErrorGroupConstructor {
 /**
  * Built-in typed aggregate error used by combinators that need to preserve multiple failures.
  */
-export interface ErrorGroup<E> extends AggregateError, Typed<"ErrorGroup"> {
+export interface ErrorGroup<E> extends AggregateError, Tagged<"ErrorGroup"> {
   readonly errors: E[];
   [Symbol.iterator](): Generator<Err<never, this>, never, unknown>;
 }
@@ -44,7 +44,7 @@ export interface ErrorGroup<E> extends AggregateError, Typed<"ErrorGroup"> {
  */
 export const ErrorGroup: ErrorGroupConstructor = class<E>
   extends AggregateError
-  implements Typed<"ErrorGroup">
+  implements Tagged<"ErrorGroup">
 {
   readonly _tag = "ErrorGroup";
   override readonly errors: E[];
