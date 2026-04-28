@@ -1,7 +1,7 @@
 import { UnhandledException, type TimeoutError } from "./errors.js";
 import { err, ok, type Result, type Err, type ExtractErr } from "./result.js";
 import type { RetryPolicy } from "./policies.js";
-import type { Typed } from "./typed.js";
+import type { Tagged } from "./tagged.js";
 
 export interface Suspended {
   readonly _tag: "Suspended";
@@ -41,7 +41,7 @@ export interface OpArity<T, E, A extends readonly unknown[]>
 
 type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
 
-export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Typed<"Op">;
+export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Tagged<"Op">;
 
 export function runOp<T, E>(op: Op<T, E, readonly []>): Promise<Result<T, E | UnhandledException>> {
   return drive(op, new AbortController().signal);
