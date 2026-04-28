@@ -26,19 +26,21 @@ const assert = (condition: unknown, message: string) => {
 
 const isNamedUser = (value: unknown): value is { name: string } => {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof (value as { name?: unknown }).name === "string"
+    typeof value === "object" && value !== null && "name" in value && typeof value.name === "string"
   );
 };
 
-const retryableError = (message: string) => Object.assign(new Error(message), { retryable: true });
+const makeRetryableError = (message: string) => {
+  const error = new Error(message);
+  Object.assign(error, { retryable: true });
+  Error.captureStackTrace(error, makeRetryableError);
+  return error;
+};
 
 const neverSettlesUntilAborted = (signal: AbortSignal) =>
   new Promise((_, reject) => {
-    if (signal.aborted) return reject(retryableError("aborted"));
-    signal.addEventListener("abort", () => reject(retryableError("aborted")), { once: true });
+    if (signal.aborted) return reject(makeRetryableError("aborted"));
+    signal.addEventListener("abort", () => reject(makeRetryableError("aborted")), { once: true });
   });
 
 const createDeps = (overrides = {}) => ({
@@ -70,12 +72,12 @@ const runCoreApiSmoke = async () => {
   class TooSmallError extends TaggedError("TooSmallError")<{ message: string }>() {}
 
   const localDivide = Op(function* (a: number, b: number) {
-    if (b === 0) return yield* Op.fail(new TooSmallError({ message: "division by zero" }));
+    if (b === 0) return yield* new TooSmallError({ message: "division by zero" });
     return a / b;
   });
 
   const localSqrt = Op(function* (n: number) {
-    if (n < 0) return yield* Op.fail(new TooSmallError({ message: "negative input" }));
+    if (n < 0) return yield* new TooSmallError({ message: "negative input" });
     return Math.sqrt(n);
   });
 
@@ -243,7 +245,7 @@ const runWebhookExampleSmoke = async () => {
     createDeps({
       authorizePayment: async () => {
         paymentAttempts += 1;
-        if (paymentAttempts === 1) throw retryableError("payment timeout");
+        if (paymentAttempts === 1) throw makeRetryableError("payment timeout");
         return { approved: true, authorizationId: "auth-retried" };
       },
     }),
@@ -255,7 +257,7 @@ const runWebhookExampleSmoke = async () => {
   const fallbackRiskApp = createApp(
     createDeps({
       riskPrimary: async () => {
-        throw retryableError("primary unavailable");
+        throw makeRetryableError("primary unavailable");
       },
       riskSecondary: async () => 0.2,
     }),
@@ -266,10 +268,10 @@ const runWebhookExampleSmoke = async () => {
   const allRiskFailApp = createApp(
     createDeps({
       riskPrimary: async () => {
-        throw retryableError("primary unavailable");
+        throw makeRetryableError("primary unavailable");
       },
       riskSecondary: async () => {
-        throw retryableError("secondary unavailable");
+        throw makeRetryableError("secondary unavailable");
       },
     }),
   );
@@ -295,7 +297,7 @@ const runWebhookExampleSmoke = async () => {
           throw new Error("unreachable");
         } catch {
           inventoryAborted = signal.aborted;
-          throw retryableError("inventory aborted");
+          throw makeRetryableError("inventory aborted");
         }
       },
       authorizePayment: async () => {
