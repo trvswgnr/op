@@ -55,7 +55,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "better-result": "^2.8.2"
+    "better-result": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
