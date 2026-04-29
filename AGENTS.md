@@ -9,6 +9,7 @@
 ## Learned User Preferences
 
 - Prefers principal-level technical reasoning with clear tradeoffs and long-term system impact.
+- Prefers agreeing on API/design direction before implementation when requirements are ambiguous.
 - Prefers `.run(...args)` to stay args-only; cancellation/config should compose fluently (for example via `.withSignal(...)`) rather than be passed to `run`.
 - Prefers user-facing docs and comments to emphasize outcomes and usage over internal implementation details.
 - When requesting commit message drafts, prefers why-focused messages grounded in the actual staged/unstaged diff.

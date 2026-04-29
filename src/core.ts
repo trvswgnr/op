@@ -34,6 +34,20 @@ export interface WithFlatMap<T, E, A extends readonly unknown[]> {
   flatMap<U, E2>(bind: (value: T) => Op<U, E2, readonly []>): Op<U, E | E2, A>;
 }
 
+type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
+type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
+
+export interface WithRecover<T, E, A extends readonly unknown[]> {
+  recover<ECaught extends E, R>(
+    predicate: (error: E) => error is ECaught,
+    handler: (error: ECaught) => R,
+  ): Op<T | RecoverValue<R>, Exclude<E, ECaught> | RecoverError<R>, A>;
+  recover<R>(
+    predicate: (error: E) => boolean,
+    handler: (error: E) => R,
+  ): Op<T | RecoverValue<R>, E | RecoverError<R>, A>;
+}
+
 export interface OpBase<T, E> {
   readonly _tag: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
@@ -47,7 +61,8 @@ export interface OpNullary<T, E>
     WithSignal<T, E, []>,
     WithMap<T, E, []>,
     WithMapErr<T, E, []>,
-    WithFlatMap<T, E, []> {
+    WithFlatMap<T, E, []>,
+    WithRecover<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnhandledException>>;
 }
@@ -59,7 +74,8 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithSignal<T, E, A>,
     WithMap<T, E, A>,
     WithMapErr<T, E, A>,
-    WithFlatMap<T, E, A> {
+    WithFlatMap<T, E, A>,
+    WithRecover<T, E, A> {
   (...args: A): OpNullary<T, E>;
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
@@ -149,6 +165,10 @@ export interface OpHooks<T, E> {
   withSignal: (signal: AbortSignal) => Op<T, E, readonly []>;
 }
 
+function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
+  return typeof value === "function" && Symbol.iterator in value;
+}
+
 export const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
@@ -162,6 +182,8 @@ export const makeNullaryOp = <T, E>(
     map: <U>(transform: (value: T) => U) => mapOp(self as never, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self as never, bind),
+    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+      recoverOp(self as never, predicate, handler),
     _tag: "Op" as const,
   };
   const op = () => self;
@@ -273,6 +295,70 @@ const mapErrNullaryOp = <T, E, E2>(
   ) as never;
 };
 
+const recoverNullaryOp = <T, E, R>(
+  op: Op<T, E, readonly []>,
+  predicate: (error: E) => boolean,
+  handler: (error: E) => R,
+): Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []> => {
+  return makeNullaryOp<T | RecoverValue<R>, E | RecoverError<R> | UnhandledException>(
+    function* () {
+      const result = (yield {
+        _tag: "Suspended" as const,
+        suspend: (signal: AbortSignal) => drive(op, signal),
+      }) as Result<T, E | UnhandledException>;
+
+      if (result.isOk()) {
+        return result.value;
+      }
+
+      if (result.error instanceof UnhandledException) {
+        yield err(result.error);
+        throw new UnreachableError();
+      }
+
+      const error = result.error as E;
+      if (!predicate(error)) {
+        yield err(error);
+        throw new UnreachableError();
+      }
+
+      const recovered = (yield {
+        _tag: "Suspended" as const,
+        suspend: () => Promise.resolve(handler(error)),
+      }) as R;
+
+      if (!isNullaryOp(recovered)) {
+        return recovered as RecoverValue<R>;
+      }
+
+      const recoveredResult = (yield {
+        _tag: "Suspended" as const,
+        suspend: (signal: AbortSignal) =>
+          drive(recovered as Op<RecoverValue<R>, RecoverError<R>, readonly []>, signal),
+      }) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
+
+      if (recoveredResult.isErr()) {
+        yield err(recoveredResult.error);
+        throw new UnreachableError();
+      }
+
+      return recoveredResult.value as RecoverValue<R>;
+    },
+    {
+      withRetry: (policy?: RetryPolicy) =>
+        recoverNullaryOp(op.withRetry(policy) as never, predicate, handler) as never,
+      withTimeout: (timeoutMs: number) =>
+        recoverNullaryOp(
+          op.withTimeout(timeoutMs) as never,
+          (error: E | TimeoutError) => !(error instanceof TimeoutError) && predicate(error as E),
+          handler as (error: E | TimeoutError) => R,
+        ) as never,
+      withSignal: (signal: AbortSignal) =>
+        recoverNullaryOp(op.withSignal(signal) as never, predicate, handler) as never,
+    },
+  ) as never;
+};
+
 export const mapOp = <T, E, A extends readonly unknown[], U>(
   op: Op<T, E, A>,
   transform: (value: T) => U,
@@ -291,6 +377,8 @@ export const mapOp = <T, E, A extends readonly unknown[], U>(
     mapErr: <E2>(next: (error: E) => E2) => mapErrOp(out as never, next),
     flatMap: <U2, E2>(bind: (value: Awaited<U>) => Op<U2, E2, readonly []>) =>
       flatMapOp(out as never, bind),
+    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+      recoverOp(out as never, predicate, handler),
     _tag: "Op" as const,
   });
   return out as never;
@@ -316,6 +404,8 @@ export const mapErrOp = <T, E, A extends readonly unknown[], E2>(
     map: <U>(next: (value: T) => U) => mapOp(out as never, next),
     mapErr: <E3>(next: (error: E2) => E3) => mapErrOp(out as never, next),
     flatMap: <U, E3>(bind: (value: T) => Op<U, E3, readonly []>) => flatMapOp(out as never, bind),
+    recover: <R>(predicate: (error: E2) => boolean, handler: (error: E2) => R) =>
+      recoverOp(out as never, predicate, handler),
     _tag: "Op" as const,
   });
   return out as never;
@@ -339,6 +429,42 @@ export const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
     mapErr: <E3>(transform: (error: E | E2) => E3) => mapErrOp(out as never, transform),
     flatMap: <U2, E3>(nextBind: (value: U) => Op<U2, E3, readonly []>) =>
       flatMapOp(out as never, nextBind),
+    recover: <R>(predicate: (error: E | E2) => boolean, handler: (error: E | E2) => R) =>
+      recoverOp(out as never, predicate, handler),
+    _tag: "Op" as const,
+  });
+  return out as never;
+};
+
+export const recoverOp = <T, E, A extends readonly unknown[], R>(
+  op: Op<T, E, A>,
+  predicate: (error: E) => boolean,
+  handler: (error: E) => R,
+): Op<T | RecoverValue<R>, E | RecoverError<R>, A> => {
+  if (Symbol.iterator in op) {
+    return recoverNullaryOp(op as Op<T, E, readonly []>, predicate, handler) as never;
+  }
+
+  const g = (...args: A) =>
+    recoverNullaryOp((op as OpArity<T, E, A>)(...args) as never, predicate, handler);
+  const out = Object.assign(g, {
+    run: (...args: A) => drive(g(...args) as never, new AbortController().signal),
+    withRetry: (policy?: RetryPolicy) => recoverOp(op.withRetry(policy), predicate, handler),
+    withTimeout: (timeoutMs: number) =>
+      recoverOp(
+        op.withTimeout(timeoutMs),
+        (error: E | TimeoutError) => !(error instanceof TimeoutError) && predicate(error as E),
+        handler as (error: E | TimeoutError) => R,
+      ),
+    withSignal: (signal: AbortSignal) => recoverOp(op.withSignal(signal), predicate, handler),
+    map: <U>(next: (value: T | RecoverValue<R>) => U) => mapOp(out as never, next),
+    mapErr: <E2>(next: (error: E | RecoverError<R>) => E2) => mapErrOp(out as never, next),
+    flatMap: <U, E2>(bind: (value: T | RecoverValue<R>) => Op<U, E2, readonly []>) =>
+      flatMapOp(out as never, bind),
+    recover: <R2>(
+      nextPredicate: (error: E | RecoverError<R>) => boolean,
+      nextHandler: (error: E | RecoverError<R>) => R2,
+    ) => recoverOp(out as never, nextPredicate, nextHandler),
     _tag: "Op" as const,
   });
   return out as never;
