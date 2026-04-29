@@ -93,7 +93,7 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("op.map / op.flatMap", () => {
+  describe("op.map / op.mapErr / op.flatMap", () => {
     test("map transforms success values and preserves arity", async () => {
       const op = Op(function* (n: number) {
         return n + 1;
@@ -112,6 +112,57 @@ describe("public API (index)", () => {
         .run();
       assert(result.isErr() === true, "should be Err");
       expect(result.error).toBe("boom");
+    });
+
+    test("mapErr transforms failures and preserves arity", async () => {
+      const op = Op(function* (n: number) {
+        if (n < 0) {
+          return yield* Op.fail("negative" as const);
+        }
+        return n;
+      }).mapErr((error) => ({ code: error }));
+
+      expectTypeOf(op).toEqualTypeOf<OpT<number, { code: "negative" }, [number]>>();
+
+      const errResult = await op.run(-1);
+      assert(errResult.isErr() === true, "should be Err");
+      expect(errResult.error).toEqual({ code: "negative" });
+
+      const okResult = await op.run(2);
+      assert(okResult.isOk() === true, "should be Ok");
+      expect(okResult.value).toBe(2);
+    });
+
+    test("mapErr does not transform unhandled exceptions", async () => {
+      const op = Op(function* () {
+        throw new Error("boom");
+      }).mapErr(() => "mapped" as const);
+
+      const result = await op.run();
+      assert(result.isErr() === true, "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+    });
+
+    test("mapErr withRetry retries against original error channel", async () => {
+      let attempts = 0;
+      const mapped = Op(function* () {
+        attempts += 1;
+        if (attempts < 2) {
+          return yield* Op.fail("retryable" as const);
+        }
+        return 69;
+      })
+        .mapErr((error) => ({ code: error }))
+        .withRetry({
+          maxAttempts: 2,
+          shouldRetry: (cause) => cause === "retryable",
+          getDelay: () => 0,
+        });
+
+      const result = await mapped.run();
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe(69);
+      expect(attempts).toBe(2);
     });
 
     test("flatMap chains operations and merges error channels", async () => {
