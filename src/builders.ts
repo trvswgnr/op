@@ -7,6 +7,8 @@ import {
   recoverOp,
   tapOp,
   tapErrOp,
+  withCleanupOp,
+  type CleanupFn,
   type FromGenFn,
   type Instruction,
   type Op,
@@ -32,6 +34,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+      withCleanup: (cleanup: CleanupFn<Awaited<T>>) => withCleanupOp(op, cleanup),
     },
   );
   return op as never;
@@ -51,6 +54,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+      withCleanup: (cleanup: CleanupFn<never>) => withCleanupOp(op, cleanup),
     },
   );
   return op;
@@ -86,6 +90,7 @@ export const _try = <T, E = UnhandledException>(
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+      withCleanup: (cleanup: CleanupFn<Awaited<T>>) => withCleanupOp(op, cleanup),
     },
   );
   return op;
@@ -102,6 +107,8 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
       makeArityOp((...args: A) => withTimeoutOp(invoke(...args), timeoutMs) as never),
     withSignal: (signal: AbortSignal) =>
       makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal) as never),
+    withCleanup: (cleanup: CleanupFn<T>) =>
+      makeArityOp<T, E, A>((...args: A) => withCleanupOp(invoke(...args), cleanup) as never),
     map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
@@ -127,6 +134,7 @@ export const fromGenFn: FromGenFn = (
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
+      withCleanup: (cleanup: CleanupFn<unknown>) => withCleanupOp(bound, cleanup),
     });
     return bound;
   };

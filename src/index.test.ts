@@ -720,6 +720,111 @@ describe("public API (index)", () => {
     });
   });
 
+  describe("op.withCleanup", () => {
+    test("runs registered cleanup after a successful run", async () => {
+      const events: string[] = [];
+      const release = vi.fn((conn: { id: number }) => {
+        events.push(`release:${conn.id}`);
+      });
+
+      const program = Op(function* () {
+        const conn = yield* Op.of({ id: 7 }).withCleanup(release);
+        events.push(`query:${conn.id}`);
+        return conn.id;
+      });
+
+      const result = await program.run();
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(7);
+      expect(events).toEqual(["query:7", "release:7"]);
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    test("runs cleanup when downstream logic fails with a typed error", async () => {
+      const release = vi.fn();
+      const result = await Op(function* () {
+        yield* Op.of({ id: 1 }).withCleanup(() => {
+          release();
+        });
+        return yield* Op.fail("boom" as const);
+      }).run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("boom");
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    test("runs cleanup when withTimeout aborts inner work", async () => {
+      vi.useFakeTimers();
+      try {
+        const release = vi.fn();
+        const op = Op(function* () {
+          yield* Op.of({ close: release }).withCleanup((conn) => conn.close());
+          return yield* Op.try(
+            (signal) =>
+              new Promise<number>((_resolve, reject) => {
+                if (signal.aborted) {
+                  reject(signal.reason);
+                  return;
+                }
+                signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+              }),
+          ).withTimeout(10);
+        });
+
+        const runPromise = op.run();
+        await vi.advanceTimersByTimeAsync(10);
+        const result = await runPromise;
+        assert(result.isErr(), "should be Err");
+        expect(result.error).toBeInstanceOf(TimeoutError);
+        expect(release).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("fails with UnhandledException when cleanup throws after success", async () => {
+      const cleanupFault = new Error("cleanup failed");
+      const result = await Op.of(1)
+        .withCleanup(() => {
+          throw cleanupFault;
+        })
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+      if (result.error instanceof UnhandledException) {
+        expect(result.error.cause).toBe(cleanupFault);
+      }
+    });
+
+    test("preserves primary error when cleanup throws after typed failure", async () => {
+      const result = await Op.fail("boom" as const)
+        .withCleanup(() => {
+          throw new Error("cleanup failed");
+        })
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("boom");
+    });
+
+    test("preserves inferred op shapes", async () => {
+      const p1 = Op.of({ id: 1 }).withCleanup((value) => {
+        expectTypeOf(value).toEqualTypeOf<{ id: number }>();
+      });
+      const p2 = Op(function* (name: string) {
+        return name.length;
+      }).withCleanup((len) => {
+        expectTypeOf(len).toEqualTypeOf<number>();
+      });
+
+      expectTypeOf(p1).toEqualTypeOf<Op<{ id: number }, never, []>>();
+      expectTypeOf(p2).toEqualTypeOf<Op<number, never, [string]>>();
+      expectTypeOf(p2.run).parameter(0).toEqualTypeOf<string>();
+    });
+  });
+
   describe("Op (generator)", () => {
     test("yield* Op.pure composes", async () => {
       {

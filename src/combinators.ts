@@ -1,5 +1,12 @@
 import { ErrorGroup, UnhandledException, UnreachableError } from "./errors.js";
-import { drive, makeNullaryOp, type Instruction, type Op } from "./core.js";
+import {
+  drive,
+  makeNullaryOp,
+  withCleanupOp,
+  type CleanupFn,
+  type Instruction,
+  type Op,
+} from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
 
@@ -15,6 +22,7 @@ const makeCombinatorOp = <T, E>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy) as never,
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs) as never,
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal) as never,
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self as never, cleanup) as never,
   });
   return self;
 };
