@@ -115,6 +115,26 @@ if (result.isOk()) {
 }
 ```
 
+### `.map(f)`
+
+Transforms an op's success value while preserving the same error channel and argument list.
+Use this when you want a one-step value transformation without writing a generator.
+
+```ts
+const userId = Op.of({ id: 42, name: "Ada" }).map((user) => user.id);
+const result = await userId.run(); // Result<number, UnhandledException>
+```
+
+### `.flatMap(f)`
+
+Chains to the next op using the previous success value. This is the monadic bind operation:
+the next op only runs after the first one succeeds, and both error channels are preserved.
+
+```ts
+const getUserTodos = getUser(42).flatMap((user) => getTodos(user.id));
+const result = await getUserTodos.run();
+```
+
 ### `.withRetry(policy?)`
 
 Wraps an operation with retries.

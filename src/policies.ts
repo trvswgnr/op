@@ -1,6 +1,14 @@
 import { TimeoutError, UnreachableError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
-import { drive, makeNullaryOp, type Op, type OpArity, type Instruction } from "./core.js";
+import {
+  drive,
+  flatMapOp,
+  makeNullaryOp,
+  mapOp,
+  type Op,
+  type OpArity,
+  type Instruction,
+} from "./core.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {
@@ -66,6 +74,8 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
     _tag: "Op" as const,
   });
 
