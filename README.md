@@ -138,7 +138,8 @@ const result = await getUserTodos.run();
 ### `.recover(predicate, handler)`
 
 Recovers from selected typed failures while preserving the rest of the error channel.
-Use a type-guard predicate when you want compile-time narrowing of handled errors.
+For `TaggedError` classes, pass the error class directly for concise typed recovery.
+For other error types, use a predicate (including a type guard) to select what to handle.
 `handler` can return either a fallback value or another nullary `Op`.
 
 `UnhandledException` is intentionally not recoverable through this method; unexpected throws
@@ -152,10 +153,7 @@ const lookup = Op(function* (id: string) {
   if (id === "missing") return yield* new NotFoundError();
   if (id === "forbidden") return yield* new PermissionError();
   return { id };
-}).recover(
-  (error): error is NotFoundError => error instanceof NotFoundError,
-  () => ({ id: "fallback" }),
-);
+}).recover(NotFoundError, () => ({ id: "fallback" }));
 
 // lookup: Op<{ id: string }, PermissionError, [string]>
 ```

@@ -37,9 +37,15 @@ export interface WithFlatMap<T, E, A extends readonly unknown[]> {
 type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
 type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
 
+type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
+
 export interface WithRecover<T, E, A extends readonly unknown[]> {
   recover<ECaught extends E, R>(
     predicate: (error: E) => error is ECaught,
+    handler: (error: ECaught) => R,
+  ): Op<T | RecoverValue<R>, Exclude<E, ECaught> | RecoverError<R>, A>;
+  recover<ECaught extends E, R>(
+    predicate: WithPredicateMethod<ECaught>,
     handler: (error: ECaught) => R,
   ): Op<T | RecoverValue<R>, Exclude<E, ECaught> | RecoverError<R>, A>;
   recover<R>(
@@ -47,6 +53,15 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
     handler: (error: E) => R,
   ): Op<T | RecoverValue<R>, E | RecoverError<R>, A>;
 }
+
+const hasPredicateMethod = <E>(value: unknown): value is WithPredicateMethod<E> => {
+  return (
+    value !== null &&
+    (typeof value === "object" || typeof value === "function") &&
+    "is" in value &&
+    typeof value.is === "function"
+  );
+};
 
 export interface OpBase<T, E> {
   readonly _tag: "Op";
@@ -295,9 +310,16 @@ const mapErrNullaryOp = <T, E, E2>(
   ) as never;
 };
 
+const conditionalPredicate = <E>(
+  pred: ((error: E) => boolean) | WithPredicateMethod<E>,
+  error: E,
+) => {
+  return hasPredicateMethod(pred) ? pred.is(error) : pred(error);
+};
+
 const recoverNullaryOp = <T, E, R>(
   op: Op<T, E, readonly []>,
-  predicate: (error: E) => boolean,
+  predicate: ((error: E) => boolean) | WithPredicateMethod<E>,
   handler: (error: E) => R,
 ): Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []> => {
   return makeNullaryOp<T | RecoverValue<R>, E | RecoverError<R> | UnhandledException>(
@@ -317,7 +339,8 @@ const recoverNullaryOp = <T, E, R>(
       }
 
       const error = result.error as E;
-      if (!predicate(error)) {
+
+      if (!conditionalPredicate(predicate, error)) {
         yield err(error);
         throw new UnreachableError();
       }
@@ -350,8 +373,9 @@ const recoverNullaryOp = <T, E, R>(
       withTimeout: (timeoutMs: number) =>
         recoverNullaryOp(
           op.withTimeout(timeoutMs) as never,
-          (error: E | TimeoutError) => !(error instanceof TimeoutError) && predicate(error as E),
-          handler as (error: E | TimeoutError) => R,
+          (error: E | TimeoutError) =>
+            !(error instanceof TimeoutError) && conditionalPredicate(predicate, error),
+          handler,
         ) as never,
       withSignal: (signal: AbortSignal) =>
         recoverNullaryOp(op.withSignal(signal) as never, predicate, handler) as never,
