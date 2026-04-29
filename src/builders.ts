@@ -1,6 +1,7 @@
 import { UnhandledException, UnreachableError } from "./errors.js";
 import {
   flatMapOp,
+  makeNullaryOp,
   mapErrOp,
   mapOp,
   recoverOp,
@@ -22,53 +23,37 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     return _try(() => value);
   }
 
-  const self = {
-    *[Symbol.iterator]() {
-      return value;
+  let op!: Op<Awaited<T>, never, readonly []>;
+  op = makeNullaryOp<Awaited<T>, never>(
+    function* (): Generator<Instruction<never>, Awaited<T>, unknown> {
+      return value as Awaited<T>;
     },
-    run: () => runOp(self as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    map: <U>(transform: (value: Awaited<T>) => U) => mapOp(self as never, transform),
-    mapErr: <E2>(transform: (error: never) => E2) => mapErrOp(self as never, transform),
-    flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
-      flatMapOp(self as never, bind),
-    tap: <R>(observe: (value: Awaited<T>) => R) => tapOp(self as never, observe),
-    tapErr: <R>(observe: (error: never) => R) => tapErrOp(self as never, observe),
-    recover: <R>(predicate: (error: never) => boolean, handler: (error: never) => R) =>
-      recoverOp(self as never, predicate, handler),
-    _tag: "Op",
-  };
-  const op = () => self;
-  return Object.assign(op, self) as never;
+    {
+      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+    },
+  );
+  return op as never;
 };
 
 /**
  * Lifts a value into an operation that always fails.
  */
 export const fail = <E>(value: E): Op<never, E, readonly []> => {
-  const self = {
-    *[Symbol.iterator]() {
+  let op!: Op<never, E, readonly []>;
+  op = makeNullaryOp<never, E>(
+    function* () {
       yield err(value);
       throw new UnreachableError();
     },
-    run: () => runOp(self as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    map: <U>(transform: (value: never) => U) => mapOp(self as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
-    flatMap: <U, E2>(bind: (value: never) => Op<U, E2, readonly []>) =>
-      flatMapOp(self as never, bind),
-    tap: <R>(observe: (value: never) => R) => tapOp(self as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self as never, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(self as never, predicate, handler),
-    _tag: "Op" as const,
-  };
-  const op = () => self;
-  return Object.assign(op, self) as never;
+    {
+      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+    },
+  );
+  return op;
 };
 
 /**
@@ -78,9 +63,10 @@ export const _try = <T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
 ): Op<Awaited<T>, E, readonly []> => {
-  const self = {
-    *[Symbol.iterator]() {
-      const result: Result<T, E> = yield {
+  let op!: Op<Awaited<T>, E, readonly []>;
+  op = makeNullaryOp<Awaited<T>, E>(
+    function* (): Generator<Instruction<E>, Awaited<T>, unknown> {
+      const result = (yield {
         _tag: "Suspended" as const,
         suspend: (signal: AbortSignal) =>
           Promise.resolve()
@@ -89,29 +75,44 @@ export const _try = <T, E = UnhandledException>(
               (a) => ok(a),
               (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
             ) as Promise<Result<T, E>>,
-      };
+      }) as Result<T, E>;
       if (result.isErr()) {
         yield result;
         throw new UnreachableError();
       }
-      return result.value;
+      return result.value as Awaited<T>;
     },
-    run: () => runOp(self as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
-    map: <U>(transform: (value: Awaited<T>) => U) => mapOp(self as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
-    flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
-      flatMapOp(self as never, bind),
-    tap: <R>(observe: (value: Awaited<T>) => R) => tapOp(self as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self as never, observe),
+    {
+      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+    },
+  );
+  return op;
+};
+
+const makeArityOp = <T, E, A extends readonly unknown[]>(
+  invoke: (...args: A) => Op<T, E, readonly []>,
+): Op<T, E, A> => {
+  const out: Op<T, E, A> = Object.assign(invoke, {
+    run: (...args: A) => runOp(invoke(...args)),
+    withRetry: (policy?: RetryPolicy) =>
+      makeArityOp<T, E, A>((...args: A) => withRetryOp(invoke(...args), policy) as never),
+    withTimeout: (timeoutMs: number) =>
+      makeArityOp((...args: A) => withTimeoutOp(invoke(...args), timeoutMs) as never),
+    withSignal: (signal: AbortSignal) =>
+      makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal) as never),
+    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
+    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
+    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(self as never, predicate, handler),
+      recoverOp(out as never, predicate, handler),
     _tag: "Op" as const,
-  };
-  const op = () => self;
-  return Object.assign(op, self) as never;
+  }) as never;
+
+  return out;
 };
 
 /**
@@ -120,41 +121,19 @@ export const _try = <T, E = UnhandledException>(
 export const fromGenFn: FromGenFn = (
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
 ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> => {
-  const g = (...args: unknown[]) => {
-    const inner = {
-      [Symbol.iterator]: () => f(...args),
-      run: () => runOp(inner as never),
-      withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
-      map: <U>(transform: (value: unknown) => U) => mapOp(inner as never, transform),
-      mapErr: <E2>(transform: (error: unknown) => E2) => mapErrOp(inner as never, transform),
-      flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
-        flatMapOp(inner as never, bind),
-      tap: <R>(observe: (value: unknown) => R) => tapOp(inner as never, observe),
-      tapErr: <R>(observe: (error: unknown) => R) => tapErrOp(inner as never, observe),
-      recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
-        recoverOp(inner as never, predicate, handler),
-      _tag: "Op",
-    };
-    const _op = () => inner;
-    return Object.assign(_op, inner);
+  const makeBoundOp = (...args: unknown[]): Op<unknown, unknown, readonly []> => {
+    let bound!: Op<unknown, unknown, readonly []>;
+    bound = makeNullaryOp<unknown, unknown>(() => f(...args), {
+      withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
+    });
+    return bound;
   };
-  const out: Op<unknown, unknown, unknown[]> = Object.assign(g, {
-    run: (...args: unknown[]) => runOp(g(...args) as never),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    map: <U>(transform: (value: unknown) => U) => mapOp(out as never, transform),
-    mapErr: <E2>(transform: (error: unknown) => E2) => mapErrOp(out as never, transform),
-    flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
-      flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: unknown) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: unknown) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  }) as never;
 
-  return out as Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
+  if (f.length === 0) {
+    return makeBoundOp() as Op<unknown, unknown, []>;
+  }
+
+  return makeArityOp<unknown, unknown, readonly unknown[]>((...args) => makeBoundOp(...args));
 };
