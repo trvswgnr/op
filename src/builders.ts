@@ -3,6 +3,7 @@ import {
   flatMapOp,
   mapErrOp,
   mapOp,
+  recoverOp,
   type FromGenFn,
   type Instruction,
   type Op,
@@ -31,6 +32,8 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     mapErr: <E2>(transform: (error: never) => E2) => mapErrOp(self as never, transform),
     flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
+    recover: <R>(predicate: (error: never) => boolean, handler: (error: never) => R) =>
+      recoverOp(self as never, predicate, handler),
     _tag: "Op",
   };
   const op = () => self;
@@ -54,6 +57,8 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
     flatMap: <U, E2>(bind: (value: never) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
+    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+      recoverOp(self as never, predicate, handler),
     _tag: "Op" as const,
   };
   const op = () => self;
@@ -93,6 +98,8 @@ export const _try = <T, E = UnhandledException>(
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
     flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
+    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+      recoverOp(self as never, predicate, handler),
     _tag: "Op" as const,
   };
   const op = () => self;
@@ -116,6 +123,8 @@ export const fromGenFn: FromGenFn = (
       mapErr: <E2>(transform: (error: unknown) => E2) => mapErrOp(inner as never, transform),
       flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
         flatMapOp(inner as never, bind),
+      recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
+        recoverOp(inner as never, predicate, handler),
       _tag: "Op",
     };
     const _op = () => inner;
@@ -130,6 +139,8 @@ export const fromGenFn: FromGenFn = (
     mapErr: <E2>(transform: (error: unknown) => E2) => mapErrOp(out as never, transform),
     flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
       flatMapOp(out as never, bind),
+    recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
+      recoverOp(out as never, predicate, handler),
     _tag: "Op" as const,
   }) as never;
 

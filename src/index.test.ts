@@ -93,7 +93,7 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("op.map / op.mapErr / op.flatMap", () => {
+  describe("op.map / op.mapErr / op.flatMap / op.recover", () => {
     test("map transforms success values and preserves arity", async () => {
       const op = Op(function* (n: number) {
         return n + 1;
@@ -204,6 +204,77 @@ describe("public API (index)", () => {
       assert(result.isOk() === true, "should be Ok");
       expect(result.value).toBe(8);
       expect(attempts).toBe(2);
+    });
+
+    test("recover narrows handled error type via type guard predicate", async () => {
+      class AErr extends TaggedError("AErr")() {}
+      class BErr extends TaggedError("BErr")() {}
+      class RecoveryErr extends TaggedError("RecoveryErr")() {}
+
+      const op = Op(function* (kind: "a" | "b") {
+        if (kind === "a") {
+          return yield* new AErr();
+        }
+        return yield* new BErr();
+      }).recover(
+        (error): error is AErr => error instanceof AErr,
+        () => Op.fail(new RecoveryErr()),
+      );
+
+      expectTypeOf(op).toEqualTypeOf<OpT<never, BErr | RecoveryErr, ["a" | "b"]>>();
+
+      const recovered = await op.run("a");
+      assert(recovered.isErr() === true, "should be Err");
+      expect(recovered.error).toBeInstanceOf(RecoveryErr);
+
+      const passthrough = await op.run("b");
+      assert(passthrough.isErr() === true, "should be Err");
+      expect(passthrough.error).toBeInstanceOf(BErr);
+    });
+
+    test("recover can return a plain fallback value", async () => {
+      class MissingConfigError extends TaggedError("MissingConfigError")() {}
+
+      const recovered = Op(function* () {
+        return yield* new MissingConfigError();
+      }).recover(
+        (error): error is MissingConfigError => error instanceof MissingConfigError,
+        () => "fallback" as const,
+      );
+
+      expectTypeOf(recovered).toEqualTypeOf<OpT<"fallback", never, []>>();
+
+      const result = await recovered.run();
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe("fallback");
+    });
+
+    test("recover can sequence a recovery op", async () => {
+      class MissingConfigError extends TaggedError("MissingConfigError")() {}
+
+      const recovered = Op(function* () {
+        return yield* new MissingConfigError();
+      }).recover(
+        (error): error is MissingConfigError => error instanceof MissingConfigError,
+        () => Op.of(69),
+      );
+
+      const result = await recovered.run();
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe(69);
+    });
+
+    test("recover bypasses UnhandledException even when predicate matches", async () => {
+      const recovered = Op(function* () {
+        throw new Error("boom");
+      }).recover(
+        () => true,
+        () => "fallback" as const,
+      );
+
+      const result = await recovered.run();
+      assert(result.isErr() === true, "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
     });
   });
 

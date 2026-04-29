@@ -135,6 +135,31 @@ const getUserTodos = getUser(42).flatMap((user) => getTodos(user.id));
 const result = await getUserTodos.run();
 ```
 
+### `.recover(predicate, handler)`
+
+Recovers from selected typed failures while preserving the rest of the error channel.
+Use a type-guard predicate when you want compile-time narrowing of handled errors.
+`handler` can return either a fallback value or another nullary `Op`.
+
+`UnhandledException` is intentionally not recoverable through this method; unexpected throws
+still surface so bugs are not silently converted into success paths.
+
+```ts
+class NotFoundError extends TaggedError("NotFoundError")() {}
+class PermissionError extends TaggedError("PermissionError")() {}
+
+const lookup = Op(function* (id: string) {
+  if (id === "missing") return yield* new NotFoundError();
+  if (id === "forbidden") return yield* new PermissionError();
+  return { id };
+}).recover(
+  (error): error is NotFoundError => error instanceof NotFoundError,
+  () => ({ id: "fallback" }),
+);
+
+// lookup: Op<{ id: string }, PermissionError, [string]>
+```
+
 ### `.withRetry(policy?)`
 
 Wraps an operation with retries.
