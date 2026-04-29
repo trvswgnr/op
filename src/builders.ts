@@ -1,5 +1,5 @@
 import { UnhandledException, UnreachableError } from "./errors.js";
-import { type FromGenFn, type Instruction, type Op, runOp } from "./core.js";
+import { flatMapOp, mapOp, type FromGenFn, type Instruction, type Op, runOp } from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
 
@@ -19,6 +19,9 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    map: <U>(transform: (value: Awaited<T>) => U) => mapOp(self as never, transform),
+    flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
+      flatMapOp(self as never, bind),
     _tag: "Op",
   };
   const op = () => self;
@@ -38,6 +41,9 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    map: <U>(transform: (value: never) => U) => mapOp(self as never, transform),
+    flatMap: <U, E2>(bind: (value: never) => Op<U, E2, readonly []>) =>
+      flatMapOp(self as never, bind),
     _tag: "Op" as const,
   };
   const op = () => self;
@@ -73,6 +79,9 @@ export const _try = <T, E = UnhandledException>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal),
+    map: <U>(transform: (value: Awaited<T>) => U) => mapOp(self as never, transform),
+    flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
+      flatMapOp(self as never, bind),
     _tag: "Op" as const,
   };
   const op = () => self;
@@ -92,6 +101,9 @@ export const fromGenFn: FromGenFn = (
       withRetry: (policy?: RetryPolicy) => withRetryOp(inner as never, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(inner as never, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(inner as never, signal),
+      map: <U>(transform: (value: unknown) => U) => mapOp(inner as never, transform),
+      flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
+        flatMapOp(inner as never, bind),
       _tag: "Op",
     };
     const _op = () => inner;
@@ -102,6 +114,9 @@ export const fromGenFn: FromGenFn = (
     withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    map: <U>(transform: (value: unknown) => U) => mapOp(out as never, transform),
+    flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
+      flatMapOp(out as never, bind),
     _tag: "Op" as const,
   }) as never;
 

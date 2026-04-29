@@ -93,6 +93,69 @@ describe("public API (index)", () => {
     });
   });
 
+  describe("op.map / op.flatMap", () => {
+    test("map transforms success values and preserves arity", async () => {
+      const op = Op(function* (n: number) {
+        return n + 1;
+      }).map((value) => `v:${value}`);
+
+      expectTypeOf(op).toEqualTypeOf<OpT<string, never, [number]>>();
+
+      const result = await op.run(2);
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe("v:3");
+    });
+
+    test("map does not transform failures", async () => {
+      const result = await Op.fail("boom" as const)
+        .map(() => 69)
+        .run();
+      assert(result.isErr() === true, "should be Err");
+      expect(result.error).toBe("boom");
+    });
+
+    test("flatMap chains operations and merges error channels", async () => {
+      const op = Op.of(5).flatMap((value) =>
+        value > 3 ? Op.of(`ok:${value}` as const) : Op.fail("too-small" as const),
+      );
+      expectTypeOf(op).toEqualTypeOf<OpT<`ok:${number}`, "too-small", []>>();
+
+      const okResult = await op.run();
+      assert(okResult.isOk() === true, "should be Ok");
+      expect(okResult.value).toBe("ok:5");
+
+      const errResult = await Op.of(1)
+        .flatMap((value) => (value > 3 ? Op.of(value) : Op.fail("too-small" as const)))
+        .run();
+      assert(errResult.isErr() === true, "should be Err");
+      expect(errResult.error).toBe("too-small");
+    });
+
+    test("flatMap on parameterized ops preserves arity and policy chaining", async () => {
+      let attempts = 0;
+      const op = Op(function* (n: number) {
+        attempts += 1;
+        if (attempts === 1) {
+          return yield* Op.fail("retry" as const);
+        }
+        return n;
+      })
+        .flatMap((value) => Op.of(value * 2))
+        .withRetry({
+          maxAttempts: 2,
+          shouldRetry: (cause) => cause === "retry",
+          getDelay: () => 0,
+        });
+
+      expectTypeOf(op).toEqualTypeOf<OpT<number, "retry", [number]>>();
+
+      const result = await op.run(4);
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe(8);
+      expect(attempts).toBe(2);
+    });
+  });
+
   describe("Op.try", () => {
     test("resolve and mapped reject", async () => {
       const okR = await Op.try(
