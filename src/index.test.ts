@@ -83,11 +83,11 @@ describe("public API (index)", () => {
   describe("Op.of / Op.fail", () => {
     test("pure does not yield errors; fail does not", async () => {
       const okR = await Op.of(7).run();
-      assert(okR.isOk() === true, "should be Ok");
+      assert(okR.isOk(), "should be Ok");
       expect(okR.value).toBe(7);
 
       const errR = await Op.fail("no").run();
-      assert(errR.isErr() === true, "should be Err");
+      assert(errR.isErr(), "should be Err");
       expect(errR.error).toBe("no");
     });
   });
@@ -101,7 +101,7 @@ describe("public API (index)", () => {
       expectTypeOf(op).toEqualTypeOf<Op<string, never, [number]>>();
 
       const result = await op.run(2);
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe("v:3");
     });
 
@@ -109,7 +109,7 @@ describe("public API (index)", () => {
       const result = await Op.fail("boom" as const)
         .map(() => 69)
         .run();
-      assert(result.isErr() === true, "should be Err");
+      assert(result.isErr(), "should be Err");
       expect(result.error).toBe("boom");
     });
 
@@ -124,11 +124,11 @@ describe("public API (index)", () => {
       expectTypeOf(op).toEqualTypeOf<Op<number, { code: "negative" }, [number]>>();
 
       const errResult = await op.run(-1);
-      assert(errResult.isErr() === true, "should be Err");
+      assert(errResult.isErr(), "should be Err");
       expect(errResult.error).toEqual({ code: "negative" });
 
       const okResult = await op.run(2);
-      assert(okResult.isOk() === true, "should be Ok");
+      assert(okResult.isOk(), "should be Ok");
       expect(okResult.value).toBe(2);
     });
 
@@ -138,7 +138,7 @@ describe("public API (index)", () => {
       }).mapErr(() => "mapped" as const);
 
       const result = await op.run();
-      assert(result.isErr() === true, "should be Err");
+      assert(result.isErr(), "should be Err");
       expect(result.error).toBeInstanceOf(UnhandledException);
     });
 
@@ -159,7 +159,7 @@ describe("public API (index)", () => {
         });
 
       const result = await mapped.run();
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(69);
       expect(attempts).toBe(2);
     });
@@ -171,13 +171,13 @@ describe("public API (index)", () => {
       expectTypeOf(op).toEqualTypeOf<Op<`ok:${number}`, "too-small", []>>();
 
       const okResult = await op.run();
-      assert(okResult.isOk() === true, "should be Ok");
+      assert(okResult.isOk(), "should be Ok");
       expect(okResult.value).toBe("ok:5");
 
       const errResult = await Op.of(1)
         .flatMap((value) => (value > 3 ? Op.of(value) : Op.fail("too-small" as const)))
         .run();
-      assert(errResult.isErr() === true, "should be Err");
+      assert(errResult.isErr(), "should be Err");
       expect(errResult.error).toBe("too-small");
     });
 
@@ -200,7 +200,7 @@ describe("public API (index)", () => {
       expectTypeOf(op).toEqualTypeOf<Op<number, "retry", [number]>>();
 
       const result = await op.run(4);
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(8);
       expect(attempts).toBe(2);
     });
@@ -223,11 +223,11 @@ describe("public API (index)", () => {
       expectTypeOf(op).toEqualTypeOf<Op<never, BErr | RecoveryErr, ["a" | "b"]>>();
 
       const recovered = await op.run("a");
-      assert(recovered.isErr() === true, "should be Err");
+      assert(recovered.isErr(), "should be Err");
       expect(recovered.error).toBeInstanceOf(RecoveryErr);
 
       const passthrough = await op.run("b");
-      assert(passthrough.isErr() === true, "should be Err");
+      assert(passthrough.isErr(), "should be Err");
       expect(passthrough.error).toBeInstanceOf(BErr);
     });
 
@@ -244,7 +244,7 @@ describe("public API (index)", () => {
       expectTypeOf(recovered).toEqualTypeOf<Op<"fallback", never, []>>();
 
       const result = await recovered.run();
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe("fallback");
     });
 
@@ -259,7 +259,7 @@ describe("public API (index)", () => {
       );
 
       const result = await recovered.run();
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(69);
     });
 
@@ -272,7 +272,7 @@ describe("public API (index)", () => {
       );
 
       const result = await recovered.run();
-      assert(result.isErr() === true, "should be Err");
+      assert(result.isErr(), "should be Err");
       expect(result.error).toBeInstanceOf(UnhandledException);
     });
 
@@ -288,7 +288,7 @@ describe("public API (index)", () => {
       expectTypeOf(recovered).toEqualTypeOf<Op<string | number, never, []>>();
 
       const result = await recovered.run();
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe("fallback");
     });
 
@@ -304,7 +304,7 @@ describe("public API (index)", () => {
       expectTypeOf(recovered).toEqualTypeOf<Op<string | number, never, [number]>>();
 
       const result = await recovered.run(-1);
-      assert(result.isOk() === true, "should be Ok");
+      assert(result.isOk(), "should be Ok");
       expect(result.value).toBe("fallback");
     });
 
@@ -323,14 +323,14 @@ describe("public API (index)", () => {
       expectTypeOf(recovered1).toEqualTypeOf<Op<string, E2, []>>();
 
       const result1 = await recovered1.run();
-      assert(result1.isOk() === true, "should be Ok");
+      assert(result1.isOk(), "should be Ok");
       expect(result1.value).toBe("fallback");
 
       const recovered2 = op.recover(E2, () => "fallback1");
       expectTypeOf(recovered2).toEqualTypeOf<Op<string, E1, []>>();
 
       const result2 = await recovered2.run();
-      assert(result2.isErr() === true, "should be Err");
+      assert(result2.isErr(), "should be Err");
       expect(result2.error).toBeInstanceOf(E1);
 
       // @ts-expect-error - E3 is not a valid error type
@@ -344,14 +344,14 @@ describe("public API (index)", () => {
         () => Promise.resolve(3),
         () => "mapped",
       ).run();
-      assert(okR.isOk() === true, "should be Ok");
+      assert(okR.isOk(), "should be Ok");
       expect(okR.value).toBe(3);
 
       const errR = await Op.try(
         () => (Math.random() > 1 ? Promise.resolve(3) : Promise.reject("boom")),
         (e) => ({ mappedError: String(e) }),
       ).run();
-      assert(errR.isErr() === true, "should be Err");
+      assert(errR.isErr(), "should be Err");
       expect(errR.error).toEqual({ mappedError: "boom" });
     });
 
@@ -361,7 +361,7 @@ describe("public API (index)", () => {
         const result = await Op.try(async () => {
           await Promise.reject("failed");
         }).run();
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBeInstanceOf(UnhandledException);
         expect(result.error.cause).toBe("failed");
       }
@@ -373,7 +373,7 @@ describe("public API (index)", () => {
           },
           (e) => ({ mappedError: String(e) }),
         ).run();
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toEqual({ mappedError: "69" });
       }
       // sync throw defaults maps to UnhandledException
@@ -382,7 +382,7 @@ describe("public API (index)", () => {
         const result = await Op.try(async () => {
           throw syncThrow;
         }).run();
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBeInstanceOf(UnhandledException);
         expect(result.error.cause).toBe(syncThrow);
       }
@@ -394,7 +394,7 @@ describe("public API (index)", () => {
           },
           (e) => ({ mappedError: String(e) }),
         ).run();
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toEqual({ mappedError: "69" });
       }
       // success path
@@ -402,7 +402,7 @@ describe("public API (index)", () => {
         const result = await Op.try(async () => {
           return 69;
         }).run();
-        assert(result.isOk() === true, "result should be Ok");
+        assert(result.isOk(), "result should be Ok");
         expect(result.value).toBe(69);
       }
     });
@@ -433,7 +433,7 @@ describe("public API (index)", () => {
       });
 
       const result = await program.run();
-      assert(result.isOk() === true, "result should be Ok");
+      assert(result.isOk(), "result should be Ok");
       expect(result.value).toBe(69);
       expect(attempts).toBe(2);
     });
@@ -449,7 +449,7 @@ describe("public API (index)", () => {
         return id.length;
       }).withRetry(immediateRetry(transient));
       const asyncResult = await asyncProgram.run("abcd");
-      assert(asyncResult.isOk() === true, "should be Ok");
+      assert(asyncResult.isOk(), "should be Ok");
       expect(asyncResult.value).toBe(4);
       expect(asyncAttempts).toBe(2);
 
@@ -462,7 +462,7 @@ describe("public API (index)", () => {
         return id.toUpperCase();
       }).withRetry(immediateRetry("retry me"));
       const genResult = await generatorProgram.run("ok");
-      assert(genResult.isOk() === true, "should be Ok");
+      assert(genResult.isOk(), "should be Ok");
       expect(genResult.value).toBe("OK");
       expect(genAttempts).toBe(2);
     });
@@ -483,7 +483,7 @@ describe("public API (index)", () => {
         await vi.advanceTimersByTimeAsync(100);
         const result = await runPromise;
 
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBeInstanceOf(TimeoutError);
       } finally {
         vi.useRealTimers();
@@ -512,7 +512,7 @@ describe("public API (index)", () => {
         const runPromise = program.run();
         await vi.advanceTimersByTimeAsync(150);
         const result = await runPromise;
-        assert(result.isOk() === true, "result should be Ok");
+        assert(result.isOk(), "result should be Ok");
         expect(result.value).toBe(69);
         expect(attempts).toBe(2);
       } finally {
@@ -551,7 +551,7 @@ describe("public API (index)", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         const result = await runPromise;
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBe("cancelled");
       } finally {
         vi.useRealTimers();
@@ -568,7 +568,7 @@ describe("public API (index)", () => {
           return a + b;
         });
         const r = await program.run();
-        assert(r.isOk() === true, "should be Ok");
+        assert(r.isOk(), "should be Ok");
         expect(r.value).toBe(12);
       }
       {
@@ -578,7 +578,7 @@ describe("public API (index)", () => {
           return a + b;
         });
         const r = await program.run();
-        assert(r.isOk() === true, "should be Ok");
+        assert(r.isOk(), "should be Ok");
         expect(r.value).toBe(30);
       }
       {
@@ -588,7 +588,7 @@ describe("public API (index)", () => {
           return a + b;
         });
         const r = await program.run();
-        assert(r.isErr() === true, "should be Err");
+        assert(r.isErr(), "should be Err");
         expect(r.error).toBeInstanceOf(UnhandledException);
         expectTypeOf(r.error).toEqualTypeOf<UnhandledException>();
         expect(r.error.cause).toBe("boom");
@@ -603,7 +603,7 @@ describe("public API (index)", () => {
           );
         });
         const r = await program.run();
-        assert(r.isErr() === true, "should be Err");
+        assert(r.isErr(), "should be Err");
         expect(r.error).toBeInstanceOf(UnhandledException);
         expectTypeOf(r.error).toEqualTypeOf<UnhandledException>();
         expect(r.error.cause).toBe(error);
@@ -618,7 +618,7 @@ describe("public API (index)", () => {
           return a + b + c;
         });
         const r = await program.run();
-        assert(r.isErr() === true, "should be Err");
+        assert(r.isErr(), "should be Err");
         expect(r.error).toBe("boom");
         expectTypeOf(r.error).toEqualTypeOf<UnhandledException | string>();
       }
@@ -639,7 +639,7 @@ describe("public API (index)", () => {
 
         const result = await program.run();
 
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBe("boom");
         expect(events).toEqual(["start", "finally"]);
       });
@@ -664,7 +664,7 @@ describe("public API (index)", () => {
 
         const result = await program.run();
 
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBeInstanceOf(UnhandledException);
         expect(result.error.cause).toBe(cause);
         expect(events).toEqual(["start", "finally"]);
@@ -696,7 +696,7 @@ describe("public API (index)", () => {
           await vi.advanceTimersByTimeAsync(10);
           const result = await runPromise;
 
-          assert(result.isErr() === true, "should be Err");
+          assert(result.isErr(), "should be Err");
           expect(result.error).toBeInstanceOf(TimeoutError);
           expect(finalized).toBe(true);
         } finally {
@@ -720,7 +720,7 @@ describe("public API (index)", () => {
 
         const result = await program.run();
 
-        assert(result.isErr() === true, "should be Err");
+        assert(result.isErr(), "should be Err");
         expect(result.error).toBe("boom");
       });
     });
@@ -729,14 +729,14 @@ describe("public API (index)", () => {
   describe("Op.run", () => {
     test("free-function run executes nullary ops", async () => {
       const r1 = await Op.run(Op.of(69));
-      assert(r1.isOk() === true, "should be Ok");
+      assert(r1.isOk(), "should be Ok");
       expect(r1.value).toBe(69);
 
       const nullary = Op(function* () {
         return 1;
       });
       const r2 = await Op.run(nullary);
-      assert(r2.isOk() === true, "should be Ok");
+      assert(r2.isOk(), "should be Ok");
       expect(r2.value).toBe(1);
     });
   });
@@ -853,7 +853,7 @@ const invalidConcurrencies = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY];
 describe("Op.all", () => {
   test("tuple of successes in input order", async () => {
     const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toEqual([1, "two", true]);
     const [n, s, b] = r.value;
     expectTypeOf(n).toEqualTypeOf<number>();
@@ -863,7 +863,7 @@ describe("Op.all", () => {
 
   test("empty input succeeds with []", async () => {
     const r = await Op.all([]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toEqual([]);
   });
 
@@ -889,7 +889,7 @@ describe("Op.all", () => {
     const fast = Op.fail("boom" as const);
 
     const r = await Op.all([slow, fast]).run();
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     expect(r.error).toBe("boom");
     expect(siblingAborted).toBe(true);
   });
@@ -972,7 +972,7 @@ describe("Op.all", () => {
     fourthGate.resolve(3);
     const r = await run;
 
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toEqual([0, 1, 2, 3]);
     expect(maxActive).toBeLessThanOrEqual(2);
   });
@@ -997,7 +997,7 @@ describe("Op.all", () => {
 
     const r = await Op.all([slow, fast, queued], 2).run();
 
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     expect(r.error).toBe("boom");
     expect(slowObservedAbort).toBe(true);
     expect(queuedStarted).toBe(false);
@@ -1007,7 +1007,7 @@ describe("Op.all", () => {
 describe("Op.allSettled", () => {
   test("returns tuple of Result in input order", async () => {
     const r = await Op.allSettled([Op.of(1), Op.fail("no" as const), Op.of("ok")]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     const [a, b, c] = r.value;
     assert(a.isOk() && b.isErr() && c.isOk(), "branches");
     expect(a.value).toBe(1);
@@ -1017,7 +1017,7 @@ describe("Op.allSettled", () => {
 
   test("empty input succeeds with []", async () => {
     const r = await Op.allSettled([]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toEqual([]);
   });
 
@@ -1032,7 +1032,7 @@ describe("Op.allSettled", () => {
     const r = await combined.run();
     // Even a `never`-failing op still widens to UnhandledException after .run() since the
     // runtime can always throw in user code. What matters: .ok is always true here.
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     const [a, b] = r.value;
     expectTypeOf(a).toEqualTypeOf<Result<never, number | UnhandledException>>();
     expectTypeOf(b).toEqualTypeOf<Result<never, "two" | UnhandledException>>();
@@ -1052,10 +1052,10 @@ describe("Op.allSettled", () => {
         }),
     );
     const r = await Op.allSettled([slow, Op.fail("boom")]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(siblingAborted).toBe(false);
     const [first] = r.value;
-    assert(first.isOk() === true, "slow sibling completed normally");
+    assert(first.isOk(), "slow sibling completed normally");
     expect(first.value).toBe(1);
   });
 
@@ -1072,7 +1072,7 @@ describe("Op.allSettled", () => {
 
     const r = await Op.allSettled([first, second], 1).run();
 
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(started).toEqual([0, 1]);
     const [a, b] = r.value;
     assert(a.isErr() && b.isOk(), "branches");
@@ -1084,24 +1084,24 @@ describe("Op.allSettled", () => {
 describe("Op.settle", () => {
   test("wraps success in a settled Result", async () => {
     const r = await Op.settle(Op.of(42)).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     const settled = r.value;
-    assert(settled.isOk() === true, "inner op succeeded");
+    assert(settled.isOk(), "inner op succeeded");
     expect(settled.value).toBe(42);
   });
 
   test("wraps failure in a settled Result", async () => {
     const r = await Op.settle(Op.fail("nope" as const)).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     const settled = r.value;
-    assert(settled.isErr() === true, "inner op failed");
+    assert(settled.isErr(), "inner op failed");
     expect(settled.error).toBe("nope");
   });
 
   test("preserves child result typing", async () => {
     const combined = Op.settle(Op.fail(1));
     const r = await combined.run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expectTypeOf(r.value).toEqualTypeOf<Result<never, number | UnhandledException>>();
   });
 });
@@ -1121,7 +1121,7 @@ describe("Op.any", () => {
         }),
     );
     const r = await Op.any([slow, Op.of(69)]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toBe(69);
     expect(slowAborted).toBe(true);
   });
@@ -1132,14 +1132,14 @@ describe("Op.any", () => {
       Op.fail("b" as const),
       Op.fail("c" as const),
     ]).run();
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual(["a", "b", "c"]);
   });
 
   test("empty input fails with empty ErrorGroup", async () => {
     const r = await Op.any([]).run();
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual([]);
   });
@@ -1161,7 +1161,7 @@ describe("Op.any", () => {
       Op.try(() => rejectAfter("slow", 10), toTag("slow")),
       Op.try(() => rejectAfter("fast", 0), toTag("fast")),
     ]).run();
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     assert(r.error instanceof ErrorGroup, "ErrorGroup");
     expect(r.error.errors).toEqual(["slow", "fast"]);
   });
@@ -1183,7 +1183,7 @@ describe("Op.race", () => {
     );
     const fast = Op.try(() => resolveAfter(7, 0));
     const r = await Op.race([slow, fast]).run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toBe(7);
     expect(loserAborted).toBe(true);
   });
@@ -1192,7 +1192,7 @@ describe("Op.race", () => {
     const slow = Op.try(() => resolveAfter(1, 20));
     const fast = Op.fail("quick" as const);
     const r = await Op.race([slow, fast]).run();
-    assert(r.isErr() === true, "should be Err");
+    assert(r.isErr(), "should be Err");
     expect(r.error).toBe("quick");
   });
 
@@ -1229,7 +1229,7 @@ describe("Op combinators compose with withTimeout / withRetry", () => {
       const promise = Op.all([slow, slow]).withTimeout(10).run();
       await vi.advanceTimersByTimeAsync(15);
       const r = await promise;
-      assert(r.isErr() === true, "should be Err");
+      assert(r.isErr(), "should be Err");
       expect(r.error).toBeInstanceOf(TimeoutError);
     } finally {
       vi.useRealTimers();
@@ -1246,7 +1246,7 @@ describe("Op combinators compose with withTimeout / withRetry", () => {
     const r = await Op.any([flaky])
       .withRetry({ maxAttempts: 3, shouldRetry: () => true, getDelay: () => 0 })
       .run();
-    assert(r.isOk() === true, "should be Ok");
+    assert(r.isOk(), "should be Ok");
     expect(r.value).toBe(11);
     expect(attempts).toBe(2);
   });
