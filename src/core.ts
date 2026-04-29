@@ -54,9 +54,15 @@ function isSuspended(value: unknown): value is Suspended {
 }
 
 function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
-  if (typeof value !== "object" || value === null || !("isErr" in value)) return false;
-  const hasIsErr = value as { isErr?: unknown };
-  return typeof hasIsErr.isErr === "function" && hasIsErr.isErr();
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("isErr" in value) ||
+    typeof value.isErr !== "function"
+  ) {
+    return false;
+  }
+  return value.isErr();
 }
 
 export async function drive<T, E>(
@@ -66,6 +72,13 @@ export async function drive<T, E>(
   try {
     const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
+    const closeIterator = () => {
+      try {
+        iter.return?.(undefined as never);
+      } catch {
+        // Ignore cleanup faults so the original result/error is preserved.
+      }
+    };
     let step = iter.next();
     while (!step.done) {
       try {
@@ -73,13 +86,18 @@ export async function drive<T, E>(
           step = iter.next(await step.value.suspend(signal));
           continue;
         }
-        if (isErrInstruction<E>(step.value)) return err(step.value.error);
+        if (isErrInstruction<E>(step.value)) {
+          closeIterator();
+          return err(step.value.error);
+        }
+        closeIterator();
         return err(
           new UnhandledException({
             cause: new TypeError("Op generator yielded an invalid instruction"),
           }),
         );
       } catch (cause) {
+        closeIterator();
         return err(new UnhandledException({ cause }));
       }
     }

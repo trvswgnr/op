@@ -55,6 +55,40 @@ describe("op.run", () => {
     expect(result.error.cause).toBeInstanceOf(Error);
     expect(result.error.cause).toBe(error);
   });
+
+  test("runs generator finally on cancellation", async () => {
+    const controller = new AbortController();
+    let finalized = false;
+
+    const program = fromGenFn(function* () {
+      try {
+        return yield* _try((signal) => {
+          return new Promise<number>((_resolve, reject) => {
+            if (signal.aborted) {
+              reject(signal.reason);
+              return;
+            }
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          });
+        });
+      } finally {
+        finalized = true;
+      }
+    }).withSignal(controller.signal);
+
+    const runPromise = program.run();
+    controller.abort(new Error("cancelled"));
+    const result = await runPromise;
+
+    assert(result.isErr() === true, "should be Err");
+    expect(finalized).toBe(true);
+  });
 });
 
 describe("edge cases and invariants", () => {
