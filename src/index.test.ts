@@ -378,6 +378,107 @@ describe("public API (index)", () => {
         expectTypeOf(r.error).toEqualTypeOf<UnhandledException | string>();
       }
     });
+
+    describe("generator finalization on early exit", () => {
+      test("runs finally when the body yields an Err instruction", async () => {
+        const events: string[] = [];
+        const program = Op(function* () {
+          try {
+            events.push("start");
+            yield* Op.fail("boom");
+            return "unreachable";
+          } finally {
+            events.push("finally");
+          }
+        });
+
+        const result = await program.run();
+
+        assert(result.isErr() === true, "should be Err");
+        expect(result.error).toBe("boom");
+        expect(events).toEqual(["start", "finally"]);
+      });
+
+      test("runs finally when a suspended instruction throws", async () => {
+        const events: string[] = [];
+        const cause = new Error("suspend failed");
+        const program = Op(function* () {
+          try {
+            events.push("start");
+            yield {
+              _tag: "Suspended" as const,
+              suspend: async () => {
+                throw cause;
+              },
+            };
+            return 1;
+          } finally {
+            events.push("finally");
+          }
+        });
+
+        const result = await program.run();
+
+        assert(result.isErr() === true, "should be Err");
+        expect(result.error).toBeInstanceOf(UnhandledException);
+        expect(result.error.cause).toBe(cause);
+        expect(events).toEqual(["start", "finally"]);
+      });
+
+      test("runs finally when withTimeout aborts inner work", async () => {
+        vi.useFakeTimers();
+        try {
+          let finalized = false;
+          const program = Op(function* () {
+            try {
+              yield* Op.try(
+                (signal) =>
+                  new Promise<number>((_resolve, reject) => {
+                    if (signal.aborted) {
+                      reject(signal.reason);
+                      return;
+                    }
+                    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+                  }),
+              ).withTimeout(10);
+              return 1;
+            } finally {
+              finalized = true;
+            }
+          });
+
+          const runPromise = program.run();
+          await vi.advanceTimersByTimeAsync(10);
+          const result = await runPromise;
+
+          assert(result.isErr() === true, "should be Err");
+          expect(result.error).toBeInstanceOf(TimeoutError);
+          expect(finalized).toBe(true);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test("preserves original Err result when cleanup throws during iter.return()", async () => {
+        const cleanupFault = new Error("cleanup failed");
+        const failCleanup = () => {
+          throw cleanupFault;
+        };
+        const program = Op(function* () {
+          try {
+            yield* Op.fail("boom");
+            return "unreachable";
+          } finally {
+            failCleanup();
+          }
+        });
+
+        const result = await program.run();
+
+        assert(result.isErr() === true, "should be Err");
+        expect(result.error).toBe("boom");
+      });
+    });
   });
 
   describe("Op.run", () => {
