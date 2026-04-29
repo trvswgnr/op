@@ -278,6 +278,92 @@ describe("public API (index)", () => {
       });
     });
 
+    describe("op.tapErr", () => {
+      test("tapErr observes failures and preserves the original error", async () => {
+        const seen: string[] = [];
+        const op = Op(function* (kind: "bad" | "ok") {
+          if (kind === "bad") {
+            return yield* Op.fail("bad-input" as const);
+          }
+          return 69;
+        }).tapErr((error) => {
+          seen.push(error);
+          return "ignored";
+        });
+
+        expectTypeOf(op).toEqualTypeOf<Op<number, "bad-input", ["bad" | "ok"]>>();
+
+        const errResult = await op.run("bad");
+        assert(errResult.isErr(), "should be Err");
+        expect(errResult.error).toBe("bad-input");
+        expect(seen).toEqual(["bad-input"]);
+
+        const okResult = await op.run("ok");
+        assert(okResult.isOk(), "should be Ok");
+        expect(okResult.value).toBe(69);
+        expect(seen).toEqual(["bad-input"]);
+      });
+
+      test("tapErr sequences an Op-returning observer and discards observer output", async () => {
+        const seen: string[] = [];
+        const result = await Op.fail("bad-input" as const)
+          .tapErr((error) =>
+            Op.of(error.toUpperCase()).map((payload) => {
+              seen.push(payload);
+              return 69;
+            }),
+          )
+          .run();
+
+        assert(result.isErr(), "should be Err");
+        expect(result.error).toBe("bad-input");
+        expect(seen).toEqual(["BAD-INPUT"]);
+      });
+
+      test("tapErr propagates observer Op failures", async () => {
+        const result = await Op.fail("bad-input" as const)
+          .tapErr(() => Op.fail("observer-failed" as const))
+          .run();
+        assert(result.isErr(), "should be Err");
+        expect(result.error).toBe("observer-failed");
+      });
+
+      test("tapErr turns thrown observer errors into UnhandledException", async () => {
+        const cause = new Error("observer-boom");
+        const result = await Op.fail("bad-input" as const)
+          .tapErr(() => {
+            throw cause;
+          })
+          .run();
+
+        assert(result.isErr(), "should be Err");
+        expect(result.error).toBeInstanceOf(UnhandledException);
+        if (result.error instanceof UnhandledException) {
+          expect(result.error.cause).toBe(cause);
+        }
+      });
+
+      test("tapErr does not run observer on success", async () => {
+        const observer = vi.fn();
+        const result = await Op.of(69).tapErr(observer).run();
+        assert(result.isOk(), "should be Ok");
+        expect(result.value).toBe(69);
+        expect(observer).not.toHaveBeenCalled();
+      });
+
+      test("tapErr bypasses UnhandledException values", async () => {
+        const observer = vi.fn();
+        const result = await Op(function* () {
+          throw new Error("boom");
+        })
+          .tapErr(observer)
+          .run();
+        assert(result.isErr(), "should be Err");
+        expect(result.error).toBeInstanceOf(UnhandledException);
+        expect(observer).not.toHaveBeenCalled();
+      });
+    });
+
     describe("op.recover", () => {
       test("recover narrows handled error type via type guard predicate", async () => {
         class AErr extends TaggedError("AErr")() {}

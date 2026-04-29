@@ -5,6 +5,7 @@ import {
   mapOp,
   recoverOp,
   tapOp,
+  tapErrOp,
   type FromGenFn,
   type Instruction,
   type Op,
@@ -34,6 +35,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
     flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
     tap: <R>(observe: (value: Awaited<T>) => R) => tapOp(self as never, observe),
+    tapErr: <R>(observe: (error: never) => R) => tapErrOp(self as never, observe),
     recover: <R>(predicate: (error: never) => boolean, handler: (error: never) => R) =>
       recoverOp(self as never, predicate, handler),
     _tag: "Op",
@@ -60,6 +62,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
     flatMap: <U, E2>(bind: (value: never) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
     tap: <R>(observe: (value: never) => R) => tapOp(self as never, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self as never, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
       recoverOp(self as never, predicate, handler),
     _tag: "Op" as const,
@@ -102,6 +105,7 @@ export const _try = <T, E = UnhandledException>(
     flatMap: <U, E2>(bind: (value: Awaited<T>) => Op<U, E2, readonly []>) =>
       flatMapOp(self as never, bind),
     tap: <R>(observe: (value: Awaited<T>) => R) => tapOp(self as never, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self as never, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
       recoverOp(self as never, predicate, handler),
     _tag: "Op" as const,
@@ -128,6 +132,7 @@ export const fromGenFn: FromGenFn = (
       flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
         flatMapOp(inner as never, bind),
       tap: <R>(observe: (value: unknown) => R) => tapOp(inner as never, observe),
+      tapErr: <R>(observe: (error: unknown) => R) => tapErrOp(inner as never, observe),
       recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
         recoverOp(inner as never, predicate, handler),
       _tag: "Op",
@@ -145,6 +150,7 @@ export const fromGenFn: FromGenFn = (
     flatMap: <U, E2>(bind: (value: unknown) => Op<U, E2, readonly []>) =>
       flatMapOp(out as never, bind),
     tap: <R>(observe: (value: unknown) => R) => tapOp(out as never, observe),
+    tapErr: <R>(observe: (error: unknown) => R) => tapErrOp(out as never, observe),
     recover: <R>(predicate: (error: unknown) => boolean, handler: (error: unknown) => R) =>
       recoverOp(out as never, predicate, handler),
     _tag: "Op" as const,

@@ -135,6 +135,47 @@ const getUserTodos = getUser(42).flatMap((user) => getTodos(user.id));
 const result = await getUserTodos.run();
 ```
 
+### `.tap(f)`
+
+Observes a successful value without changing it. This is useful for logging, metrics, tracing,
+or debugging in the middle of a pipeline without restructuring into a generator.
+
+If `f` returns a plain value, that value is ignored and the original success value passes through.
+If `f` returns a nullary `Op`, that op is sequenced and its result is discarded. If `f` throws, or
+if the returned op fails, that failure propagates.
+
+```ts
+const parseBody = (response: Response) =>
+  Op.try(
+    () => response.json() as Promise<{ id: string }>,
+    (cause) => new Error(`parse failed: ${String(cause)}`),
+  );
+
+const withLog = Op.try(() => fetch("https://example.com/user/42"))
+  .tap((response) => {
+    console.log("status", response.status);
+  })
+  .flatMap(parseBody);
+```
+
+### `.tapErr(f)`
+
+Observes typed failures without changing which error is returned. This is useful for error metrics,
+structured logging, and alert hooks while preserving existing control flow.
+
+If `f` returns a plain value, that value is ignored and the original typed error passes through.
+If `f` returns a nullary `Op`, that op is sequenced and its result is discarded. If `f` throws, or
+if the returned op fails, that failure propagates. `UnhandledException` bypasses `tapErr`.
+
+```ts
+const withErrorMetric = Op.try(
+  () => fetch("https://example.com/user/42").then((r) => r.json()),
+  (cause) => new Error(`request failed: ${String(cause)}`),
+).tapErr((error) => {
+  console.error("user lookup failed", error.message);
+});
+```
+
 ### `.recover(predicate, handler)`
 
 Recovers from selected typed failures while preserving the rest of the error channel.
