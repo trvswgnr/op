@@ -6,7 +6,6 @@ import {
   TaggedError,
   ErrorGroup,
   exponentialBackoff,
-  type Op as OpT,
 } from "./index.js";
 import type { RetryPolicy } from "./policies.js";
 import type { Result } from "./result.js";
@@ -99,7 +98,7 @@ describe("public API (index)", () => {
         return n + 1;
       }).map((value) => `v:${value}`);
 
-      expectTypeOf(op).toEqualTypeOf<OpT<string, never, [number]>>();
+      expectTypeOf(op).toEqualTypeOf<Op<string, never, [number]>>();
 
       const result = await op.run(2);
       assert(result.isOk() === true, "should be Ok");
@@ -122,7 +121,7 @@ describe("public API (index)", () => {
         return n;
       }).mapErr((error) => ({ code: error }));
 
-      expectTypeOf(op).toEqualTypeOf<OpT<number, { code: "negative" }, [number]>>();
+      expectTypeOf(op).toEqualTypeOf<Op<number, { code: "negative" }, [number]>>();
 
       const errResult = await op.run(-1);
       assert(errResult.isErr() === true, "should be Err");
@@ -169,7 +168,7 @@ describe("public API (index)", () => {
       const op = Op.of(5).flatMap((value) =>
         value > 3 ? Op.of(`ok:${value}` as const) : Op.fail("too-small" as const),
       );
-      expectTypeOf(op).toEqualTypeOf<OpT<`ok:${number}`, "too-small", []>>();
+      expectTypeOf(op).toEqualTypeOf<Op<`ok:${number}`, "too-small", []>>();
 
       const okResult = await op.run();
       assert(okResult.isOk() === true, "should be Ok");
@@ -198,7 +197,7 @@ describe("public API (index)", () => {
           getDelay: () => 0,
         });
 
-      expectTypeOf(op).toEqualTypeOf<OpT<number, "retry", [number]>>();
+      expectTypeOf(op).toEqualTypeOf<Op<number, "retry", [number]>>();
 
       const result = await op.run(4);
       assert(result.isOk() === true, "should be Ok");
@@ -221,7 +220,7 @@ describe("public API (index)", () => {
         () => Op.fail(new RecoveryErr()),
       );
 
-      expectTypeOf(op).toEqualTypeOf<OpT<never, BErr | RecoveryErr, ["a" | "b"]>>();
+      expectTypeOf(op).toEqualTypeOf<Op<never, BErr | RecoveryErr, ["a" | "b"]>>();
 
       const recovered = await op.run("a");
       assert(recovered.isErr() === true, "should be Err");
@@ -242,7 +241,7 @@ describe("public API (index)", () => {
         () => "fallback" as const,
       );
 
-      expectTypeOf(recovered).toEqualTypeOf<OpT<"fallback", never, []>>();
+      expectTypeOf(recovered).toEqualTypeOf<Op<"fallback", never, []>>();
 
       const result = await recovered.run();
       assert(result.isOk() === true, "should be Ok");
@@ -286,7 +285,7 @@ describe("public API (index)", () => {
         return 69; // will never actually happen
       }).recover(TestError, () => "fallback");
 
-      expectTypeOf(recovered).toEqualTypeOf<OpT<string | number, never, []>>();
+      expectTypeOf(recovered).toEqualTypeOf<Op<string | number, never, []>>();
 
       const result = await recovered.run();
       assert(result.isOk() === true, "should be Ok");
@@ -302,11 +301,40 @@ describe("public API (index)", () => {
         return n;
       }).recover(TestError, () => "fallback");
 
-      expectTypeOf(recovered).toEqualTypeOf<OpT<string | number, never, [number]>>();
+      expectTypeOf(recovered).toEqualTypeOf<Op<string | number, never, [number]>>();
 
       const result = await recovered.run(-1);
       assert(result.isOk() === true, "should be Ok");
       expect(result.value).toBe("fallback");
+    });
+
+    test("recover with constructor predicate allows only errors from the Op to be recovered", async () => {
+      class E1 extends TaggedError("E1")() {}
+      class E2 extends TaggedError("E2")() {}
+      class E3 extends TaggedError("E3")() {}
+      const op = Op(function* () {
+        if (Infinity > 0) {
+          return yield* new E1();
+        }
+        return yield* new E2();
+      });
+
+      const recovered1 = op.recover(E1, () => "fallback");
+      expectTypeOf(recovered1).toEqualTypeOf<Op<string, E2, []>>();
+
+      const result1 = await recovered1.run();
+      assert(result1.isOk() === true, "should be Ok");
+      expect(result1.value).toBe("fallback");
+
+      const recovered2 = op.recover(E2, () => "fallback1");
+      expectTypeOf(recovered2).toEqualTypeOf<Op<string, E1, []>>();
+
+      const result2 = await recovered2.run();
+      assert(result2.isErr() === true, "should be Err");
+      expect(result2.error).toBeInstanceOf(E1);
+
+      // @ts-expect-error - E3 is not a valid error type
+      const _recovered3 = op.recover(E3, () => "fallback2");
     });
   });
 
@@ -727,7 +755,7 @@ describe("public API (index)", () => {
 });
 
 /** Monadic bind `(>>=)` for nullary {@link Op}s, expressed with `yield*`. */
-function bind<A, E1, B, E2>(m: OpT<A, E1, []>, f: (a: A) => OpT<B, E2, []>): OpT<B, E1 | E2, []> {
+function bind<A, E1, B, E2>(m: Op<A, E1, []>, f: (a: A) => Op<B, E2, []>): Op<B, E1 | E2, []> {
   return Op(function* () {
     const x = yield* m();
     return yield* f(x)();
