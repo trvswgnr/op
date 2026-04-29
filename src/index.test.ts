@@ -276,6 +276,38 @@ describe("public API (index)", () => {
       assert(result.isErr() === true, "should be Err");
       expect(result.error).toBeInstanceOf(UnhandledException);
     });
+
+    test("recover can handle typed errors with explicit constructor", async () => {
+      class TestError extends TaggedError("TestError")() {}
+      const recovered = Op(function* () {
+        if (Infinity) {
+          return yield* new TestError();
+        }
+        return 69; // will never actually happen
+      }).recover(TestError, () => "fallback");
+
+      expectTypeOf(recovered).toEqualTypeOf<OpT<string | number, never, []>>();
+
+      const result = await recovered.run();
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe("fallback");
+    });
+
+    test("recover with constructor predicate preserves arity", async () => {
+      class TestError extends TaggedError("TestError")() {}
+      const recovered = Op(function* (n: number) {
+        if (n < 0) {
+          return yield* new TestError();
+        }
+        return n;
+      }).recover(TestError, () => "fallback");
+
+      expectTypeOf(recovered).toEqualTypeOf<OpT<string | number, never, [number]>>();
+
+      const result = await recovered.run(-1);
+      assert(result.isOk() === true, "should be Ok");
+      expect(result.value).toBe("fallback");
+    });
   });
 
   describe("Op.try", () => {
