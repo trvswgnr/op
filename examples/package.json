@@ -4,7 +4,8 @@
   "description": "Consumer-level smoke checks for @prodkit/op installation paths.",
   "type": "module",
   "scripts": {
-    "smoke": "node ./smoke.ts"
+    "smoke": "node ./smoke.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=24"
