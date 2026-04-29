@@ -1,10 +1,12 @@
 import { TimeoutError, UnreachableError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
 import {
+  type CleanupFn,
   drive,
   flatMapOp,
   makeNullaryOp,
   mapOp,
+  withCleanupOp,
   type Op,
   type OpArity,
   type Instruction,
@@ -74,6 +76,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out as never, cleanup),
     map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
     _tag: "Op" as const,
@@ -90,6 +93,7 @@ const makePolicyNullaryOp = <T, E>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy) as never,
     withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs) as never,
     withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal) as never,
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self as never, cleanup) as never,
   });
   return self;
 };

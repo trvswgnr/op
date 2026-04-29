@@ -8,7 +8,12 @@ export interface Suspended {
   readonly suspend: (signal: AbortSignal) => Promise<unknown>;
 }
 
-export type Instruction<E> = Err<unknown, E> | Suspended;
+export interface RegisterCleanup {
+  readonly _tag: "RegisterCleanup";
+  readonly finalize: () => Promise<void>;
+}
+
+export type Instruction<E> = Err<unknown, E> | Suspended | RegisterCleanup;
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
   withRetry(policy?: RetryPolicy): Op<T, E, A>;
@@ -20,6 +25,12 @@ export interface WithTimeout<T, E, A extends readonly unknown[]> {
 
 export interface WithSignal<T, E, A extends readonly unknown[]> {
   withSignal(signal: AbortSignal): Op<T, E, A>;
+}
+
+export type CleanupFn<T> = (value: T) => unknown;
+
+export interface WithCleanup<T, E, A extends readonly unknown[]> {
+  withCleanup(cleanup: CleanupFn<T>): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
@@ -84,6 +95,7 @@ export interface OpNullary<T, E>
     WithRetry<T, E, []>,
     WithTimeout<T, E, []>,
     WithSignal<T, E, []>,
+    WithCleanup<T, E, []>,
     WithMap<T, E, []>,
     WithMapErr<T, E, []>,
     WithFlatMap<T, E, []>,
@@ -99,6 +111,7 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithRetry<T, E, A>,
     WithTimeout<T, E, A>,
     WithSignal<T, E, A>,
+    WithCleanup<T, E, A>,
     WithMap<T, E, A>,
     WithMapErr<T, E, A>,
     WithFlatMap<T, E, A>,
@@ -135,10 +148,39 @@ function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
   return value.isErr();
 }
 
+function isRegisterCleanup(value: unknown): value is RegisterCleanup {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "_tag" in value &&
+    value._tag === "RegisterCleanup" &&
+    "finalize" in value &&
+    typeof value.finalize === "function"
+  );
+}
+
 export async function drive<T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
+  const finalizers: Array<() => Promise<void>> = [];
+  const runFinalizers = async (): Promise<void> => {
+    for (let index = finalizers.length - 1; index >= 0; index -= 1) {
+      const finalize = finalizers[index];
+      if (finalize !== undefined) {
+        await finalize();
+      }
+    }
+  };
+  const runFinalizersSafely = async (): Promise<unknown | undefined> => {
+    try {
+      await runFinalizers();
+      return undefined;
+    } catch (cause) {
+      return cause;
+    }
+  };
+
   try {
     const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
@@ -156,11 +198,18 @@ export async function drive<T, E>(
           step = iter.next(await step.value.suspend(signal));
           continue;
         }
+        if (isRegisterCleanup(step.value)) {
+          finalizers.push(step.value.finalize);
+          step = iter.next(undefined);
+          continue;
+        }
         if (isErrInstruction<E>(step.value)) {
           closeIterator();
+          await runFinalizersSafely();
           return err(step.value.error);
         }
         closeIterator();
+        await runFinalizersSafely();
         return err(
           new UnhandledException({
             cause: new TypeError("Op generator yielded an invalid instruction"),
@@ -168,12 +217,18 @@ export async function drive<T, E>(
         );
       } catch (cause) {
         closeIterator();
+        await runFinalizersSafely();
         return err(new UnhandledException({ cause }));
       }
     }
     const value = await step.value;
+    const cleanupFault = await runFinalizersSafely();
+    if (cleanupFault !== undefined) {
+      return err(new UnhandledException({ cause: cleanupFault }));
+    }
     return ok(value);
   } catch (cause) {
+    await runFinalizersSafely();
     return err(new UnhandledException({ cause }));
   }
 }
@@ -192,6 +247,7 @@ export interface OpHooks<T, E> {
   withRetry: (policy?: RetryPolicy) => Op<T, E, readonly []>;
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, readonly []>;
   withSignal: (signal: AbortSignal) => Op<T, E, readonly []>;
+  withCleanup: (cleanup: CleanupFn<T>) => Op<T, E, readonly []>;
 }
 
 function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
@@ -208,6 +264,7 @@ export const makeNullaryOp = <T, E>(
     withRetry: hooks.withRetry,
     withTimeout: hooks.withTimeout,
     withSignal: hooks.withSignal,
+    withCleanup: hooks.withCleanup,
     map: <U>(transform: (value: T) => U) => mapOp(self as never, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self as never, bind),
@@ -219,6 +276,39 @@ export const makeNullaryOp = <T, E>(
   };
   const op = () => self;
   return Object.assign(op, self) as never;
+};
+
+const withCleanupNullaryOp = <T, E>(
+  op: Op<T, E, readonly []>,
+  cleanup: CleanupFn<T>,
+): Op<T, E, readonly []> => {
+  return makeNullaryOp<T, E | UnhandledException>(
+    function* () {
+      const result = (yield {
+        _tag: "Suspended" as const,
+        suspend: (signal: AbortSignal) => drive(op, signal),
+      }) as Result<T, E | UnhandledException>;
+      if (result.isErr()) {
+        yield err(result.error);
+        throw new UnreachableError();
+      }
+      yield {
+        _tag: "RegisterCleanup" as const,
+        finalize: () => Promise.resolve(cleanup(result.value)).then(() => undefined),
+      };
+      return result.value;
+    },
+    {
+      withRetry: (policy?: RetryPolicy) =>
+        withCleanupNullaryOp(op.withRetry(policy) as never, cleanup) as never,
+      withTimeout: (timeoutMs: number) =>
+        withCleanupNullaryOp(op.withTimeout(timeoutMs) as never, cleanup) as never,
+      withSignal: (signal: AbortSignal) =>
+        withCleanupNullaryOp(op.withSignal(signal) as never, cleanup) as never,
+      withCleanup: (nextCleanup: CleanupFn<T>) =>
+        withCleanupNullaryOp(withCleanupNullaryOp(op, cleanup) as never, nextCleanup) as never,
+    },
+  ) as never;
 };
 
 const mapNullaryOp = <T, E, U>(
@@ -248,6 +338,8 @@ const mapNullaryOp = <T, E, U>(
         mapNullaryOp(op.withTimeout(timeoutMs) as never, transform) as never,
       withSignal: (signal: AbortSignal) =>
         mapNullaryOp(op.withSignal(signal) as never, transform) as never,
+      withCleanup: (cleanup: CleanupFn<Awaited<U>>) =>
+        withCleanupNullaryOp(mapNullaryOp(op, transform) as never, cleanup) as never,
     },
   ) as never;
 };
@@ -284,6 +376,8 @@ const flatMapNullaryOp = <T, E, U, E2>(
         flatMapNullaryOp(op.withTimeout(timeoutMs) as never, bind) as never,
       withSignal: (signal: AbortSignal) =>
         flatMapNullaryOp(op.withSignal(signal) as never, bind) as never,
+      withCleanup: (cleanup: CleanupFn<U>) =>
+        withCleanupNullaryOp(flatMapNullaryOp(op, bind) as never, cleanup) as never,
     },
   ) as never;
 };
@@ -330,6 +424,8 @@ const tapNullaryOp = <T, E, R>(
         tapNullaryOp(op.withTimeout(timeoutMs) as never, observe) as never,
       withSignal: (signal: AbortSignal) =>
         tapNullaryOp(op.withSignal(signal) as never, observe) as never,
+      withCleanup: (cleanup: CleanupFn<T>) =>
+        withCleanupNullaryOp(tapNullaryOp(op, observe) as never, cleanup) as never,
     },
   ) as never;
 };
@@ -386,6 +482,8 @@ const tapErrNullaryOp = <T, E, R>(
         }) as never,
       withSignal: (signal: AbortSignal) =>
         tapErrNullaryOp(op.withSignal(signal) as never, observe) as never,
+      withCleanup: (cleanup: CleanupFn<T>) =>
+        withCleanupNullaryOp(tapErrNullaryOp(op, observe) as never, cleanup) as never,
     },
   ) as never;
 };
@@ -424,6 +522,8 @@ const mapErrNullaryOp = <T, E, E2>(
         ) as never,
       withSignal: (signal: AbortSignal) =>
         mapErrNullaryOp(op.withSignal(signal) as never, transform) as never,
+      withCleanup: (cleanup: CleanupFn<T>) =>
+        withCleanupNullaryOp(mapErrNullaryOp(op, transform) as never, cleanup) as never,
     },
   ) as never;
 };
@@ -497,8 +597,38 @@ const recoverNullaryOp = <T, E, R>(
         ) as never,
       withSignal: (signal: AbortSignal) =>
         recoverNullaryOp(op.withSignal(signal) as never, predicate, handler) as never,
+      withCleanup: (cleanup: CleanupFn<T | RecoverValue<R>>) =>
+        withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler) as never, cleanup) as never,
     },
   ) as never;
+};
+
+export const withCleanupOp = <T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  cleanup: CleanupFn<T>,
+): Op<T, E, A> => {
+  if (Symbol.iterator in op) {
+    return withCleanupNullaryOp(op as Op<T, E, readonly []>, cleanup) as never;
+  }
+
+  const g = (...args: A) =>
+    withCleanupNullaryOp((op as OpArity<T, E, A>)(...args) as never, cleanup);
+  const out = Object.assign(g, {
+    run: (...args: A) => drive(g(...args) as never, new AbortController().signal),
+    withRetry: (policy?: RetryPolicy) => withCleanupOp(op.withRetry(policy), cleanup),
+    withTimeout: (timeoutMs: number) => withCleanupOp(op.withTimeout(timeoutMs), cleanup),
+    withSignal: (signal: AbortSignal) => withCleanupOp(op.withSignal(signal), cleanup),
+    withCleanup: (nextCleanup: CleanupFn<T>) => withCleanupOp(out as never, nextCleanup),
+    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
+    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
+    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
+    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+      recoverOp(out as never, predicate, handler),
+    _tag: "Op" as const,
+  });
+  return out as never;
 };
 
 export const mapOp = <T, E, A extends readonly unknown[], U>(
@@ -515,6 +645,7 @@ export const mapOp = <T, E, A extends readonly unknown[], U>(
     withRetry: (policy?: RetryPolicy) => mapOp(op.withRetry(policy), transform),
     withTimeout: (timeoutMs: number) => mapOp(op.withTimeout(timeoutMs), transform),
     withSignal: (signal: AbortSignal) => mapOp(op.withSignal(signal), transform),
+    withCleanup: (cleanup: CleanupFn<Awaited<U>>) => withCleanupOp(out as never, cleanup),
     map: <U2>(next: (value: Awaited<U>) => U2) => mapOp(out as never, next),
     mapErr: <E2>(next: (error: E) => E2) => mapErrOp(out as never, next),
     flatMap: <U2, E2>(bind: (value: Awaited<U>) => Op<U2, E2, readonly []>) =>
@@ -545,6 +676,7 @@ export const mapErrOp = <T, E, A extends readonly unknown[], E2>(
         error instanceof TimeoutError ? error : transform(error),
       ),
     withSignal: (signal: AbortSignal) => mapErrOp(op.withSignal(signal), transform),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out as never, cleanup),
     map: <U>(next: (value: T) => U) => mapOp(out as never, next),
     mapErr: <E3>(next: (error: E2) => E3) => mapErrOp(out as never, next),
     flatMap: <U, E3>(bind: (value: T) => Op<U, E3, readonly []>) => flatMapOp(out as never, bind),
@@ -571,6 +703,7 @@ export const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
     withRetry: (policy?: RetryPolicy) => flatMapOp(op.withRetry(policy), bind),
     withTimeout: (timeoutMs: number) => flatMapOp(op.withTimeout(timeoutMs), bind),
     withSignal: (signal: AbortSignal) => flatMapOp(op.withSignal(signal), bind),
+    withCleanup: (cleanup: CleanupFn<U>) => withCleanupOp(out as never, cleanup),
     map: <U2>(transform: (value: U) => U2) => mapOp(out as never, transform),
     mapErr: <E3>(transform: (error: E | E2) => E3) => mapErrOp(out as never, transform),
     flatMap: <U2, E3>(nextBind: (value: U) => Op<U2, E3, readonly []>) =>
@@ -598,6 +731,7 @@ export const tapOp = <T, E, A extends readonly unknown[], R>(
     withRetry: (policy?: RetryPolicy) => tapOp(op.withRetry(policy), observe),
     withTimeout: (timeoutMs: number) => tapOp(op.withTimeout(timeoutMs), observe),
     withSignal: (signal: AbortSignal) => tapOp(op.withSignal(signal), observe),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out as never, cleanup),
     map: <U>(next: (value: T) => U) => mapOp(out as never, next),
     mapErr: <E2>(next: (error: E | TapError<R>) => E2) => mapErrOp(out as never, next),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
@@ -632,6 +766,7 @@ export const tapErrOp = <T, E, A extends readonly unknown[], R>(
         }
       }),
     withSignal: (signal: AbortSignal) => tapErrOp(op.withSignal(signal), observe),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out as never, cleanup),
     map: <U>(next: (value: T) => U) => mapOp(out as never, next),
     mapErr: <E2>(next: (error: E | TapError<R>) => E2) => mapErrOp(out as never, next),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
@@ -668,6 +803,7 @@ export const recoverOp = <T, E, A extends readonly unknown[], R>(
         handler as (error: E | TimeoutError) => R,
       ),
     withSignal: (signal: AbortSignal) => recoverOp(op.withSignal(signal), predicate, handler),
+    withCleanup: (cleanup: CleanupFn<T | RecoverValue<R>>) => withCleanupOp(out as never, cleanup),
     map: <U>(next: (value: T | RecoverValue<R>) => U) => mapOp(out as never, next),
     mapErr: <E2>(next: (error: E | RecoverError<R>) => E2) => mapErrOp(out as never, next),
     flatMap: <U, E2>(bind: (value: T | RecoverValue<R>) => Op<U, E2, readonly []>) =>
