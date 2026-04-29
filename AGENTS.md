@@ -14,6 +14,7 @@
 - When requesting commit message drafts, prefers why-focused messages grounded in the actual staged/unstaged diff.
 - Prefers commit message drafts to use the simplest fitting body shape (none, one sentence, or bullets) rather than forcing multiple bullets.
 - Prefers file relocations to be done with move operations first (for example `mv`) followed by minimal targeted edits, not full-file rewrites.
+- Wants `npm run check` run after completing work, before considering anything "done".
 
 ## Learned Workspace Facts
 
