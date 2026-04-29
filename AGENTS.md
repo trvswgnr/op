@@ -16,6 +16,7 @@
 - Prefers commit message drafts to use the simplest fitting body shape (none, one sentence, or bullets) rather than forcing multiple bullets.
 - Prefers file relocations to be done with move operations first (for example `mv`) followed by minimal targeted edits, not full-file rewrites.
 - Wants `npm run check` run after completing work, before considering anything "done".
+- Does not want GitHub issues moved to `Done` without explicit approval first.
 
 ## Learned Workspace Facts
 
