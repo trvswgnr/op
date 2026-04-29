@@ -26,11 +26,38 @@ describe("public API (index)", () => {
   });
   describe("exponentialBackoff", () => {
     test("is exported and produces exponential delays", () => {
-      const getDelay = exponentialBackoff({ baseMs: 100, maxMs: 1000, jitterMs: 0 });
+      const getDelay = exponentialBackoff({ base: 100, max: 1000, jitter: 0 });
       expect(getDelay(1)).toBe(100);
       expect(getDelay(2)).toBe(200);
       expect(getDelay(3)).toBe(400);
       expect(getDelay(5)).toBe(1000); // clamped by maxMs
+    });
+
+    test("default is exported", () => {
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(1);
+      try {
+        expect(exponentialBackoff.DEFAULT).toBeInstanceOf(Function);
+        expect(exponentialBackoff.DEFAULT(1)).toBe(1_000);
+        expect(exponentialBackoff.DEFAULT(2)).toBe(2_000);
+        expect(exponentialBackoff.DEFAULT(5)).toBe(16_000);
+        expect(exponentialBackoff.DEFAULT(6)).toBe(30_000);
+      } finally {
+        randomSpy.mockRestore();
+      }
+    });
+
+    test("produces random delays with jitter", () => {
+      const getDelay = exponentialBackoff({ base: 100, max: 1000, jitter: 0.5 });
+      const delay = getDelay(1);
+      expect(delay).toBeGreaterThan(0);
+      expect(delay).toBeLessThan(1000);
+    });
+
+    test("throws an error on invalid options", () => {
+      expect(() => exponentialBackoff({ base: 0, max: 1000, jitter: 0.5 })).toThrow(RangeError);
+      expect(() => exponentialBackoff({ base: 100, max: 0, jitter: 0.5 })).toThrow(RangeError);
+      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: -0.5 })).toThrow(RangeError);
+      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: 1.5 })).toThrow(RangeError);
     });
   });
   describe("UnhandledException", () => {

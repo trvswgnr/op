@@ -9,29 +9,47 @@ export interface RetryPolicy {
   /** Whether to retry after a failure (receives the root cause). */
   shouldRetry: (cause: unknown) => boolean;
   /** Delay in milliseconds before the next attempt (attempt starts at 1). */
-  getDelay: (attempt: number) => number;
+  getDelay: (attempt: number, cause: unknown) => number;
 }
 
 /**
  * Creates a retry delay function with exponential growth and optional jitter.
  */
-export function exponentialBackoff(opts?: {
-  baseMs?: number;
-  maxMs?: number;
-  jitterMs?: number;
-}): (attempt: number) => number {
-  const { baseMs = 100, maxMs = 1000, jitterMs = 0 } = opts ?? {};
-  return (attempt: number) => {
-    const exponential = baseMs * Math.pow(2, attempt - 1);
-    const jitter = jitterMs > 0 ? Math.random() * jitterMs : 0;
-    return Math.min(exponential + jitter, maxMs);
+export interface BackoffOptions {
+  /** Initial delay in milliseconds. */
+  base: number;
+  /** Maximum delay in milliseconds. */
+  max: number;
+  /** Fraction of the computed delay to randomize (0 = none, 1 = full jitter). */
+  jitter: number;
+}
+
+/**
+ * Creates a delay function for exponential backoff with optional jitter
+ * @param opts Options for the backoff function
+ * @returns A function that calculates the delay in milliseconds for a given attempt
+ * @throws A {@link RangeError} if an option is invalid
+ */
+export function exponentialBackoff(opts?: BackoffOptions): (attempt: number) => number {
+  const { base, max, jitter } = opts ?? { base: 1_000, max: 30_000, jitter: 1 };
+
+  if (base <= 0) throw new RangeError("baseMs must be positive");
+  if (max < base) throw new RangeError("maxMs must be >= baseMs");
+  if (jitter < 0 || jitter > 1) throw new RangeError("jitter must be between 0 and 1");
+
+  return (attempt: number): number => {
+    const exp = Math.min(base * Math.pow(2, Math.max(0, attempt - 1)), max);
+    if (jitter === 0) return exp;
+    const spread = exp * jitter;
+    return exp - spread + Math.random() * spread;
   };
 }
+exponentialBackoff.DEFAULT = exponentialBackoff({ base: 1_000, max: 30_000, jitter: 1 });
 
 export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxAttempts: 3,
   shouldRetry: () => true,
-  getDelay: exponentialBackoff(),
+  getDelay: exponentialBackoff.DEFAULT,
 };
 
 const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
@@ -94,7 +112,7 @@ const withRetryNullaryOp = <T, E>(
         throw new UnreachableError();
       }
 
-      const delayMs = Math.max(0, policy.getDelay(attempt));
+      const delayMs = Math.max(0, policy.getDelay(attempt, cause));
       if (delayMs > 0) {
         const delayAborted = (yield {
           _tag: "Suspended",
