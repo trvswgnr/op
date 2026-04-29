@@ -36,11 +36,12 @@
   },
   "scripts": {
     "build": "tsdown",
-    "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:test:pack",
+    "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:test:pack && npm run examples:typecheck",
     "clean": "rm -rf dist",
     "examples:test:pack": "node ./scripts/run-examples-smoke.mjs pack",
     "examples:test:github": "node ./scripts/run-examples-smoke.mjs github",
     "examples:test:npm": "node ./scripts/run-examples-smoke.mjs npm",
+    "examples:typecheck": "cd examples && npm run typecheck",
     "fix": "npm run lint:fix && npm run fmt",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
