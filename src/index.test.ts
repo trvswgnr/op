@@ -92,7 +92,7 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("op.map / op.mapErr / op.flatMap / op.recover", () => {
+  describe("op.map / op.mapErr / op.flatMap / op.tap / op.recover", () => {
     test("map transforms success values and preserves arity", async () => {
       const op = Op(function* (n: number) {
         return n + 1;
@@ -203,6 +203,71 @@ describe("public API (index)", () => {
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(8);
       expect(attempts).toBe(2);
+    });
+
+    test("tap observes successful values and preserves the original value", async () => {
+      const seen: number[] = [];
+      const op = Op(function* (n: number) {
+        return n + 1;
+      }).tap((value) => {
+        seen.push(value);
+        return "ignored";
+      });
+
+      expectTypeOf(op).toEqualTypeOf<Op<number, never, [number]>>();
+
+      const result = await op.run(2);
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(3);
+      expect(seen).toEqual([3]);
+    });
+
+    test("tap sequences an Op-returning observer and discards observer output", async () => {
+      const seen: string[] = [];
+      const op = Op.of(4).tap((value) =>
+        Op.of(`observed:${value}`).map((payload) => {
+          seen.push(payload);
+          return 69;
+        }),
+      );
+
+      expectTypeOf(op).toEqualTypeOf<Op<number, never, []>>();
+
+      const result = await op.run();
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(4);
+      expect(seen).toEqual(["observed:4"]);
+    });
+
+    test("tap propagates observer Op failures", async () => {
+      const result = await Op.of(4)
+        .tap(() => Op.fail("tap-failed" as const))
+        .run();
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("tap-failed");
+    });
+
+    test("tap turns thrown observer errors into UnhandledException", async () => {
+      const cause = new Error("observer-boom");
+      const result = await Op.of(4)
+        .tap(() => {
+          throw cause;
+        })
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+      expect(result.error.cause).toBe(cause);
+    });
+
+    test("tap does not run observer when source op fails", async () => {
+      const observer = vi.fn();
+      const result = await Op.fail("boom" as const)
+        .tap(observer)
+        .run();
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("boom");
+      expect(observer).not.toHaveBeenCalled();
     });
 
     test("recover narrows handled error type via type guard predicate", async () => {
