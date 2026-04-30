@@ -8,12 +8,14 @@ export interface TaggedConstructor<Ctor extends AbstractCtor, Tag extends string
   new (...args: ConstructorParameters<Ctor>): InstanceType<Ctor> & Tagged<Tag>;
 }
 
-export const Tagged = <Ctor extends AbstractCtor, Tag extends string>(
-  Ctor: Ctor,
+export const Tagged = <Base extends AbstractCtor, Tag extends string>(
+  Base: Base,
   tag: Tag,
-): TaggedConstructor<Ctor, Tag> => {
-  // @ts-expect-error - ts doesn't understand
-  return class extends Ctor implements Tagged<Tag> {
+): TaggedConstructor<Base, Tag> => {
+  // @ts-expect-error TS2322 + TS2509:
+  // - TS can't reconcile `class extends Ctor` with `ConstructorParameters<Ctor>` and infers `readonly never[]`.
+  // - `Ctor` returns `unknown`, so TS can't prove the base instance is an object for `implements Tagged<Tag>`.
+  return class extends Base implements Tagged<Tag> {
     readonly _tag = tag;
   };
 };
