@@ -1,4 +1,4 @@
-import { TimeoutError, UnhandledException, UnreachableError } from "./errors.js";
+import { TimeoutError, UnhandledException } from "./errors.js";
 import { err, ok, type Result, type Err, type ExtractErr } from "./result.js";
 import type { RetryPolicy } from "./policies.js";
 import type { Tagged } from "./tagged.js";
@@ -302,8 +302,7 @@ const withCleanupNullaryOp = <T, E>(
         suspend: (signal: AbortSignal) => drive(op, signal),
       }) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        yield err(result.error);
-        throw new UnreachableError();
+        return yield* err(result.error);
       }
       yield {
         _tag: "RegisterCleanup" as const,
@@ -337,8 +336,7 @@ const onExitNullaryOp = <T, E>(
         suspend: (signal: AbortSignal) => drive(op, signal),
       }) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        yield err(result.error);
-        throw new UnreachableError();
+        return yield* err(result.error);
       }
       return result.value;
     },
@@ -365,8 +363,7 @@ const mapNullaryOp = <T, E, U>(
         suspend: (signal: AbortSignal) => drive(op, signal),
       }) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        yield err(result.error);
-        throw new UnreachableError();
+        return yield* err(result.error);
       }
       const mapped = (yield {
         _tag: "Suspended" as const,
@@ -396,8 +393,7 @@ const flatMapNullaryOp = <T, E, U, E2>(
         suspend: (signal: AbortSignal) => drive(op, signal),
       }) as Result<T, E | UnhandledException>;
       if (first.isErr()) {
-        yield err(first.error);
-        throw new UnreachableError();
+        return yield* err(first.error);
       }
 
       const second = (yield {
@@ -405,8 +401,7 @@ const flatMapNullaryOp = <T, E, U, E2>(
         suspend: (signal: AbortSignal) => drive(bind(first.value), signal),
       }) as Result<U, E2 | UnhandledException>;
       if (second.isErr()) {
-        yield err(second.error);
-        throw new UnreachableError();
+        return yield* err(second.error);
       }
       return second.value;
     },
@@ -432,8 +427,7 @@ const tapNullaryOp = <T, E, R>(
         suspend: (signal: AbortSignal) => drive(op, signal),
       }) as Result<T, E | UnhandledException>;
       if (source.isErr()) {
-        yield err(source.error);
-        throw new UnreachableError();
+        return yield* err(source.error);
       }
 
       const observed = yield {
@@ -450,8 +444,7 @@ const tapNullaryOp = <T, E, R>(
         suspend: (signal: AbortSignal) => drive(observed, signal),
       }) as Result<unknown, TapError<R> | UnhandledException>;
       if (observedResult.isErr()) {
-        yield err(observedResult.error);
-        throw new UnreachableError();
+        return yield* err(observedResult.error);
       }
       return source.value;
     },
@@ -481,8 +474,7 @@ const tapErrNullaryOp = <T, E, R>(
       }
 
       if (source.error instanceof UnhandledException) {
-        yield err(source.error);
-        throw new UnreachableError();
+        return yield* err(source.error);
       }
 
       const observed = yield {
@@ -490,8 +482,7 @@ const tapErrNullaryOp = <T, E, R>(
         suspend: () => Promise.resolve(observe(source.error as E)),
       };
       if (!isNullaryOp(observed)) {
-        yield err(source.error);
-        throw new UnreachableError();
+        return yield* err(source.error);
       }
 
       const observedResult = (yield {
@@ -499,12 +490,10 @@ const tapErrNullaryOp = <T, E, R>(
         suspend: (signal: AbortSignal) => drive(observed, signal),
       }) as Result<unknown, TapError<R> | UnhandledException>;
       if (observedResult.isErr()) {
-        yield err(observedResult.error);
-        throw new UnreachableError();
+        return yield* err(observedResult.error);
       }
 
-      yield err(source.error);
-      throw new UnreachableError();
+      return yield* err(source.error);
     },
     {
       withRetry: (policy?: RetryPolicy) => tapErrNullaryOp(op.withRetry(policy), observe),
@@ -534,16 +523,14 @@ const mapErrNullaryOp = <T, E, E2>(
       }) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         if (result.error instanceof UnhandledException) {
-          yield err(result.error);
-          throw new UnreachableError();
+          return yield* err(result.error);
         }
 
         const mapped = (yield {
           _tag: "Suspended" as const,
           suspend: () => Promise.resolve(transform(result.error as E)),
         }) as E2;
-        yield err(mapped);
-        throw new UnreachableError();
+        return yield* err(mapped);
       }
       return result.value;
     },
@@ -585,15 +572,13 @@ const recoverNullaryOp = <T, E, R>(
       }
 
       if (result.error instanceof UnhandledException) {
-        yield err(result.error);
-        throw new UnreachableError();
+        return yield* err(result.error);
       }
 
       const error = result.error;
 
       if (!conditionalPredicate(predicate, error)) {
-        yield err(error);
-        throw new UnreachableError();
+        return yield* err(error);
       }
 
       const recovered = yield {
@@ -611,8 +596,7 @@ const recoverNullaryOp = <T, E, R>(
       }) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
 
       if (recoveredResult.isErr()) {
-        yield err(recoveredResult.error);
-        throw new UnreachableError();
+        return yield* err(recoveredResult.error);
       }
 
       return recoveredResult.value;

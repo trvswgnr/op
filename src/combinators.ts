@@ -1,4 +1,4 @@
-import { ErrorGroup, UnhandledException, UnreachableError } from "./errors.js";
+import { ErrorGroup, UnhandledException } from "./errors.js";
 import {
   drive,
   makeNullaryOp,
@@ -74,8 +74,7 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
       suspend: (outerSignal) => driveAll(snapshot, outerSignal, limit),
     }) as Result<never, never>;
     if (result.isErr()) {
-      yield err(result.error);
-      throw new UnreachableError();
+      return yield* err(result.error);
     }
     return result.value;
   });
@@ -261,8 +260,7 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
       suspend: (outerSignal) => driveAny(snapshot, outerSignal),
     }) as Result<V, E>;
     if (result.isErr()) {
-      yield err(result.error);
-      throw new UnreachableError();
+      return yield* err(result.error);
     }
     return result.value;
   });
@@ -316,8 +314,7 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
       suspend: (outerSignal) => driveRace(snapshot, outerSignal),
     }) as Result<V, E>;
     if (result.isErr()) {
-      yield err(result.error);
-      throw new UnreachableError();
+      return yield* err(result.error);
     }
     return result.value;
   });

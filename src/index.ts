@@ -2,7 +2,7 @@ import { succeed, fail, _try, fromGenFn } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { runOp, type Op as _Op } from "./core.js";
 import { exponentialBackoff } from "./policies.js";
-import { ErrorGroup, TimeoutError, UnreachableError } from "./errors.js";
+import { ErrorGroup, TimeoutError } from "./errors.js";
 
 export * from "better-result";
 
@@ -36,4 +36,4 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export { TimeoutError, UnreachableError, ErrorGroup, exponentialBackoff };
+export { TimeoutError, ErrorGroup, exponentialBackoff };

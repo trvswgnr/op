@@ -1,4 +1,4 @@
-import { TimeoutError, UnreachableError, UnhandledException } from "./errors.js";
+import { TimeoutError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
 import {
   type ExitFn,
@@ -142,8 +142,7 @@ const withRetryNullaryOp = <T, E>(
       const canRetry =
         !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
       if (!canRetry) {
-        yield err(cause);
-        throw new UnreachableError();
+        return yield* err(cause);
       }
 
       const delayMs = Math.max(0, policy.getDelay(attempt, cause));
@@ -154,8 +153,7 @@ const withRetryNullaryOp = <T, E>(
             abortableDelay(delayMs, signal).then(() => signal.aborted),
         };
         if (delayAborted) {
-          yield err(cause);
-          throw new UnreachableError();
+          return yield* err(cause);
         }
       }
 
@@ -178,8 +176,7 @@ const withTimeoutNullaryOp = <T, E>(
         raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
     }) as Result<T, E | UnhandledException | TimeoutError>;
     if (result.isErr()) {
-      yield err(result.error);
-      throw new UnreachableError();
+      return yield* err(result.error);
     }
     return result.value;
   }) as Op<T, E | TimeoutError, readonly []>;
@@ -197,8 +194,7 @@ const withSignalNullaryOp = <T, E>(
         runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
     }) as Result<T, E | UnhandledException>;
     if (result.isErr()) {
-      yield err(result.error);
-      throw new UnreachableError();
+      return yield* err(result.error);
     }
     return result.value;
   }) as Op<T, E, readonly []>;

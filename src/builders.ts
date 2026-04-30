@@ -1,4 +1,4 @@
-import { TimeoutError, UnhandledException, UnreachableError } from "./errors.js";
+import { TimeoutError, UnhandledException } from "./errors.js";
 import {
   flatMapOp,
   makeNullaryOp,
@@ -50,8 +50,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
   let op!: Op<never, E, readonly []>;
   op = makeNullaryOp<never, E>(
     function* () {
-      yield err(value);
-      throw new UnreachableError();
+      return yield* err(value);
     },
     {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
@@ -85,8 +84,7 @@ export const _try = <T, E = UnhandledException>(
             ),
       }) as Result<T, E>;
       if (result.isErr()) {
-        yield result;
-        throw new UnreachableError();
+        return yield* result;
       }
       return result.value as Awaited<T>;
     },

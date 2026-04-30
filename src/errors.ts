@@ -18,15 +18,6 @@ export class TimeoutError extends TaggedError("TimeoutError")<{
 }
 
 /**
- * Internal control-flow sentinel used to mark logically impossible paths.
- */
-export class UnreachableError extends TaggedError("UnreachableError")<{ message: string }>() {
-  constructor() {
-    super({ message: "Unreachable code path" });
-  }
-}
-
-/**
  * A typed aggregate error used by combinators that need to preserve multiple failures.
  */
 export class ErrorGroup<E> extends Tagged(AggregateError, "ErrorGroup") {
@@ -38,7 +29,6 @@ export class ErrorGroup<E> extends Tagged(AggregateError, "ErrorGroup") {
   }
 
   *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
-    yield err(this);
-    throw new UnreachableError();
+    return yield* err(this);
   }
 }
