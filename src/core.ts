@@ -175,26 +175,51 @@ const closeGenerator = (iterator: Iterator<unknown, unknown, unknown>) => {
   }
 };
 
+/** Chain teardown faults like Go stacked panics: outer error matches first failure in unwind order; walk `.cause` for later failures. */
+function chainCleanupFaults(faults: readonly unknown[]): unknown {
+  if (faults.length === 0) {
+    return undefined;
+  }
+  if (faults.length === 1) {
+    return faults[0];
+  }
+  let chain: unknown = faults[faults.length - 1];
+  for (let i = faults.length - 2; i >= 0; i--) {
+    const f = faults[i];
+    const msg = f instanceof Error ? f.message : String(f);
+    const name = f instanceof Error ? f.name : "Error";
+    const layer = new Error(msg, { cause: chain });
+    layer.name = name;
+    chain = layer;
+  }
+  return chain;
+}
+
 export async function drive<T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<() => Promise<void>> = [];
-  const runFinalizers = async (): Promise<void> => {
+  /** Run all finalizers LIFO; collect faults like Go defers (later registrations run first; all run even if one throws). */
+  const runFinalizersSafely = async (): Promise<unknown | void> => {
+    const faults: unknown[] = [];
     for (let index = finalizers.length - 1; index >= 0; index -= 1) {
       const finalize = finalizers[index];
       if (finalize !== undefined) {
-        await finalize();
+        try {
+          await finalize();
+        } catch (e) {
+          faults.push(e);
+        }
       }
     }
-  };
-  const runFinalizersSafely = async (): Promise<unknown | void> => {
-    try {
-      await runFinalizers();
+    if (faults.length === 0) {
       return undefined;
-    } catch (cause) {
-      return cause;
     }
+    if (faults.length === 1) {
+      return faults[0];
+    }
+    return chainCleanupFaults(faults);
   };
 
   try {
@@ -214,11 +239,19 @@ export async function drive<T, E>(
         }
         if (isErrInstruction<E>(step.value)) {
           closeGenerator(iter);
-          await runFinalizersSafely();
+          const cleanupFault = await runFinalizersSafely();
+          if (cleanupFault !== undefined) {
+            return err(new UnhandledException({ cause: cleanupFault }));
+          }
           return err(step.value.error);
         }
         closeGenerator(iter);
-        await runFinalizersSafely();
+        {
+          const cleanupFault = await runFinalizersSafely();
+          if (cleanupFault !== undefined) {
+            return err(new UnhandledException({ cause: cleanupFault }));
+          }
+        }
         return err(
           new UnhandledException({
             cause: new TypeError("Op generator yielded an invalid instruction"),
@@ -226,7 +259,10 @@ export async function drive<T, E>(
         );
       } catch (cause) {
         closeGenerator(iter);
-        await runFinalizersSafely();
+        const cleanupFault = await runFinalizersSafely();
+        if (cleanupFault !== undefined) {
+          return err(new UnhandledException({ cause: cleanupFault }));
+        }
         return err(new UnhandledException({ cause }));
       }
     }
@@ -237,7 +273,10 @@ export async function drive<T, E>(
     }
     return ok(value);
   } catch (cause) {
-    await runFinalizersSafely();
+    const cleanupFault = await runFinalizersSafely();
+    if (cleanupFault !== undefined) {
+      return err(new UnhandledException({ cause: cleanupFault }));
+    }
     return err(new UnhandledException({ cause }));
   }
 }

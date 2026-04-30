@@ -1,4 +1,4 @@
-import { fail, fromGenFn, succeed, _try } from "./builders.js";
+import { defer, fail, fromGenFn, succeed, _try } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { ErrorGroup, TimeoutError } from "./errors.js";
 import { type Op as _Op, runOp } from "./core.js";
@@ -34,6 +34,7 @@ export const Op = Object.assign(fromGenFn, {
   run: runOp,
   of: succeed,
   fail,
+  defer,
   try: _try,
   all: allOp,
   allSettled: allSettledOp,
@@ -49,7 +50,7 @@ export const Op = Object.assign(fromGenFn, {
  *
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
  * `withRetry(policy)`, `withTimeout(ms)`, `withSignal(signal)`, `withRelease(release)`,
- * and `onExit(finalize)`.
+ * `onExit(finalize)`, and `Op.defer(finalize)` inside generators.
  *
  * @template T Value returned when the operation succeeds.
  * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws).

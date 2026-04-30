@@ -64,6 +64,32 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
 };
 
 /**
+ * Registers deferred cleanup for the current op run. Use as `yield* Op.defer(() => ...)`.
+ * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
+ * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost** —
+ * same headline order as Go stacked `panic` output.
+ */
+export const defer = (finalize: ExitFn): Op<void, never, readonly []> => {
+  let op!: Op<void, never, readonly []>;
+  op = makeNullaryOp<void, never>(
+    function* (): Generator<Instruction<never>, void, unknown> {
+      yield {
+        _tag: "RegisterCleanup" as const,
+        finalize: () => Promise.resolve(finalize()).then(() => {}),
+      };
+    },
+    {
+      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
+      withRelease: (release: ReleaseFn<void>) => withReleaseOp(op, release),
+      onExit: (nextFinalize: ExitFn) => onExitOp(op, nextFinalize),
+    },
+  );
+  return op;
+};
+
+/**
  * Suspends until a promise settles, then continues with its value or a mapped failure.
  */
 export const _try = <T, E = UnhandledException>(

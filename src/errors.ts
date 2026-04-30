@@ -31,4 +31,8 @@ export class ErrorGroup<E> extends Tagged(AggregateError, "ErrorGroup") {
   *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
     return yield* err(this);
   }
+
+  static is(value: unknown): value is ErrorGroup<unknown> {
+    return value instanceof ErrorGroup;
+  }
 }

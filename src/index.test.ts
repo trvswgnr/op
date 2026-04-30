@@ -6,10 +6,9 @@ import {
   TaggedError,
   ErrorGroup,
   exponentialBackoff,
+  type Result,
+  type TaggedErrorInstance,
 } from "./index.js";
-import type { RetryPolicy } from "./policies.js";
-import type { Result } from "./result.js";
-import type { TaggedErrorInstance } from "better-result";
 
 describe("public API (index)", () => {
   describe("OpFactory", () => {
@@ -578,9 +577,9 @@ describe("public API (index)", () => {
   });
 
   describe("op.withRetry", () => {
-    const immediateRetry = (cause: unknown): RetryPolicy => ({
+    const immediateRetry = (cause: unknown) => ({
       maxAttempts: 3,
-      shouldRetry: (e) => e === cause,
+      shouldRetry: (e: unknown) => e === cause,
       getDelay: () => 0,
     });
 
@@ -1475,7 +1474,7 @@ describe("Op.any", () => {
       Op.try(() => rejectAfter("fast", 0), toTag("fast")),
     ]).run();
     assert(r.isErr(), "should be Err");
-    assert(r.error instanceof ErrorGroup, "ErrorGroup");
+    assert(ErrorGroup.is(r.error), "ErrorGroup");
     expect(r.error.errors).toEqual(["slow", "fast"]);
   });
 });
@@ -1562,5 +1561,259 @@ describe("Op combinators compose with withTimeout / withRetry", () => {
     assert(r.isOk(), "should be Ok");
     expect(r.value).toBe(11);
     expect(attempts).toBe(2);
+  });
+});
+
+describe("Op.defer error handling", () => {
+  test("when op succeeds, cleanup throws: UnhandledException with cleanup error as cause", async () => {
+    const cleanupError = new Error("cleanup failed");
+    const cleanup = () => {
+      throw cleanupError;
+    };
+    const safeOp = Op.of(69);
+    const op = Op(function* () {
+      yield* Op.defer(() => cleanup());
+      const r = yield* safeOp;
+      return r;
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBeInstanceOf(UnhandledException);
+    if (r.error instanceof UnhandledException) {
+      expect(r.error.cause).toBe(cleanupError);
+    }
+  });
+
+  test("when op fails, cleanup throws: UnhandledException with cleanup error as cause", async () => {
+    const cleanupError = new Error("cleanup failed");
+    const cleanup = () => {
+      throw cleanupError;
+    };
+    const riskyOp = Op.fail("boom");
+    const op = Op(function* () {
+      yield* Op.defer(() => cleanup());
+      yield* riskyOp;
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    assert(r.error instanceof UnhandledException, "should be UnhandledException");
+    expect(r.error.cause).toBe(cleanupError);
+  });
+
+  test("when op fails, cleanup succeeds: failure is preserved", async () => {
+    const cleanup = () => {
+      return;
+    };
+    const riskyOp = Op.fail("boom");
+    const op = Op(function* () {
+      yield* Op.defer(() => cleanup());
+      yield* riskyOp;
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBe("boom");
+  });
+
+  test("when op succeeds, cleanup succeeds: value is preserved", async () => {
+    const cleanup = () => {
+      return;
+    };
+    const safeOp = Op.of(69);
+    const op = Op(function* () {
+      yield* Op.defer(() => cleanup());
+      return yield* safeOp;
+    });
+    const r = await op.run();
+    assert(r.isOk(), "should be Ok");
+    expect(r.value).toBe(69);
+  });
+});
+
+describe("Op.defer ordering and policies", () => {
+  test("runs multiple defers in LIFO order on success", async () => {
+    const events: string[] = [];
+    const op = Op(function* () {
+      yield* Op.defer(() => {
+        events.push("first");
+      });
+      yield* Op.defer(() => {
+        events.push("second");
+      });
+      return yield* Op.of(1);
+    });
+    const r = await op.run();
+    assert(r.isOk(), "should be Ok");
+    expect(events).toEqual(["second", "first"]);
+  });
+
+  test("runs earlier-registered finalizers after a later defer throws (Go-like)", async () => {
+    const earlier = vi.fn();
+    const stop = new Error("stop");
+    const op = Op(function* () {
+      yield* Op.defer(() => {
+        earlier();
+      });
+      yield* Op.defer(() => {
+        throw stop;
+      });
+      return yield* Op.of(1);
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    expect(earlier).toHaveBeenCalledTimes(1);
+    expect(r.error).toBeInstanceOf(UnhandledException);
+    if (r.error instanceof UnhandledException) {
+      expect(r.error.cause).toBe(stop);
+    }
+  });
+
+  test("chains multiple cleanup throws via nested Error.cause (Go-like defers)", async () => {
+    const boomFourth = new Error("boom from defer fourth");
+    const boomSecond = new Error("boom from defer second");
+    const events: string[] = [];
+    const op = Op(function* () {
+      yield* Op.defer(() => {
+        events.push("first");
+      });
+      yield* Op.defer(() => {
+        events.push("second");
+        throw boomSecond;
+      });
+      yield* Op.defer(() => {
+        events.push("third");
+      });
+      yield* Op.defer(() => {
+        events.push("fourth");
+        throw boomFourth;
+      });
+      return yield* Op.of(1);
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    expect(events).toEqual(["fourth", "third", "second", "first"]);
+    assert(r.error instanceof UnhandledException);
+    const ue = r.error;
+    assert(ue.cause instanceof Error);
+    expect(ue.cause.message).toBe(boomFourth.message);
+    expect(ue.cause.name).toBe(boomFourth.name);
+    expect(ue.cause.cause).toBe(boomSecond);
+  });
+
+  test("chains three panics among five defers (Go-style: only panicking defers in cause chain)", async () => {
+    const boomFifth = new Error("boom from defer fifth");
+    const boomFourth = new Error("boom from defer fourth");
+    const boomSecond = new Error("boom from defer second");
+    const events: string[] = [];
+    const op = Op(function* () {
+      yield* Op.defer(() => {
+        events.push("first");
+      });
+      yield* Op.defer(() => {
+        events.push("second");
+        throw boomSecond;
+      });
+      yield* Op.defer(() => {
+        events.push("third");
+      });
+      yield* Op.defer(() => {
+        events.push("fourth");
+        throw boomFourth;
+      });
+      yield* Op.defer(() => {
+        events.push("fifth");
+        throw boomFifth;
+      });
+      return yield* Op.of(1);
+    });
+    const r = await op.run();
+    assert(r.isErr(), "should be Err");
+    expect(events).toEqual(["fifth", "fourth", "third", "second", "first"]);
+    assert(r.error instanceof UnhandledException);
+    const head = r.error.cause;
+    assert(head instanceof Error);
+    expect(head.message).toBe(boomFifth.message);
+    const mid = head.cause;
+    assert(mid instanceof Error);
+    expect(mid.message).toBe(boomFourth.message);
+    expect(mid.cause).toBe(boomSecond);
+  });
+
+  test("shares LIFO stack with withRelease (release runs before defer registered earlier)", async () => {
+    const events: string[] = [];
+    const op = Op(function* () {
+      yield* Op.defer(() => {
+        events.push("defer");
+      });
+      yield* Op.of(2).withRelease(() => {
+        events.push("release");
+      });
+      return 3;
+    });
+    const r = await op.run();
+    assert(r.isOk(), "should be Ok");
+    expect(events).toEqual(["release", "defer"]);
+  });
+
+  test("runs Op.defer cleanup when withTimeout aborts inner work", async () => {
+    vi.useFakeTimers();
+    try {
+      const cleanup = vi.fn();
+      const op = Op(function* () {
+        yield* Op.defer(() => cleanup());
+        return yield* Op.try(
+          (signal) =>
+            new Promise<number>((_resolve, reject) => {
+              if (signal.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            }),
+        ).withTimeout(10);
+      });
+
+      const runPromise = op.run();
+      await vi.advanceTimersByTimeAsync(10);
+      const result = await runPromise;
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(cleanup).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("runs Op.defer cleanup when withSignal aborts inner work", async () => {
+    vi.useFakeTimers();
+    try {
+      const cleanup = vi.fn();
+      const controller = new AbortController();
+      const op = Op(function* () {
+        yield* Op.defer(() => cleanup());
+        return yield* Op.try(
+          (signal) =>
+            new Promise<number>((_resolve, reject) => {
+              if (signal.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            }),
+        ).withSignal(controller.signal);
+      });
+
+      const runPromise = op.run();
+      controller.abort("cancelled");
+      await vi.advanceTimersByTimeAsync(0);
+      const result = await runPromise;
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+      if (result.error instanceof UnhandledException) {
+        expect(result.error.cause).toBe("cancelled");
+      }
+      expect(cleanup).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

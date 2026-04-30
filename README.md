@@ -74,6 +74,43 @@ If `value` is a promise, it is awaited and converted into the same `Result` mode
 
 Creates an op that always fails with `error`.
 
+### `Op.defer(finalize)`
+
+Registers cleanup for the **current** op run inside a generator. Deferred callbacks share one stack
+with `.withRelease` / `.onExit`: they run in **LIFO** order when the run unwinds (success, typed
+failure, `UnhandledException`, timeout, or external cancellation). **All** scheduled finalizers run,
+even if one throws (same spirit as Go `defer`). If a single finalizer throws, `.run()` returns
+`Err(UnhandledException)` with `cause` set to that fault. If **multiple** finalizers throw, `cause`
+is a nested **`Error` chain**: the outer error matches the **first** failure during teardown
+(last-registered defer runs first— same headline order as Go’s stacked `panic` lines); each
+`.cause` is the next fault in unwind order. Thrown **callbacks** only: defers that complete without
+throwing add no links (like Go’s panic stack, which lists only defers that panicked). `finalize` can
+be sync or async.
+
+Use this for step-local teardown that reads better than chaining `.withRelease` on every producer,
+or for “always run” cleanup before a risky step.
+
+```ts
+const runQuery = Op(function* () {
+  const conn = yield* acquireConnection;
+  yield* Op.defer(() => conn.release());
+
+  return yield* getActiveUsers(conn);
+});
+```
+
+```ts
+const risky = Op(function* () {
+  yield* Op.defer(() => invalidateTempFiles());
+  return yield* commitTransaction();
+});
+```
+
+`Op.defer` is only meaningful inside an `Op(function* () { ... })` body (compose with `yield*`).
+For releasing the **success value** of a single op, `.withRelease` on that op is often clearer.
+For unconditional finalization at op boundaries, `.onExit` still fits—same finalizer stack and the
+same rules when a cleanup callback throws.
+
 ### `Op.try(f, onError?)`
 
 Runs an async or sync function and converts failures into `Err`.
@@ -267,13 +304,17 @@ const result = await runQuery.withTimeout(1000).run();
 // conn.release() runs even if the run times out or is externally aborted.
 ```
 
-`release` can be sync or async. If release throws after a successful run, the run fails with
-`UnhandledException`. If the main run already failed, the original failure is preserved.
+`release` can be sync or async. `withRelease` only schedules `release` after the wrapped op
+**succeeds**, so a failing inner op does not call `release`. If `release` throws, the run fails
+with `UnhandledException` and `cause` set to that fault (other registered finalizers **still run**
+afterward in LIFO order; multiple faults become a **nested `Error.cause` chain**, same as `Op.defer`).
 
 ### `.onExit(finalize)`
 
 Registers unconditional finalization logic that runs when the enclosing op run settles, whether the
-run succeeds or fails.
+run succeeds or fails—same LIFO finalizer stack as `Op.defer` and `.withRelease`. If `finalize`
+throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a **nested
+`error.cause` chain** if several finalizers fault, same as `Op.defer`).
 
 ```ts
 const result = await doWork.onExit(() => telemetry.flush()).run();
@@ -324,6 +365,7 @@ const policy = {
 - `UnhandledException`: default wrapper when a thrown/rejected value is not mapped to a domain error.
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
+- **Teardown chains:** if several of `Op.defer`, `.withRelease`, or `.onExit` callbacks throw in one run, `UnhandledException.cause` may be an `Error` whose `.cause` links onward (**first failure in LIFO execution order is the outermost message**, matching Go-style stacked panics).
 
 ## Concurrent combinators
 
