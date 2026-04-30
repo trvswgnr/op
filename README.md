@@ -256,8 +256,7 @@ the acquisition site instead of requiring manual `try/finally` around downstream
 
 ```ts
 const runQuery = Op(function* () {
-  const conn = yield* acquireDbConnection
-    .withCleanup((conn) => conn.release());
+  const conn = yield* acquireDbConnection.withCleanup((conn) => conn.release());
   return yield* getActiveUsers(conn);
 });
 
