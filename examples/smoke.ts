@@ -30,17 +30,14 @@ const isNamedUser = (value: unknown): value is { name: string } => {
   );
 };
 
-const makeRetryableError = (message: string) => {
-  const error = new Error(message);
-  Object.assign(error, { retryable: true });
-  Error.captureStackTrace(error, makeRetryableError);
-  return error;
-};
+class RetryableError extends Error {
+  retryable = true;
+}
 
 const neverSettlesUntilAborted = (signal: AbortSignal) =>
   new Promise((_, reject) => {
-    if (signal.aborted) return reject(makeRetryableError("aborted"));
-    signal.addEventListener("abort", () => reject(makeRetryableError("aborted")), { once: true });
+    if (signal.aborted) return reject(new RetryableError("aborted"));
+    signal.addEventListener("abort", () => reject(new RetryableError("aborted")), { once: true });
   });
 
 const createDeps = (overrides = {}) => ({
@@ -245,7 +242,7 @@ const runWebhookExampleSmoke = async () => {
     createDeps({
       authorizePayment: async () => {
         paymentAttempts += 1;
-        if (paymentAttempts === 1) throw makeRetryableError("payment timeout");
+        if (paymentAttempts === 1) throw new RetryableError("payment timeout");
         return { approved: true, authorizationId: "auth-retried" };
       },
     }),
@@ -257,7 +254,7 @@ const runWebhookExampleSmoke = async () => {
   const fallbackRiskApp = createApp(
     createDeps({
       riskPrimary: async () => {
-        throw makeRetryableError("primary unavailable");
+        throw new RetryableError("primary unavailable");
       },
       riskSecondary: async () => 0.2,
     }),
@@ -268,10 +265,10 @@ const runWebhookExampleSmoke = async () => {
   const allRiskFailApp = createApp(
     createDeps({
       riskPrimary: async () => {
-        throw makeRetryableError("primary unavailable");
+        throw new RetryableError("primary unavailable");
       },
       riskSecondary: async () => {
-        throw makeRetryableError("secondary unavailable");
+        throw new RetryableError("secondary unavailable");
       },
     }),
   );
@@ -297,7 +294,7 @@ const runWebhookExampleSmoke = async () => {
           throw new Error("unreachable");
         } catch {
           inventoryAborted = signal.aborted;
-          throw makeRetryableError("inventory aborted");
+          throw new RetryableError("inventory aborted");
         }
       },
       authorizePayment: async () => {

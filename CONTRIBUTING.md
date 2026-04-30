@@ -3,6 +3,7 @@
 ## Contributor Runtime
 
 - Node `>=24.14.0` is required for local development and release tasks.
+- This requirement is for contributors/tooling only; the library API is runtime-agnostic for consumers.
 
 ## Local Quality Gate
 

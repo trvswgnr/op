@@ -1,12 +1,13 @@
 {
   "name": "@prodkit/op",
   "version": "0.1.29",
-  "description": "A simple, composable library for writing predictable operations in TypeScript.",
+  "description": "A runtime-agnostic, composable library for writing predictable operations in TypeScript.",
   "keywords": [
     "composition",
     "effect",
     "error handling",
     "operations",
+    "runtime-agnostic",
     "typescript"
   ],
   "homepage": "https://github.com/trvswgnr/op#readme",
@@ -59,14 +60,10 @@
     "better-result": "^2.9.0"
   },
   "devDependencies": {
-    "@types/node": "^20.19.37",
     "oxfmt": "^0.40.0",
     "oxlint": "^1.55.0",
     "tsdown": "^0.21.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }

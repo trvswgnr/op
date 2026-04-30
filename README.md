@@ -1,6 +1,6 @@
 # @prodkit/op
 
-A simple, composable, and predictable library for writing operations in TypeScript, built on top of [`better-result`](https://github.com/dmmulroy/better-result).
+A runtime-agnostic, composable, and predictable library for writing operations in TypeScript, built on top of [`better-result`](https://github.com/dmmulroy/better-result).
 
 > [!WARNING]
 > This library is currently in alpha. The API will almost certainly change between releases while it stabilizes.
@@ -19,7 +19,11 @@ Async TypeScript has two huge flaws: you can't see from a function's type what i
 npm install @prodkit/op
 ```
 
-Runtime requirement for consumers: Node `>=20`.
+Runtime support for consumers: any JavaScript runtime with `Promise` and `AbortController`.
+For Node consumers specifically, this package is tested on Node `>=20`.
+
+This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
+operation model.
 
 ## Quick start
 
