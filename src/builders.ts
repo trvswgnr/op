@@ -1,4 +1,4 @@
-import { UnhandledException, UnreachableError } from "./errors.js";
+import { TimeoutError, UnhandledException, UnreachableError } from "./errors.js";
 import {
   flatMapOp,
   makeNullaryOp,
@@ -37,7 +37,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       withCleanup: (cleanup: CleanupFn<Awaited<T>>) => withCleanupOp(op, cleanup),
     },
   );
-  return op as never;
+  return op;
 };
 
 /**
@@ -99,25 +99,30 @@ export const _try = <T, E = UnhandledException>(
 const makeArityOp = <T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, readonly []>,
 ): Op<T, E, A> => {
-  const out: Op<T, E, A> = Object.assign(invoke, {
+  const out = Object.assign(invoke, {
     run: (...args: A) => runOp(invoke(...args)),
     withRetry: (policy?: RetryPolicy) =>
-      makeArityOp<T, E, A>((...args: A) => withRetryOp(invoke(...args), policy) as never),
+      makeArityOp<T, E, A>((...args: A) => withRetryOp(invoke(...args), policy)),
     withTimeout: (timeoutMs: number) =>
-      makeArityOp((...args: A) => withTimeoutOp(invoke(...args), timeoutMs) as never),
+      makeArityOp<T, E | TimeoutError, A>((...args: A) =>
+        withTimeoutOp(invoke(...args), timeoutMs),
+      ),
     withSignal: (signal: AbortSignal) =>
-      makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal) as never),
+      makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal)),
     withCleanup: (cleanup: CleanupFn<T>) =>
-      makeArityOp<T, E, A>((...args: A) => withCleanupOp(invoke(...args), cleanup) as never),
-    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
+      makeArityOp<T, E, A>((...args: A) => withCleanupOp(invoke(...args), cleanup)),
+    map: <U>(transform: (value: T) => U) => mapOp(out, transform),
+    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
+    tap: <R>(observe: (value: T) => R) => tapOp(out, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(out as never, predicate, handler),
+      recoverOp(out, predicate, handler),
     _tag: "Op" as const,
-  }) as never;
+    // TS cannot reconcile the callable signature switch between nullary and arity ops.
+    // This cast is safe because `invoke` always returns a nullary op and every fluent method
+    // delegates back through `makeArityOp`, preserving the same `A`.
+  }) as unknown as Op<T, E, A>;
 
   return out;
 };
@@ -140,6 +145,7 @@ export const fromGenFn: FromGenFn = (
   };
 
   if (f.length === 0) {
+    // `FromGenFn` has an explicit zero-arg overload, but TS does not narrow on `f.length`.
     return makeBoundOp() as Op<unknown, unknown, []>;
   }
 
