@@ -73,7 +73,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   if (Symbol.iterator in op) {
     // TS cannot express that `[] extends A` may collapse to the nullary branch here.
     // Runtime behavior is correct: nullary input remains nullary after mapping.
-    return mapNullary(op as Op<T, EIn, readonly []>) as unknown as Op<T, EOut, A>;
+    return mapNullary(op) as unknown as Op<T, EOut, A>;
   }
 
   const arity = op as OpArity<T, EIn, A>;
@@ -144,11 +144,11 @@ const withRetryNullaryOp = <T, E>(
 
       const delayMs = Math.max(0, policy.getDelay(attempt, cause));
       if (delayMs > 0) {
-        const delayAborted = (yield {
+        const delayAborted = yield {
           _tag: "Suspended",
           suspend: (signal: AbortSignal) =>
             abortableDelay(delayMs, signal).then(() => signal.aborted),
-        }) as boolean;
+        };
         if (delayAborted) {
           yield err(cause);
           throw new UnreachableError();
