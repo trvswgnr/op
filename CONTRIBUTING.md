@@ -20,6 +20,7 @@ All examples are consumer-level and live under `examples/*`.
 ## Source Layout
 
 - Public package entrypoint stays at `src/index.ts`.
+- Re-exports from dependencies must be explicit named exports in `src/index.ts` (never `export *`).
 - Internal runtime concerns are split into focused modules under `src/`:
   - `core.ts` (core operation contracts and execution)
   - `builders.ts` (primitive operation constructors)

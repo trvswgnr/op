@@ -1,10 +1,31 @@
-import { succeed, fail, _try, fromGenFn } from "./builders.js";
+import { fail, fromGenFn, succeed, _try } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
-import { runOp, type Op as _Op } from "./core.js";
-import { exponentialBackoff } from "./policies.js";
 import { ErrorGroup, TimeoutError } from "./errors.js";
-
-export * from "better-result";
+import { type Op as _Op, runOp } from "./core.js";
+import { exponentialBackoff } from "./policies.js";
+export {
+  Err,
+  Ok,
+  Panic,
+  Result,
+  ResultDeserializationError,
+  TaggedError,
+  UnhandledException,
+  isPanic,
+  isTaggedError,
+  matchError,
+  matchErrorPartial,
+  panic,
+} from "better-result";
+export type {
+  InferErr,
+  InferOk,
+  SerializedErr,
+  SerializedOk,
+  SerializedResult,
+  TaggedErrorClass,
+  TaggedErrorInstance,
+} from "better-result";
 
 const empty: _Op<void, never, readonly []> = succeed(undefined);
 
@@ -23,7 +44,7 @@ export const Op = Object.assign(fromGenFn, {
 });
 
 /**
- * Operation: generator-based program with success type `T`, error type `E`, and parameter tuple
+ * Operation: a generator-based program with success type `T`, error type `E`, and parameter tuple `A`
  * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters.
  *
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
