@@ -179,7 +179,7 @@ export async function drive<T, E>(
       }
     }
   };
-  const runFinalizersSafely = async (): Promise<unknown | undefined> => {
+  const runFinalizersSafely = async (): Promise<unknown | void> => {
     try {
       await runFinalizers();
       return undefined;
@@ -193,7 +193,7 @@ export async function drive<T, E>(
     const iter = ef[Symbol.iterator]();
     const closeIterator = () => {
       try {
-        iter.return?.(undefined as unknown as T);
+        iter.return?.(undefined as never);
       } catch {
         // Ignore cleanup faults so the original result/error is preserved.
       }
@@ -305,7 +305,7 @@ const withCleanupNullaryOp = <T, E>(
       }
       yield {
         _tag: "RegisterCleanup" as const,
-        finalize: () => Promise.resolve(release(result.value)).then(() => undefined),
+        finalize: () => Promise.resolve(release(result.value)).then(() => {}),
       };
       return result.value;
     },
