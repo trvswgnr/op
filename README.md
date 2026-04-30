@@ -20,7 +20,7 @@ npm i @prodkit/op
 ```
 
 Runtime support for consumers: any JavaScript runtime with `Promise` and `AbortController`.
-For Node consumers specifically, this package is tested in on Node `24.14.0`.
+For Node consumers specifically, this package is tested on Node `24.14.0`.
 
 This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
 operation model.
@@ -82,13 +82,13 @@ failure, `UnhandledException`, timeout, or external cancellation). **All** sched
 even if one throws, the **remaining** callbacks in the stack **still run**. If a single finalizer throws, `.run()` returns
 `Err(UnhandledException)` with `cause` set to that fault. If **multiple** finalizers throw, `cause`
 is a nested **`Error` chain**: the outer error matches the **first** failure during teardown
-(last-registered callback runs first, so it fails first—read the chain outer-to-inner that way); each
+(last-registered callback runs first, so it fails first; read the chain outer-to-inner that way); each
 `.cause` is the next fault in unwind order. Only **throwing** callbacks appear in the chain: cleanups that finish
 without throwing add no links. `finalize` can
 be sync or async.
 
 Use this for step-local teardown that reads better than chaining `.withRelease` on every producer,
-or for “always run” cleanup before a risky step.
+or for "always run" cleanup before a risky step.
 
 ```ts
 const runQuery = Op(function* () {
@@ -108,7 +108,7 @@ const risky = Op(function* () {
 
 `Op.defer` is only meaningful inside an `Op(function* () { ... })` body (compose with `yield*`).
 For releasing the **success value** of a single op, `.withRelease` on that op is often clearer.
-For unconditional finalization at op boundaries, `.onExit` still fits—same finalizer stack and the
+For unconditional finalization at op boundaries, `.onExit` still fits, with the same finalizer stack and the
 same rules when a cleanup callback throws.
 
 ### `Op.try(f, onError?)`
@@ -312,7 +312,7 @@ afterward in LIFO order; multiple faults become a **nested `Error.cause` chain**
 ### `.onExit(finalize)`
 
 Registers unconditional finalization logic that runs when the enclosing op run settles, whether the
-run succeeds or fails—same LIFO finalizer stack as `Op.defer` and `.withRelease`. If `finalize`
+run succeeds or fails, with the same LIFO finalizer stack as `Op.defer` and `.withRelease`. If `finalize`
 throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a **nested
 `error.cause` chain** if several finalizers fault, same as `Op.defer`).
 
@@ -432,7 +432,7 @@ if (r.isErr() && r.error instanceof ErrorGroup) console.log(r.error.errors);
 
 ### `Op.race(ops)`
 
-Propagates whichever op settles first — success or failure. Remaining siblings are
+Propagates whichever op settles first: success or failure. Remaining siblings are
 aborted with no library-specific reason. `Op.race([])` fails fast with
 `UnhandledException`.
 
@@ -440,7 +440,7 @@ aborted with no library-specific reason. `Op.race([])` fails fast with
 const r = await Op.race([slow, fast]).run();
 ```
 
-## Flagship production example: webhook consumer
+## Webhook consumer example
 
 See `examples/webhook.ts` for a complete order webhook pipeline
 that demonstrates:
