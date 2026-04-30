@@ -22,6 +22,14 @@ describe("public API (index)", () => {
     test("pure is a function", () => {
       expect(Op.of).toBeInstanceOf(Function);
     });
+    test("empty is a stable singleton op", async () => {
+      expectTypeOf(Op.empty).toEqualTypeOf<Op<void, never, readonly []>>();
+      expect(Op.empty).toBe(Op.empty);
+
+      const result = await Op.empty.run();
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBeUndefined();
+    });
   });
   describe("exponentialBackoff", () => {
     test("is exported and produces exponential delays", () => {
