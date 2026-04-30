@@ -16,11 +16,11 @@ Async TypeScript has two huge flaws: you can't see from a function's type what i
 ## Installation
 
 ```bash
-npm install @prodkit/op
+npm i @prodkit/op
 ```
 
 Runtime support for consumers: any JavaScript runtime with `Promise` and `AbortController`.
-For Node consumers specifically, this package is tested on Node `>=20`.
+For Node consumers specifically, this package is tested in on Node `24.14.0`.
 
 This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
 operation model.

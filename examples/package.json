@@ -7,6 +7,9 @@
     "smoke": "node ./smoke.ts",
     "typecheck": "tsc --noEmit"
   },
+  "devDependencies": {
+    "@types/node": "^24.12.2"
+  },
   "engines": {
     "node": ">=24"
   }
