@@ -19,10 +19,10 @@ const makeCombinatorOp = <T, E>(
 ): Op<T, E, readonly []> => {
   let self!: Op<T, E, readonly []>;
   self = makeNullaryOp(gen, {
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy) as never,
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs) as never,
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal) as never,
-    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self as never, cleanup) as never,
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
+    withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self, cleanup),
   });
   return self;
 };

@@ -5,7 +5,11 @@ import {
   drive,
   flatMapOp,
   makeNullaryOp,
+  mapErrOp,
   mapOp,
+  recoverOp,
+  tapErrOp,
+  tapOp,
   withCleanupOp,
   type Op,
   type OpArity,
@@ -67,22 +71,32 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   mapNullary: (resolved: Op<T, EIn, readonly []>) => Op<T, EOut, readonly []>,
 ): Op<T, EOut, A> => {
   if (Symbol.iterator in op) {
-    return mapNullary(op as Op<T, EIn, readonly []>) as never;
+    // TS cannot express that `[] extends A` may collapse to the nullary branch here.
+    // Runtime behavior is correct: nullary input remains nullary after mapping.
+    return mapNullary(op as Op<T, EIn, readonly []>) as unknown as Op<T, EOut, A>;
   }
 
-  const g = (...args: A) => mapNullary((op as OpArity<T, EIn, A>)(...args) as never);
+  const arity = op as OpArity<T, EIn, A>;
+  const g = (...args: A) => mapNullary(arity(...args));
   const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args) as never, new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(out as never, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out as never, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out as never, signal),
-    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out as never, cleanup),
-    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
+    run: (...args: A) => drive(g(...args), new AbortController().signal),
+    withRetry: (policy?: RetryPolicy) => withRetryOp(out, policy),
+    withTimeout: (timeoutMs: number) => withTimeoutOp(out, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(out, signal),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out, cleanup),
+    map: <U>(transform: (value: T) => U) => mapOp(out, transform),
+    mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
+    tap: <R>(observe: (value: T) => R) => tapOp(out, observe),
+    tapErr: <R>(observe: (error: EOut) => R) => tapErrOp(out, observe),
+    recover: <R>(predicate: (error: EOut) => boolean, handler: (error: EOut) => R) =>
+      recoverOp(out, predicate, handler),
     _tag: "Op" as const,
-  });
+    // TS cannot fully model callable object construction from `Object.assign` with conditional arity.
+    // This cast is safe because `g` is the single execution path for all `A` arguments.
+  }) as unknown as Op<T, EOut, A>;
 
-  return out as never;
+  return out;
 };
 
 const makePolicyNullaryOp = <T, E>(
@@ -90,10 +104,10 @@ const makePolicyNullaryOp = <T, E>(
 ): Op<T, E, readonly []> => {
   let self!: Op<T, E, readonly []>;
   self = makeNullaryOp(gen, {
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self as never, policy) as never,
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self as never, timeoutMs) as never,
-    withSignal: (signal: AbortSignal) => withSignalOp(self as never, signal) as never,
-    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self as never, cleanup) as never,
+    withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
+    withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
+    withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
+    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self, cleanup),
   });
   return self;
 };
@@ -102,6 +116,8 @@ const withRetryNullaryOp = <T, E>(
   op: Op<T, E, readonly []>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, readonly []> => {
+  // Retries only re-run the same op; the exposed typed error channel remains `E`.
+  // Internally we include `UnhandledException` for runtime safety in `drive`.
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     let attempt = 1;
 
@@ -141,7 +157,7 @@ const withRetryNullaryOp = <T, E>(
 
       attempt += 1;
     }
-  }) as never;
+  }) as Op<T, E, readonly []>;
 };
 
 const withTimeoutNullaryOp = <T, E>(
@@ -149,6 +165,8 @@ const withTimeoutNullaryOp = <T, E>(
   timeoutMs: number,
 ): Op<T, E | TimeoutError, readonly []> => {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
+  // `drive` can still surface `UnhandledException` internally; we intentionally expose only
+  // the public contract of `E | TimeoutError` for fluent API stability.
   return makePolicyNullaryOp<T, E | UnhandledException | TimeoutError>(function* () {
     const result = (yield {
       _tag: "Suspended",
@@ -160,13 +178,14 @@ const withTimeoutNullaryOp = <T, E>(
       throw new UnreachableError();
     }
     return result.value;
-  }) as never;
+  }) as Op<T, E | TimeoutError, readonly []>;
 };
 
 const withSignalNullaryOp = <T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
 ): Op<T, E, readonly []> => {
+  // Same contract as source op: binding a signal does not widen the typed error channel.
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     const result = (yield {
       _tag: "Suspended" as const,
@@ -178,28 +197,28 @@ const withSignalNullaryOp = <T, E>(
       throw new UnreachableError();
     }
     return result.value;
-  }) as never;
+  }) as Op<T, E, readonly []>;
 };
 
 export const withRetryOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, A> => {
-  return mapFluentOp(op, (resolved) => withRetryNullaryOp(resolved, policy)) as never;
+  return mapFluentOp(op, (resolved) => withRetryNullaryOp(resolved, policy));
 };
 
 export const withTimeoutOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   timeoutMs: number,
 ): Op<T, E | TimeoutError, A> => {
-  return mapFluentOp(op, (resolved) => withTimeoutNullaryOp(resolved, timeoutMs)) as never;
+  return mapFluentOp(op, (resolved) => withTimeoutNullaryOp(resolved, timeoutMs));
 };
 
 export const withSignalOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   signal: AbortSignal,
 ): Op<T, E, A> => {
-  return mapFluentOp(op, (resolved) => withSignalNullaryOp(resolved, signal)) as never;
+  return mapFluentOp(op, (resolved) => withSignalNullaryOp(resolved, signal));
 };
 
 const runWithBoundSignal = <T, E>(
