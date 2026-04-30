@@ -249,14 +249,13 @@ controller.abort(new Error("request cancelled"));
 const result = await runPromise;
 ```
 
-### `.withCleanup(cleanup)`
+### `.withRelease(release)`
 
-Registers resource teardown logic that runs when the enclosing op run settles. This keeps cleanup at
-the acquisition site instead of requiring manual `try/finally` around downstream logic.
+Registers resource release logic that runs after a successful resource-producing step settles.
 
 ```ts
 const runQuery = Op(function* () {
-  const conn = yield* acquireDbConnection.withCleanup((conn) => conn.release());
+  const conn = yield* acquireDbConnection.withRelease((conn) => conn.release());
   return yield* getActiveUsers(conn);
 });
 
@@ -264,8 +263,17 @@ const result = await runQuery.withTimeout(1000).run();
 // conn.release() runs even if the run times out or is externally aborted.
 ```
 
-`cleanup` can be sync or async. If cleanup throws after a successful run, the run fails with
+`release` can be sync or async. If release throws after a successful run, the run fails with
 `UnhandledException`. If the main run already failed, the original failure is preserved.
+
+### `.onExit(finalize)`
+
+Registers unconditional finalization logic that runs when the enclosing op run settles, whether the
+run succeeds or fails.
+
+```ts
+const result = await doWork.onExit(() => telemetry.flush()).run();
+```
 
 ## Typed errors
 

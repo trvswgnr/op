@@ -720,7 +720,7 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("op.withCleanup", () => {
+  describe("op.withRelease", () => {
     test("runs registered cleanup after a successful run", async () => {
       const events: string[] = [];
       const release = vi.fn((conn: { id: number }) => {
@@ -728,7 +728,7 @@ describe("public API (index)", () => {
       });
 
       const program = Op(function* () {
-        const conn = yield* Op.of({ id: 7 }).withCleanup(release);
+        const conn = yield* Op.of({ id: 7 }).withRelease(release);
         events.push(`query:${conn.id}`);
         return conn.id;
       });
@@ -743,7 +743,7 @@ describe("public API (index)", () => {
     test("runs cleanup when downstream logic fails with a typed error", async () => {
       const release = vi.fn();
       const result = await Op(function* () {
-        yield* Op.of({ id: 1 }).withCleanup(() => {
+        yield* Op.of({ id: 1 }).withRelease(() => {
           release();
         });
         return yield* Op.fail("boom" as const);
@@ -759,7 +759,7 @@ describe("public API (index)", () => {
       try {
         const release = vi.fn();
         const op = Op(function* () {
-          yield* Op.of({ close: release }).withCleanup((conn) => conn.close());
+          yield* Op.of({ close: release }).withRelease((conn) => conn.close());
           return yield* Op.try(
             (signal) =>
               new Promise<number>((_resolve, reject) => {
@@ -786,7 +786,7 @@ describe("public API (index)", () => {
     test("fails with UnhandledException when cleanup throws after success", async () => {
       const cleanupFault = new Error("cleanup failed");
       const result = await Op.of(1)
-        .withCleanup(() => {
+        .withRelease(() => {
           throw cleanupFault;
         })
         .run();
@@ -800,7 +800,7 @@ describe("public API (index)", () => {
 
     test("preserves primary error when cleanup throws after typed failure", async () => {
       const result = await Op.fail("boom" as const)
-        .withCleanup(() => {
+        .withRelease(() => {
           throw new Error("cleanup failed");
         })
         .run();
@@ -810,14 +810,53 @@ describe("public API (index)", () => {
     });
 
     test("preserves inferred op shapes", async () => {
-      const p1 = Op.of({ id: 1 }).withCleanup((value) => {
+      const p1 = Op.of({ id: 1 }).withRelease((value) => {
         expectTypeOf(value).toEqualTypeOf<{ id: number }>();
       });
       const p2 = Op(function* (name: string) {
         return name.length;
-      }).withCleanup((len) => {
+      }).withRelease((len) => {
         expectTypeOf(len).toEqualTypeOf<number>();
       });
+
+      expectTypeOf(p1).toEqualTypeOf<Op<{ id: number }, never, []>>();
+      expectTypeOf(p2).toEqualTypeOf<Op<number, never, [string]>>();
+      expectTypeOf(p2.run).parameter(0).toEqualTypeOf<string>();
+    });
+  });
+
+  describe("op.onExit", () => {
+    test("runs finalizer after success", async () => {
+      const finalize = vi.fn();
+      const result = await Op.of(123)
+        .onExit(() => {
+          finalize();
+        })
+        .run();
+
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(123);
+      expect(finalize).toHaveBeenCalledTimes(1);
+    });
+
+    test("runs finalizer after typed failure", async () => {
+      const finalize = vi.fn();
+      const result = await Op.fail("boom" as const)
+        .onExit(() => {
+          finalize();
+        })
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("boom");
+      expect(finalize).toHaveBeenCalledTimes(1);
+    });
+
+    test("preserves inferred op shapes", () => {
+      const p1 = Op.of({ id: 1 }).onExit(() => {});
+      const p2 = Op(function* (name: string) {
+        return name.length;
+      }).onExit(() => {});
 
       expectTypeOf(p1).toEqualTypeOf<Op<{ id: number }, never, []>>();
       expectTypeOf(p2).toEqualTypeOf<Op<number, never, [string]>>();

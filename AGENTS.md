@@ -17,6 +17,8 @@
 - Prefers file relocations to be done with move operations first (for example `mv`) followed by minimal targeted edits, not full-file rewrites.
 - Wants `npm run check` run after completing work, before considering anything "done".
 - Does not want GitHub issues moved to `Done` without explicit approval first.
+- Does not want `try/finally` patterns used in this codebase; prefers fluent/compositional alternatives.
+- Prefers cleanup naming split: `withRelease` for value-scoped cleanup and `onExit` for unconditional finalization.
 
 ## Learned Workspace Facts
 
