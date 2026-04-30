@@ -193,7 +193,7 @@ export async function drive<T, E>(
     const iter = ef[Symbol.iterator]();
     const closeIterator = () => {
       try {
-        iter.return?.(undefined as never);
+        iter.return?.(undefined as unknown as T);
       } catch {
         // Ignore cleanup faults so the original result/error is preserved.
       }
@@ -266,25 +266,27 @@ export const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
 ): Op<T, E, readonly []> => {
-  const self = {
+  let self!: Op<T, E, readonly []>;
+  const state = {
     [Symbol.iterator]: gen,
-    run: () => runOp(self as never),
+    run: () => runOp(self),
     withRetry: hooks.withRetry,
     withTimeout: hooks.withTimeout,
     withSignal: hooks.withSignal,
     withRelease: hooks.withRelease,
     onExit: hooks.onExit,
-    map: <U>(transform: (value: T) => U) => mapOp(self as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self as never, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self as never, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(self as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self as never, observe),
+    map: <U>(transform: (value: T) => U) => mapOp(self, transform),
+    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self, bind),
+    tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
+    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(self as never, predicate, handler),
+      recoverOp(self, predicate, handler),
     _tag: "Op" as const,
   };
-  const op = () => self;
-  return Object.assign(op, self) as never;
+  const callable = (() => state) as () => OpBase<T, E>;
+  self = Object.assign(callable, state) as unknown as Op<T, E, readonly []>;
+  return self;
 };
 
 const withCleanupNullaryOp = <T, E>(
@@ -309,14 +311,13 @@ const withCleanupNullaryOp = <T, E>(
     },
     {
       withRetry: (policy?: RetryPolicy) => withCleanupNullaryOp(op.withRetry(policy), release),
-      withTimeout: (timeoutMs: number) =>
-        withCleanupNullaryOp(op.withTimeout(timeoutMs) as never, release),
+      withTimeout: (timeoutMs: number) => withCleanupNullaryOp(op.withTimeout(timeoutMs), release),
       withSignal: (signal: AbortSignal) => withCleanupNullaryOp(op.withSignal(signal), release),
       withRelease: (nextRelease: ReleaseFn<T>) =>
-        withCleanupNullaryOp(withCleanupNullaryOp(op, release) as never, nextRelease),
+        withCleanupNullaryOp(withCleanupNullaryOp(op, release), nextRelease),
       onExit: (finalize: ExitFn) => onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
     },
-  ) as never;
+  ) as Op<T, E, readonly []>;
 };
 
 const onExitNullaryOp = <T, E>(
@@ -341,15 +342,14 @@ const onExitNullaryOp = <T, E>(
     },
     {
       withRetry: (policy?: RetryPolicy) => onExitNullaryOp(op.withRetry(policy), finalize),
-      withTimeout: (timeoutMs: number) =>
-        onExitNullaryOp(op.withTimeout(timeoutMs) as never, finalize),
+      withTimeout: (timeoutMs: number) => onExitNullaryOp(op.withTimeout(timeoutMs), finalize),
       withSignal: (signal: AbortSignal) => onExitNullaryOp(op.withSignal(signal), finalize),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
       onExit: (nextFinalize: ExitFn) =>
-        onExitNullaryOp(onExitNullaryOp(op, finalize) as never, nextFinalize),
+        onExitNullaryOp(onExitNullaryOp(op, finalize), nextFinalize),
     },
-  ) as never;
+  ) as Op<T, E, readonly []>;
 };
 
 const mapNullaryOp = <T, E, U>(
@@ -374,14 +374,13 @@ const mapNullaryOp = <T, E, U>(
     },
     {
       withRetry: (policy?: RetryPolicy) => mapNullaryOp(op.withRetry(policy), transform),
-      withTimeout: (timeoutMs: number) =>
-        mapNullaryOp(op.withTimeout(timeoutMs) as never, transform),
+      withTimeout: (timeoutMs: number) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
       withSignal: (signal: AbortSignal) => mapNullaryOp(op.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<Awaited<U>>) =>
-        withCleanupNullaryOp(mapNullaryOp(op, transform) as never, release),
+        withCleanupNullaryOp(mapNullaryOp(op, transform), release),
       onExit: (finalize: ExitFn) => onExitNullaryOp(mapNullaryOp(op, transform), finalize),
     },
-  ) as never;
+  ) as Op<Awaited<U>, E, readonly []>;
 };
 
 const flatMapNullaryOp = <T, E, U, E2>(
@@ -411,14 +410,13 @@ const flatMapNullaryOp = <T, E, U, E2>(
     },
     {
       withRetry: (policy?: RetryPolicy) => flatMapNullaryOp(op.withRetry(policy), bind),
-      withTimeout: (timeoutMs: number) =>
-        flatMapNullaryOp(op.withTimeout(timeoutMs) as never, bind),
+      withTimeout: (timeoutMs: number) => flatMapNullaryOp(op.withTimeout(timeoutMs), bind),
       withSignal: (signal: AbortSignal) => flatMapNullaryOp(op.withSignal(signal), bind),
       withRelease: (release: ReleaseFn<U>) =>
-        withCleanupNullaryOp(flatMapNullaryOp(op, bind) as never, release),
+        withCleanupNullaryOp(flatMapNullaryOp(op, bind), release),
       onExit: (finalize: ExitFn) => onExitNullaryOp(flatMapNullaryOp(op, bind), finalize),
     },
-  ) as never;
+  ) as Op<U, E | E2, readonly []>;
 };
 
 const tapNullaryOp = <T, E, R>(
@@ -457,13 +455,13 @@ const tapNullaryOp = <T, E, R>(
     },
     {
       withRetry: (policy?: RetryPolicy) => tapNullaryOp(op.withRetry(policy), observe),
-      withTimeout: (timeoutMs: number) => tapNullaryOp(op.withTimeout(timeoutMs) as never, observe),
+      withTimeout: (timeoutMs: number) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
       withSignal: (signal: AbortSignal) => tapNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(tapNullaryOp(op, observe) as never, release),
+        withCleanupNullaryOp(tapNullaryOp(op, observe), release),
       onExit: (finalize: ExitFn) => onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
-  ) as never;
+  ) as Op<T, E | TapError<R>, readonly []>;
 };
 
 const tapErrNullaryOp = <T, E, R>(
@@ -509,17 +507,17 @@ const tapErrNullaryOp = <T, E, R>(
     {
       withRetry: (policy?: RetryPolicy) => tapErrNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs: number) =>
-        tapErrNullaryOp(op.withTimeout(timeoutMs) as never, (error: E | TimeoutError) => {
+        tapErrNullaryOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) => {
           if (!(error instanceof TimeoutError)) {
             return observe(error);
           }
         }),
       withSignal: (signal: AbortSignal) => tapErrNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(tapErrNullaryOp(op, observe) as never, release),
+        withCleanupNullaryOp(tapErrNullaryOp(op, observe), release),
       onExit: (finalize: ExitFn) => onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
     },
-  ) as never;
+  ) as Op<T, E | TapError<R>, readonly []>;
 };
 
 const mapErrNullaryOp = <T, E, E2>(
@@ -550,15 +548,15 @@ const mapErrNullaryOp = <T, E, E2>(
     {
       withRetry: (policy?: RetryPolicy) => mapErrNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs: number) =>
-        mapErrNullaryOp(op.withTimeout(timeoutMs) as never, (error: E | TimeoutError) =>
+        mapErrNullaryOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) =>
           error instanceof TimeoutError ? error : transform(error),
         ),
       withSignal: (signal: AbortSignal) => mapErrNullaryOp(op.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(mapErrNullaryOp(op, transform) as never, release),
+        withCleanupNullaryOp(mapErrNullaryOp(op, transform), release),
       onExit: (finalize: ExitFn) => onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
     },
-  ) as never;
+  ) as Op<T, E2, readonly []>;
 };
 
 const conditionalPredicate = <E>(
@@ -622,19 +620,19 @@ const recoverNullaryOp = <T, E, R>(
         recoverNullaryOp(op.withRetry(policy), predicate, handler),
       withTimeout: (timeoutMs: number) =>
         recoverNullaryOp(
-          op.withTimeout(timeoutMs) as never,
+          op.withTimeout(timeoutMs),
           (error: E | TimeoutError) =>
             !(error instanceof TimeoutError) && conditionalPredicate(predicate, error),
-          handler,
+          handler as (error: E | TimeoutError) => R,
         ),
       withSignal: (signal: AbortSignal) =>
         recoverNullaryOp(op.withSignal(signal), predicate, handler),
       withRelease: (release: ReleaseFn<T | RecoverValue<R>>) =>
-        withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler) as never, release),
+        withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler), release),
       onExit: (finalize: ExitFn) =>
         onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
     },
-  ) as never;
+  ) as Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []>;
 };
 
 interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
