@@ -1,19 +1,21 @@
 import { TimeoutError, UnreachableError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
 import {
-  type CleanupFn,
+  type ExitFn,
+  type Instruction,
+  type Op,
+  type OpArity,
+  type ReleaseFn,
   drive,
   flatMapOp,
   makeNullaryOp,
   mapErrOp,
   mapOp,
+  onExitOp,
   recoverOp,
   tapErrOp,
   tapOp,
-  withCleanupOp,
-  type Op,
-  type OpArity,
-  type Instruction,
+  withReleaseOp,
 } from "./core.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
@@ -83,7 +85,8 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(out, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(out, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out, signal),
-    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(out, cleanup),
+    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out, release),
+    onExit: (finalize: ExitFn) => onExitOp(out, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -107,7 +110,8 @@ const makePolicyNullaryOp = <T, E>(
     withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
-    withCleanup: (cleanup: CleanupFn<T>) => withCleanupOp(self, cleanup),
+    withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
+    onExit: (finalize: ExitFn) => onExitOp(self, finalize),
   });
   return self;
 };

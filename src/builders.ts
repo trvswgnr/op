@@ -7,11 +7,13 @@ import {
   recoverOp,
   tapOp,
   tapErrOp,
-  withCleanupOp,
-  type CleanupFn,
+  onExitOp,
+  withReleaseOp,
+  type ExitFn,
   type FromGenFn,
   type Instruction,
   type Op,
+  type ReleaseFn,
   runOp,
 } from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
@@ -34,7 +36,8 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withCleanup: (cleanup: CleanupFn<Awaited<T>>) => withCleanupOp(op, cleanup),
+      withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
+      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -54,7 +57,8 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withCleanup: (cleanup: CleanupFn<never>) => withCleanupOp(op, cleanup),
+      withRelease: (release: ReleaseFn<never>) => withReleaseOp(op, release),
+      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -90,7 +94,8 @@ export const _try = <T, E = UnhandledException>(
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withCleanup: (cleanup: CleanupFn<Awaited<T>>) => withCleanupOp(op, cleanup),
+      withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
+      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -109,8 +114,10 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
       ),
     withSignal: (signal: AbortSignal) =>
       makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal)),
-    withCleanup: (cleanup: CleanupFn<T>) =>
-      makeArityOp<T, E, A>((...args: A) => withCleanupOp(invoke(...args), cleanup)),
+    withRelease: (release: ReleaseFn<T>) =>
+      makeArityOp<T, E, A>((...args: A) => withReleaseOp(invoke(...args), release)),
+    onExit: (finalize: ExitFn) =>
+      makeArityOp<T, E, A>((...args: A) => onExitOp(invoke(...args), finalize)),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -139,7 +146,8 @@ export const fromGenFn: FromGenFn = (
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
-      withCleanup: (cleanup: CleanupFn<unknown>) => withCleanupOp(bound, cleanup),
+      withRelease: (release: ReleaseFn<unknown>) => withReleaseOp(bound, release),
+      onExit: (finalize: ExitFn) => onExitOp(bound, finalize),
     });
     return bound;
   };
