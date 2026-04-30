@@ -8,7 +8,7 @@ export default defineConfig({
     perf: "error",
   },
   rules: {
-    "no-unused-vars": "warn",
+    "no-unused-vars": "error",
     "no-console": "error",
     eqeqeq: "error",
     "typescript/no-explicit-any": "error",
