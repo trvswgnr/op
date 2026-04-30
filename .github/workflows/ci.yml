@@ -1,6 +1,9 @@
-name: PR Checks
+name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
@@ -11,7 +14,7 @@ permissions:
 
 jobs:
   check:
-    name: pr-checks
+    name: check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

@@ -16,6 +16,8 @@ npm run check
 The quality gate includes a consumer-level smoke test that installs the package from an `npm pack`
 tarball via `examples/`.
 
+Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.yml`.
+
 All examples are consumer-level and live under `examples/*`.
 
 ## Source Layout
@@ -67,7 +69,6 @@ git push && git push --tags
 1. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
 
 - installs with `npm ci`
-- runs `npm run check`
 - publishes with npm trusted publishing (OIDC) and provenance (`npm publish --provenance --access public`)
 
 ## Manual Publish Fallback
