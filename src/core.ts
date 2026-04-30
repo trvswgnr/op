@@ -166,6 +166,15 @@ function isRegisterCleanup(value: unknown): value is RegisterCleanup {
   );
 }
 
+const closeGenerator = (iterator: Iterator<unknown, unknown, unknown>) => {
+  try {
+    // we intentionally ignore the return payload bc only generator finalization matters
+    iterator.return?.(undefined);
+  } catch {
+    // ignore cleanup faults so the original result/error is preserved
+  }
+};
+
 export async function drive<T, E>(
   op: Op<T, E, readonly []>,
   signal: AbortSignal,
@@ -191,13 +200,6 @@ export async function drive<T, E>(
   try {
     const ef = typeof op === "function" ? op() : op;
     const iter = ef[Symbol.iterator]();
-    const closeIterator = () => {
-      try {
-        iter.return?.(undefined as never);
-      } catch {
-        // Ignore cleanup faults so the original result/error is preserved.
-      }
-    };
     let step = iter.next();
     while (!step.done) {
       try {
@@ -211,11 +213,11 @@ export async function drive<T, E>(
           continue;
         }
         if (isErrInstruction<E>(step.value)) {
-          closeIterator();
+          closeGenerator(iter);
           await runFinalizersSafely();
           return err(step.value.error);
         }
-        closeIterator();
+        closeGenerator(iter);
         await runFinalizersSafely();
         return err(
           new UnhandledException({
@@ -223,7 +225,7 @@ export async function drive<T, E>(
           }),
         );
       } catch (cause) {
-        closeIterator();
+        closeGenerator(iter);
         await runFinalizersSafely();
         return err(new UnhandledException({ cause }));
       }
