@@ -1646,7 +1646,7 @@ describe("Op.defer ordering and policies", () => {
     expect(events).toEqual(["second", "first"]);
   });
 
-  test("runs earlier-registered finalizers after a later defer throws (Go-like)", async () => {
+  test("runs earlier-registered finalizers after a later defer throws", async () => {
     const earlier = vi.fn();
     const stop = new Error("stop");
     const op = Op(function* () {
@@ -1667,7 +1667,7 @@ describe("Op.defer ordering and policies", () => {
     }
   });
 
-  test("chains multiple cleanup throws via nested Error.cause (Go-like defers)", async () => {
+  test("chains multiple cleanup throws via nested Error.cause", async () => {
     const boomFourth = new Error("boom from defer fourth");
     const boomSecond = new Error("boom from defer second");
     const events: string[] = [];
@@ -1699,7 +1699,7 @@ describe("Op.defer ordering and policies", () => {
     expect(ue.cause.cause).toBe(boomSecond);
   });
 
-  test("chains three panics among five defers (Go-style: only panicking defers in cause chain)", async () => {
+  test("chains three throws among five defers (only throwing cleanups in cause chain)", async () => {
     const boomFifth = new Error("boom from defer fifth");
     const boomFourth = new Error("boom from defer fourth");
     const boomSecond = new Error("boom from defer second");

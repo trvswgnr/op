@@ -175,7 +175,7 @@ const closeGenerator = (iterator: Iterator<unknown, unknown, unknown>) => {
   }
 };
 
-/** Chain teardown faults like Go stacked panics: outer error matches first failure in unwind order; walk `.cause` for later failures. */
+/** Fold multiple teardown faults into a nested `Error.cause` chain (outer = first failure in LIFO unwind). */
 function chainCleanupFaults(faults: readonly unknown[]): unknown {
   if (faults.length === 0) {
     return undefined;
@@ -200,7 +200,7 @@ export async function drive<T, E>(
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<() => Promise<void>> = [];
-  /** Run all finalizers LIFO; collect faults like Go defers (later registrations run first; all run even if one throws). */
+  /** Run every finalizer LIFO; collect faults from each (later-registered runs first; all still run even if one throws). */
   const runFinalizersSafely = async (): Promise<unknown | void> => {
     const faults: unknown[] = [];
     for (let index = finalizers.length - 1; index >= 0; index -= 1) {

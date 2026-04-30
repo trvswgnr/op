@@ -78,13 +78,13 @@ Creates an op that always fails with `error`.
 
 Registers cleanup for the **current** op run inside a generator. Deferred callbacks share one stack
 with `.withRelease` / `.onExit`: they run in **LIFO** order when the run unwinds (success, typed
-failure, `UnhandledException`, timeout, or external cancellation). **All** scheduled finalizers run,
-even if one throws (same spirit as Go `defer`). If a single finalizer throws, `.run()` returns
+failure, `UnhandledException`, timeout, or external cancellation). **All** scheduled finalizers run;
+even if one throws, the **remaining** callbacks in the stack **still run**. If a single finalizer throws, `.run()` returns
 `Err(UnhandledException)` with `cause` set to that fault. If **multiple** finalizers throw, `cause`
 is a nested **`Error` chain**: the outer error matches the **first** failure during teardown
-(last-registered defer runs first— same headline order as Go’s stacked `panic` lines); each
-`.cause` is the next fault in unwind order. Thrown **callbacks** only: defers that complete without
-throwing add no links (like Go’s panic stack, which lists only defers that panicked). `finalize` can
+(last-registered callback runs first, so it fails first—read the chain outer-to-inner that way); each
+`.cause` is the next fault in unwind order. Only **throwing** callbacks appear in the chain: cleanups that finish
+without throwing add no links. `finalize` can
 be sync or async.
 
 Use this for step-local teardown that reads better than chaining `.withRelease` on every producer,
@@ -365,7 +365,7 @@ const policy = {
 - `UnhandledException`: default wrapper when a thrown/rejected value is not mapped to a domain error.
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
-- **Teardown chains:** if several of `Op.defer`, `.withRelease`, or `.onExit` callbacks throw in one run, `UnhandledException.cause` may be an `Error` whose `.cause` links onward (**first failure in LIFO execution order is the outermost message**, matching Go-style stacked panics).
+- **Teardown chains:** if several of `Op.defer`, `.withRelease`, or `.onExit` callbacks throw in one run, `UnhandledException.cause` may be an `Error` whose `.cause` links onward (**first failure in LIFO execution order is the outermost message**).
 
 ## Concurrent combinators
 
