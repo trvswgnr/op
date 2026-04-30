@@ -637,216 +637,174 @@ const recoverNullaryOp = <T, E, R>(
   ) as never;
 };
 
+interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
+  withRetry: (policy?: RetryPolicy) => Op<T, E, A>;
+  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, A>;
+  withSignal: (signal: AbortSignal) => Op<T, E, A>;
+  withRelease: (release: ReleaseFn<T>) => Op<T, E, A>;
+  onExit: (finalize: ExitFn) => Op<T, E, A>;
+}
+
+const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
+  op: Op<TIn, EIn, A>,
+  mapNullary: (resolved: Op<TIn, EIn, readonly []>) => Op<TOut, EOut, readonly []>,
+  makeHandlers: (
+    source: OpArity<TIn, EIn, A>,
+    getSelf: () => Op<TOut, EOut, A>,
+  ) => FluentArityHandlers<TOut, EOut, A>,
+): Op<TOut, EOut, A> => {
+  if (Symbol.iterator in op) {
+    return mapNullary(op) as unknown as Op<TOut, EOut, A>;
+  }
+
+  let out!: Op<TOut, EOut, A>;
+  const source = op as OpArity<TIn, EIn, A>;
+  const g = (...args: A) => mapNullary(source(...args));
+  const handlers = makeHandlers(source, () => out);
+  out = Object.assign(g, {
+    run: (...args: A) => drive(g(...args), new AbortController().signal),
+    withRetry: (policy?: RetryPolicy) => handlers.withRetry(policy),
+    withTimeout: (timeoutMs: number) => handlers.withTimeout(timeoutMs),
+    withSignal: (signal: AbortSignal) => handlers.withSignal(signal),
+    withRelease: (release: ReleaseFn<TOut>) => handlers.withRelease(release),
+    onExit: (finalize: ExitFn) => handlers.onExit(finalize),
+    map: <U>(transform: (value: TOut) => U) => mapOp(out, transform),
+    mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
+    flatMap: <U, E2>(bind: (value: TOut) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
+    tap: <R>(observe: (value: TOut) => R) => tapOp(out, observe),
+    tapErr: <R>(observe: (error: EOut) => R) => tapErrOp(out, observe),
+    recover: <R>(predicate: (error: EOut) => boolean, handler: (error: EOut) => R) =>
+      recoverOp(out, predicate, handler),
+    _tag: "Op" as const,
+  }) as unknown as Op<TOut, EOut, A>;
+  return out;
+};
+
 export const withReleaseOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   release: ReleaseFn<T>,
 ): Op<T, E, A> => {
-  if (Symbol.iterator in op) {
-    return withCleanupNullaryOp(op, release) as never;
-  }
-
-  const g = (...args: A) => withCleanupNullaryOp(op(...args) as never, release);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => withReleaseOp(op.withRetry(policy), release),
-    withTimeout: (timeoutMs: number) => withReleaseOp(op.withTimeout(timeoutMs), release),
-    withSignal: (signal: AbortSignal) => withReleaseOp(op.withSignal(signal), release),
-    withRelease: (nextRelease: ReleaseFn<T>) => withReleaseOp(out as never, nextRelease),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => withCleanupNullaryOp(resolved, release),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => withReleaseOp(source.withRetry(policy), release),
+      withTimeout: (timeoutMs: number) => withReleaseOp(source.withTimeout(timeoutMs), release),
+      withSignal: (signal: AbortSignal) => withReleaseOp(source.withSignal(signal), release),
+      withRelease: (nextRelease: ReleaseFn<T>) => withReleaseOp(getSelf(), nextRelease),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const onExitOp = <T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   finalize: ExitFn,
 ): Op<T, E, A> => {
-  if (Symbol.iterator in op) {
-    return onExitNullaryOp(op, finalize) as never;
-  }
-
-  const g = (...args: A) => onExitNullaryOp(op(...args) as never, finalize);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => onExitOp(op.withRetry(policy), finalize),
-    withTimeout: (timeoutMs: number) => onExitOp(op.withTimeout(timeoutMs), finalize),
-    withSignal: (signal: AbortSignal) => onExitOp(op.withSignal(signal), finalize),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out as never, release),
-    onExit: (nextFinalize: ExitFn) => onExitOp(out as never, nextFinalize),
-    map: <U>(transform: (value: T) => U) => mapOp(out as never, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out as never, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => onExitNullaryOp(resolved, finalize),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => onExitOp(source.withRetry(policy), finalize),
+      withTimeout: (timeoutMs: number) => onExitOp(source.withTimeout(timeoutMs), finalize),
+      withSignal: (signal: AbortSignal) => onExitOp(source.withSignal(signal), finalize),
+      withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
+      onExit: (nextFinalize: ExitFn) => onExitOp(getSelf(), nextFinalize),
+    }),
+  );
 };
 
 export const mapOp = <T, E, A extends readonly unknown[], U>(
   op: Op<T, E, A>,
   transform: (value: T) => U,
 ): Op<Awaited<U>, E, A> => {
-  if (Symbol.iterator in op) {
-    return mapNullaryOp(op, transform) as never;
-  }
-
-  const g = (...args: A) => mapNullaryOp(op(...args) as never, transform);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => mapOp(op.withRetry(policy), transform),
-    withTimeout: (timeoutMs: number) => mapOp(op.withTimeout(timeoutMs), transform),
-    withSignal: (signal: AbortSignal) => mapOp(op.withSignal(signal), transform),
-    withRelease: (release: ReleaseFn<Awaited<U>>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U2>(next: (value: Awaited<U>) => U2) => mapOp(out as never, next),
-    mapErr: <E2>(next: (error: E) => E2) => mapErrOp(out as never, next),
-    flatMap: <U2, E2>(bind: (value: Awaited<U>) => Op<U2, E2, readonly []>) =>
-      flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: Awaited<U>) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => mapNullaryOp(resolved, transform),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => mapOp(source.withRetry(policy), transform),
+      withTimeout: (timeoutMs: number) => mapOp(source.withTimeout(timeoutMs), transform),
+      withSignal: (signal: AbortSignal) => mapOp(source.withSignal(signal), transform),
+      withRelease: (release: ReleaseFn<Awaited<U>>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const mapErrOp = <T, E, A extends readonly unknown[], E2>(
   op: Op<T, E, A>,
   transform: (error: E) => E2,
 ): Op<T, E2, A> => {
-  if (Symbol.iterator in op) {
-    return mapErrNullaryOp(op, transform) as never;
-  }
-
-  const g = (...args: A) => mapErrNullaryOp(op(...args) as never, transform);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => mapErrOp(op.withRetry(policy), transform),
-    withTimeout: (timeoutMs: number) =>
-      mapErrOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) =>
-        error instanceof TimeoutError ? error : transform(error),
-      ),
-    withSignal: (signal: AbortSignal) => mapErrOp(op.withSignal(signal), transform),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U>(next: (value: T) => U) => mapOp(out as never, next),
-    mapErr: <E3>(next: (error: E2) => E3) => mapErrOp(out as never, next),
-    flatMap: <U, E3>(bind: (value: T) => Op<U, E3, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E2) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: E2) => boolean, handler: (error: E2) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => mapErrNullaryOp(resolved, transform),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => mapErrOp(source.withRetry(policy), transform),
+      withTimeout: (timeoutMs: number) =>
+        mapErrOp(source.withTimeout(timeoutMs), (error: E | TimeoutError) =>
+          error instanceof TimeoutError ? error : transform(error),
+        ),
+      withSignal: (signal: AbortSignal) => mapErrOp(source.withSignal(signal), transform),
+      withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
   op: Op<T, E, A>,
   bind: (value: T) => Op<U, E2, readonly []>,
 ): Op<U, E | E2, A> => {
-  if (Symbol.iterator in op) {
-    return flatMapNullaryOp(op, bind) as never;
-  }
-
-  const g = (...args: A) => flatMapNullaryOp(op(...args) as never, bind);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => flatMapOp(op.withRetry(policy), bind),
-    withTimeout: (timeoutMs: number) => flatMapOp(op.withTimeout(timeoutMs), bind),
-    withSignal: (signal: AbortSignal) => flatMapOp(op.withSignal(signal), bind),
-    withRelease: (release: ReleaseFn<U>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U2>(transform: (value: U) => U2) => mapOp(out as never, transform),
-    mapErr: <E3>(transform: (error: E | E2) => E3) => mapErrOp(out as never, transform),
-    flatMap: <U2, E3>(nextBind: (value: U) => Op<U2, E3, readonly []>) =>
-      flatMapOp(out as never, nextBind),
-    tap: <R>(observe: (value: U) => R) => tapOp(out as never, observe),
-    tapErr: <R>(observe: (error: E | E2) => R) => tapErrOp(out as never, observe),
-    recover: <R>(predicate: (error: E | E2) => boolean, handler: (error: E | E2) => R) =>
-      recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => flatMapNullaryOp(resolved, bind),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => flatMapOp(source.withRetry(policy), bind),
+      withTimeout: (timeoutMs: number) => flatMapOp(source.withTimeout(timeoutMs), bind),
+      withSignal: (signal: AbortSignal) => flatMapOp(source.withSignal(signal), bind),
+      withRelease: (release: ReleaseFn<U>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const tapOp = <T, E, A extends readonly unknown[], R>(
   op: Op<T, E, A>,
   observe: (value: T) => R,
 ): Op<T, E | TapError<R>, A> => {
-  if (Symbol.iterator in op) {
-    return tapNullaryOp(op, observe) as never;
-  }
-
-  const g = (...args: A) => tapNullaryOp(op(...args) as never, observe);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => tapOp(op.withRetry(policy), observe),
-    withTimeout: (timeoutMs: number) => tapOp(op.withTimeout(timeoutMs), observe),
-    withSignal: (signal: AbortSignal) => tapOp(op.withSignal(signal), observe),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U>(next: (value: T) => U) => mapOp(out as never, next),
-    mapErr: <E2>(next: (error: E | TapError<R>) => E2) => mapErrOp(out as never, next),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R2>(nextObserve: (value: T) => R2) => tapOp(out as never, nextObserve),
-    tapErr: <R2>(nextObserve: (error: E | TapError<R>) => R2) =>
-      tapErrOp(out as never, nextObserve),
-    recover: <R2>(
-      predicate: (error: E | TapError<R>) => boolean,
-      handler: (error: E | TapError<R>) => R2,
-    ) => recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => tapNullaryOp(resolved, observe),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => tapOp(source.withRetry(policy), observe),
+      withTimeout: (timeoutMs: number) => tapOp(source.withTimeout(timeoutMs), observe),
+      withSignal: (signal: AbortSignal) => tapOp(source.withSignal(signal), observe),
+      withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const tapErrOp = <T, E, A extends readonly unknown[], R>(
   op: Op<T, E, A>,
   observe: (error: E) => R,
 ): Op<T, E | TapError<R>, A> => {
-  if (Symbol.iterator in op) {
-    return tapErrNullaryOp(op, observe) as never;
-  }
-
-  const g = (...args: A) => tapErrNullaryOp(op(...args) as never, observe);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => tapErrOp(op.withRetry(policy), observe),
-    withTimeout: (timeoutMs: number) =>
-      tapErrOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) => {
-        if (!(error instanceof TimeoutError)) {
-          return observe(error);
-        }
-      }),
-    withSignal: (signal: AbortSignal) => tapErrOp(op.withSignal(signal), observe),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U>(next: (value: T) => U) => mapOp(out as never, next),
-    mapErr: <E2>(next: (error: E | TapError<R>) => E2) => mapErrOp(out as never, next),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out as never, bind),
-    tap: <R2>(nextObserve: (value: T) => R2) => tapOp(out as never, nextObserve),
-    tapErr: <R2>(nextObserve: (error: E | TapError<R>) => R2) =>
-      tapErrOp(out as never, nextObserve),
-    recover: <R2>(
-      predicate: (error: E | TapError<R>) => boolean,
-      handler: (error: E | TapError<R>) => R2,
-    ) => recoverOp(out as never, predicate, handler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => tapErrNullaryOp(resolved, observe),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => tapErrOp(source.withRetry(policy), observe),
+      withTimeout: (timeoutMs: number) =>
+        tapErrOp(source.withTimeout(timeoutMs), (error: E | TimeoutError) => {
+          if (!(error instanceof TimeoutError)) {
+            return observe(error);
+          }
+        }),
+      withSignal: (signal: AbortSignal) => tapErrOp(source.withSignal(signal), observe),
+      withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
 
 export const recoverOp = <T, E, A extends readonly unknown[], R>(
@@ -854,34 +812,20 @@ export const recoverOp = <T, E, A extends readonly unknown[], R>(
   predicate: (error: E) => boolean,
   handler: (error: E) => R,
 ): Op<T | RecoverValue<R>, E | RecoverError<R>, A> => {
-  if (Symbol.iterator in op) {
-    return recoverNullaryOp(op, predicate, handler) as never;
-  }
-
-  const g = (...args: A) => recoverNullaryOp(op(...args) as never, predicate, handler);
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => recoverOp(op.withRetry(policy), predicate, handler),
-    withTimeout: (timeoutMs: number) =>
-      recoverOp(
-        op.withTimeout(timeoutMs),
-        (error: E | TimeoutError) => !(error instanceof TimeoutError) && predicate(error),
-        handler as (error: E | TimeoutError) => R,
-      ),
-    withSignal: (signal: AbortSignal) => recoverOp(op.withSignal(signal), predicate, handler),
-    withRelease: (release: ReleaseFn<T | RecoverValue<R>>) => withReleaseOp(out as never, release),
-    onExit: (finalize: ExitFn) => onExitOp(out as never, finalize),
-    map: <U>(next: (value: T | RecoverValue<R>) => U) => mapOp(out as never, next),
-    mapErr: <E2>(next: (error: E | RecoverError<R>) => E2) => mapErrOp(out as never, next),
-    flatMap: <U, E2>(bind: (value: T | RecoverValue<R>) => Op<U, E2, readonly []>) =>
-      flatMapOp(out as never, bind),
-    tap: <R2>(observe: (value: T | RecoverValue<R>) => R2) => tapOp(out as never, observe),
-    tapErr: <R2>(observe: (error: E | RecoverError<R>) => R2) => tapErrOp(out as never, observe),
-    recover: <R2>(
-      nextPredicate: (error: E | RecoverError<R>) => boolean,
-      nextHandler: (error: E | RecoverError<R>) => R2,
-    ) => recoverOp(out as never, nextPredicate, nextHandler),
-    _tag: "Op" as const,
-  });
-  return out as never;
+  return liftArityOp(
+    op,
+    (resolved) => recoverNullaryOp(resolved, predicate, handler),
+    (source, getSelf) => ({
+      withRetry: (policy?: RetryPolicy) => recoverOp(source.withRetry(policy), predicate, handler),
+      withTimeout: (timeoutMs: number) =>
+        recoverOp(
+          source.withTimeout(timeoutMs),
+          (error: E | TimeoutError) => !(error instanceof TimeoutError) && predicate(error),
+          handler as (error: E | TimeoutError) => R,
+        ),
+      withSignal: (signal: AbortSignal) => recoverOp(source.withSignal(signal), predicate, handler),
+      withRelease: (release: ReleaseFn<T | RecoverValue<R>>) => withReleaseOp(getSelf(), release),
+      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+    }),
+  );
 };
