@@ -6,6 +6,8 @@ import { ErrorGroup, TimeoutError, UnreachableError } from "./errors.js";
 
 export * from "better-result";
 
+const empty: _Op<void, never, readonly []> = succeed(undefined);
+
 export const Op = Object.assign(fromGenFn, {
   _tag: "OpFactory" as const,
   run: runOp,
@@ -17,9 +19,7 @@ export const Op = Object.assign(fromGenFn, {
   settle: settleOp,
   any: anyOp,
   race: raceOp,
-  get empty(): Op<void, never, readonly []> {
-    return succeed(undefined);
-  },
+  empty,
 });
 
 /**
