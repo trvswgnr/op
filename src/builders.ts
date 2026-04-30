@@ -78,7 +78,7 @@ export const _try = <T, E = UnhandledException>(
             .then(
               (a) => ok(a),
               (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
-            ) as Promise<Result<T, E>>,
+            ),
       }) as Result<T, E>;
       if (result.isErr()) {
         yield result;
@@ -146,7 +146,7 @@ export const fromGenFn: FromGenFn = (
 
   if (f.length === 0) {
     // `FromGenFn` has an explicit zero-arg overload, but TS does not narrow on `f.length`.
-    return makeBoundOp() as Op<unknown, unknown, []>;
+    return makeBoundOp();
   }
 
   return makeArityOp<unknown, unknown, readonly unknown[]>((...args) => makeBoundOp(...args));
