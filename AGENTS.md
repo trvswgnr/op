@@ -18,7 +18,7 @@
 - Wants `npm run check` run after completing work, before considering anything "done".
 - Does not want GitHub issues moved to `Done` without explicit approval first.
 - Does not want `try/finally` patterns used in this codebase; prefers fluent/compositional alternatives.
-- Prefers cleanup naming split: `withRelease` for value-scoped cleanup and `onExit` for unconditional finalization.
+- Prefers hard-cutover transitions, not gradual deprecations and migrations (this project is in alpha, so intentional breaking changes are acceptable)
 
 ## Learned Workspace Facts
 
