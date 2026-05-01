@@ -350,7 +350,7 @@ export const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
 ): Op<T, E, readonly []> => {
-  let self!: Op<T, E, readonly []>;
+  let self: Op<T, E, readonly []>;
   const state = {
     [Symbol.iterator]: gen,
     run: () => runOp(self),
@@ -370,7 +370,7 @@ export const makeNullaryOp = <T, E>(
     _tag: "Op" as const,
   };
   const callable = (() => state) as () => OpBase<T, E>;
-  self = Object.assign(callable, state) as unknown as Op<T, E, readonly []>;
+  self = Object.assign(callable, state) as Op<T, E, readonly []>;
   return self;
 };
 
@@ -733,7 +733,7 @@ const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
     return mapNullary(op) as unknown as Op<TOut, EOut, A>;
   }
 
-  let out!: Op<TOut, EOut, A>;
+  let out: Op<TOut, EOut, A>;
   const source = op as OpArity<TIn, EIn, A>;
   const g = (...args: A) => mapNullary(source(...args));
   const handlers = makeHandlers(source, () => out);

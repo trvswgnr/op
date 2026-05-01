@@ -25,15 +25,14 @@ import { err, ok, type Result } from "./result.js";
 /**
  * Lifts a value into an operation that always completes successfully.
  */
-export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
+export const succeed = <T>(value: Awaited<T> | Promise<T>): Op<Awaited<T>, never, []> => {
   if (value instanceof Promise) {
     return _try(() => value);
   }
 
-  let op!: Op<Awaited<T>, never, readonly []>;
-  op = makeNullaryOp<Awaited<T>, never>(
-    function* (): Generator<Instruction<never>, Awaited<T>, unknown> {
-      return value as Awaited<T>;
+  const op: Op<Awaited<T>, never, readonly []> = makeNullaryOp(
+    function* () {
+      return value;
     },
     {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
@@ -50,9 +49,8 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
  * Lifts a value into an operation that always fails.
  */
 export const fail = <E>(value: E): Op<never, E, readonly []> => {
-  let op!: Op<never, E, readonly []>;
-  op = makeNullaryOp<never, E>(
-    function* (): Generator<Instruction<E>, never, unknown> {
+  const op: Op<never, E, readonly []> = makeNullaryOp(
+    function* () {
       return yield* err(value);
     },
     {
@@ -72,9 +70,8 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**.
  */
 export const defer = (finalize: AnyExitFn): Op<void, never, readonly []> => {
-  let op!: Op<void, never, readonly []>;
-  op = makeNullaryOp<void, never>(
-    function* (): Generator<Instruction<never>, void, unknown> {
+  const op: Op<void, never, readonly []> = makeNullaryOp(
+    function* () {
       yield {
         _tag: "RegisterCleanup" as const,
         finalize: (ctx) => Promise.resolve(finalize(ctx)).then(() => {}),
@@ -98,9 +95,8 @@ export const _try = <T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
 ): Op<Awaited<T>, E, readonly []> => {
-  let op!: Op<Awaited<T>, E, readonly []>;
-  op = makeNullaryOp<Awaited<T>, E>(
-    function* (): Generator<Instruction<E>, Awaited<T>, unknown> {
+  const op: Op<Awaited<T>, E, readonly []> = makeNullaryOp(
+    function* () {
       const result = (yield {
         _tag: "Suspended" as const,
         suspend: (signal: AbortSignal) =>
@@ -167,8 +163,7 @@ export const fromGenFn: FromGenFn = (
   f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
 ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> => {
   const makeBoundOp = (...args: unknown[]): Op<unknown, unknown, readonly []> => {
-    let bound!: Op<unknown, unknown, readonly []>;
-    bound = makeNullaryOp<unknown, unknown>(() => f(...args), {
+    const bound: Op<unknown, unknown, readonly []> = makeNullaryOp(() => f(...args), {
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),

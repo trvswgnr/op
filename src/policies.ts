@@ -107,8 +107,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
 const makePolicyNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
 ): Op<T, E, readonly []> => {
-  let self!: Op<T, E, readonly []>;
-  self = makeNullaryOp(gen, {
+  const self: Op<T, E, readonly []> = makeNullaryOp(gen, {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
