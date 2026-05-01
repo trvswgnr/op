@@ -1,7 +1,13 @@
 import { defer, fail, fromGenFn, succeed, _try } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { ErrorGroup, TimeoutError } from "./errors.js";
-import { type Op as _Op, runOp } from "./core.js";
+import {
+  type AnyExitFn,
+  type ExitContext,
+  type Op as _Op,
+  type OpLifecycleHook,
+} from "./core/types.js";
+import { runOp } from "./core/run-op.js";
 import { exponentialBackoff } from "./policies.js";
 export {
   Err,
@@ -58,6 +64,6 @@ export const Op = Object.assign(fromGenFn, {
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 
-export type { AnyExitFn, ExitContext, OpLifecycleHook } from "./core.js";
+export type { AnyExitFn, ExitContext, OpLifecycleHook };
 
 export { TimeoutError, ErrorGroup, exponentialBackoff };

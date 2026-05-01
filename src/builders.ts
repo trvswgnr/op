@@ -1,20 +1,17 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
+import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
 import {
-  makeFluentArityOp,
-  makeNullaryOp,
-  onExitOp,
-  onOp,
-  withReleaseOp,
   type AnyExitFn,
   type ExitFn,
-  type OpLifecycleHook,
   type FromGenFn,
   type Instruction,
   type Op,
+  type OpLifecycleHook,
   type ReleaseFn,
-} from "./core.js";
+} from "./core/types.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
+import { makeNullaryOp } from "./core/nullary-ops.js";
 
 /**
  * Lifts a value into an operation that always completes successfully.

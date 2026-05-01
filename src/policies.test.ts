@@ -1,6 +1,6 @@
 import { describe, expect, test, assert, expectTypeOf, vi } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
-import type { Op } from "./core.js";
+import type { Op } from "./core/types.js";
 import type { Result } from "./result.js";
 import { TimeoutError, UnhandledException, TaggedError } from "./errors.js";
 import type { RetryPolicy } from "./policies.js";

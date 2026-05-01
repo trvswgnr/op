@@ -1,7 +1,7 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
 import { TimeoutError, UnhandledException, TaggedError } from "./errors.js";
-import type { Op } from "./core.js";
+import type { Op } from "./core/types.js";
 import type { Result } from "./result.js";
 
 describe("succeed", () => {

@@ -1,16 +1,10 @@
 import { ErrorGroup, UnhandledException } from "./errors.js";
-import {
-  drive,
-  makeNullaryOp,
-  onExitOp,
-  type Instruction,
-  type Op,
-  type ExitFn,
-  type ReleaseFn,
-  withReleaseOp,
-} from "./core.js";
+import { type Instruction, type Op, type ExitFn, type ReleaseFn } from "./core/types.js";
+import { drive } from "./core/runtime.js";
+import { onExitOp, withReleaseOp } from "./core/arity-ops.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
+import { makeNullaryOp } from "./core/nullary-ops.js";
 
 type NullaryOp = Op<unknown, unknown, readonly []>;
 type SuccessOf<O> = O extends Op<infer T, unknown, readonly []> ? T : never;

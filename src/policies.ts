@@ -1,19 +1,16 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { err, type Result } from "./result.js";
+import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
 import {
   type ExitFn,
   type Instruction,
-  type OpLifecycleHook,
   type Op,
   type OpArity,
+  type OpLifecycleHook,
   type ReleaseFn,
-  drive,
-  makeFluentArityOp,
-  makeNullaryOp,
-  onExitOp,
-  onOp,
-  withReleaseOp,
-} from "./core.js";
+} from "./core/types.js";
+import { drive } from "./core/runtime.js";
+import { makeNullaryOp } from "./core/nullary-ops.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {
