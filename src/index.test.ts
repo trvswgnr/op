@@ -1027,6 +1027,67 @@ describe("public API (index)", () => {
       }
     });
 
+    test("Op generator stays deterministic across arg tuple forms", async () => {
+      type InferOpArgs<T> = T extends Op<unknown, unknown, infer A> ? A : never;
+
+      const op1 = Op(function* (a: number, b: number) {
+        return a + b;
+      });
+      expect(Symbol.iterator in op1).toBe(false);
+      expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<readonly [a: number, b: number]>();
+      await expect(op1.run(1, 2)).resolves.toMatchObject({ value: 3 });
+
+      const op2 = Op(function* () {
+        return 1;
+      });
+      expect(Symbol.iterator in op2).toBe(false); // fromGenFn always returns an arity wrapper
+      type Op2Args = InferOpArgs<typeof op2>;
+      expectTypeOf<Op2Args>().toEqualTypeOf<[]>();
+      await expect(op2.run()).resolves.toMatchObject({ value: 1 });
+
+      const op3 = Op(function* (a?: number) {
+        return (a ?? 0) * 2;
+      });
+      expect(Symbol.iterator in op3).toBe(false);
+      expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<readonly [a?: number]>();
+      await expect(op3.run()).resolves.toMatchObject({ value: 0 });
+      await expect(op3.run(1)).resolves.toMatchObject({ value: 2 });
+
+      const op4 = Op(function* (a: number, b?: number) {
+        return (a + (b ?? 0)) * 2;
+      });
+      expect(Symbol.iterator in op4).toBe(false);
+      expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<readonly [a: number, b?: number]>();
+      await expect(op4.run(1)).resolves.toMatchObject({ value: 2 });
+      await expect(op4.run(1, 2)).resolves.toMatchObject({ value: 6 });
+
+      const op5 = Op(function* (a: number = 1) {
+        return a * 2;
+      });
+      expect(Symbol.iterator in op5).toBe(false);
+      expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<readonly [a?: number]>();
+      await expect(op5.run()).resolves.toMatchObject({ value: 2 });
+      await expect(op5.run(3)).resolves.toMatchObject({ value: 6 });
+
+      const op6 = Op(function* (...args: readonly [a: number, b: number]) {
+        return args.reduce((acc, curr) => acc + curr, 0);
+      });
+      expect(Symbol.iterator in op6).toBe(false);
+      expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<readonly [a: number, b: number]>();
+      await expect(op6.run(1, 2)).resolves.toMatchObject({ value: 3 });
+
+      const wrappedOptional = op3.withRetry();
+      await expect(wrappedOptional.run()).resolves.toMatchObject({ value: 0 });
+      await expect(wrappedOptional(5).run()).resolves.toMatchObject({ value: 10 });
+
+      const wrappedDefault = op5.withTimeout(100);
+      expectTypeOf(wrappedDefault).toEqualTypeOf<Op<number, TimeoutError, readonly [a?: number]>>();
+      await expect(wrappedDefault.run()).resolves.toMatchObject({ value: 2 });
+      const wrappedDefaultNullary = wrappedDefault(4);
+      expectTypeOf(wrappedDefaultNullary).toEqualTypeOf<Op<number, TimeoutError, readonly []>>();
+      await expect(wrappedDefaultNullary.run()).resolves.toMatchObject({ value: 8 });
+    });
+
     describe("generator finalization on early exit", () => {
       test("runs finally when the body yields an Err instruction", async () => {
         const events: string[] = [];

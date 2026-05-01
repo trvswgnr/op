@@ -10,7 +10,7 @@ import {
   type ReleaseFn,
 } from "./core/types.js";
 import { drive } from "./core/runtime.js";
-import { makeNullaryOp } from "./core/nullary-ops.js";
+import { isNullaryOp, makeNullaryOp } from "./core/nullary-ops.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {
@@ -66,7 +66,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   op: Op<T, EIn, A>,
   mapNullary: (resolved: Op<T, EIn, readonly []>) => Op<T, EOut, readonly []>,
 ): Op<T, EOut, A> => {
-  if (Symbol.iterator in op) {
+  if (isNullaryOp(op)) {
     // TS cannot express that `[] extends A` may collapse to the nullary branch here.
     // Runtime behavior is correct: nullary input remains nullary after mapping.
     return mapNullary(op) as unknown as Op<T, EOut, A>;

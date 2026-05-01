@@ -3,14 +3,13 @@ import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-o
 import {
   type AnyExitFn,
   type ExitFn,
-  type FromGenFn,
   type Instruction,
   type Op,
   type OpLifecycleHook,
   type ReleaseFn,
 } from "./core/types.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { err, ok, type Result } from "./result.js";
+import { err, ExtractErr, ok, type Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
 /**
@@ -133,26 +132,13 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
   }));
 };
 
-export const hasParams = (f: (...args: unknown[]) => unknown): boolean => {
-  if (typeof f !== "function") throw new TypeError("Expected a function");
-  if (f.length > 0) return true;
-  const source = Function.prototype.toString.call(f);
-  const firstParen = source.indexOf("(");
-  const secondParen = source.indexOf(")", firstParen + 1);
-  return (
-    firstParen >= 0 &&
-    secondParen > firstParen + 1 &&
-    source.slice(firstParen + 1, secondParen).trim() !== ""
-  );
-};
-
 /**
  * Turns a generator function into an {@link Op}.
  */
-export const fromGenFn: FromGenFn = (
-  f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
-): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]> => {
-  const makeBoundOp = (...args: unknown[]): Op<unknown, unknown, readonly []> => {
+export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
+  f: (...args: A) => Generator<Y, T, unknown>,
+): Op<T, ExtractErr<Y>, Readonly<A>> => {
+  const makeBoundOp = (...args: A) => {
     const bound: Op<unknown, unknown, readonly []> = makeNullaryOp(() => f(...args), {
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
@@ -163,10 +149,8 @@ export const fromGenFn: FromGenFn = (
     return bound;
   };
 
-  // keep true nullary generator functions as nullary ops
-  if (!hasParams(f)) {
-    return makeBoundOp();
-  }
-
-  return makeArityOp<unknown, unknown, readonly unknown[]>((...args) => makeBoundOp(...args));
+  // we are intentionally always returning the arity wrapper shape, including for `A = []` generators.
+  // this keeps arity/nullary classification deterministic via explicit op kind metadata
+  // instead of runtime function reflection or shape guessing in correctness paths
+  return makeArityOp<T, ExtractErr<Y>, A>((...args) => makeBoundOp(...args) as never);
 };

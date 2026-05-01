@@ -1,5 +1,5 @@
 import type { TimeoutError, UnhandledException } from "../errors.js";
-import type { Err, ExtractErr, Result } from "../result.js";
+import type { Err, Result } from "../result.js";
 import type { RetryPolicy } from "../policies.js";
 import type { Tagged } from "../tagged.js";
 
@@ -106,17 +106,17 @@ export interface OpBase<T, E> {
 export interface OpNullary<T, E>
   extends
     OpBase<T, E>,
-    WithRetry<T, E, []>,
-    WithTimeout<T, E, []>,
-    WithSignal<T, E, []>,
-    WithRelease<T, E, []>,
-    WithLifecycleHooks<T, E, []>,
-    WithMap<T, E, []>,
-    WithMapErr<T, E, []>,
-    WithFlatMap<T, E, []>,
-    WithTap<T, E, []>,
-    WithTapErr<T, E, []>,
-    WithRecover<T, E, []> {
+    WithRetry<T, E, readonly []>,
+    WithTimeout<T, E, readonly []>,
+    WithSignal<T, E, readonly []>,
+    WithRelease<T, E, readonly []>,
+    WithLifecycleHooks<T, E, readonly []>,
+    WithMap<T, E, readonly []>,
+    WithMapErr<T, E, readonly []>,
+    WithFlatMap<T, E, readonly []>,
+    WithTap<T, E, readonly []>,
+    WithTapErr<T, E, readonly []>,
+    WithRecover<T, E, readonly []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnhandledException>>;
 }
@@ -134,24 +134,14 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithTap<T, E, A>,
     WithTapErr<T, E, A>,
     WithRecover<T, E, A> {
-  (...args: A): OpNullary<T, E>;
+  (...args: A): Op<T, E, readonly []>;
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
 
-type _Op<T, E, A extends readonly unknown[]> = A extends readonly []
+export type Op<T, E, A extends readonly unknown[]> = (A extends readonly []
   ? OpNullary<T, E>
-  : OpArity<T, E, A>;
-
-export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Tagged<"Op">;
-
-export interface FromGenFn {
-  <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
-    f: (...args: A) => Generator<Y, T, unknown>,
-  ): Op<T, ExtractErr<Y>, A extends readonly [] ? readonly [] : A>;
-  (
-    f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
-  ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
-}
+  : OpArity<T, E, A>) &
+  Tagged<"Op">;
 
 export interface OpHooks<T, E> {
   withRetry: (policy?: RetryPolicy) => Op<T, E, readonly []>;

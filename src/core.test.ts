@@ -4,8 +4,6 @@ import { UnhandledException } from "./errors.js";
 import { isNullaryOp } from "./core/nullary-ops.js";
 import { Op } from "./core/types.js";
 
-type InferOpArgs<T> = T extends Op<unknown, unknown, infer A> ? A : never;
-
 describe("op.run", () => {
   test("sync op completes without awaiting", async () => {
     const result = await succeed("sync").run();
@@ -96,46 +94,75 @@ describe("op.run", () => {
 });
 
 describe("edge cases and invariants", () => {
-  test("fromGenFn handles arity correctly", async () => {
+  test("only nullary ops are directly iterable", () => {
+    const nullary = succeed(1);
+    const arity = fromGenFn(function* (a: number) {
+      return a;
+    });
+
+    expect(isNullaryOp(nullary)).toBe(true);
+    expect(Symbol.iterator in nullary).toBe(true);
+
+    expect(isNullaryOp(arity)).toBe(false);
+    expect(Symbol.iterator in arity).toBe(false);
+  });
+
+  test("fromGenFn stays deterministic across arg tuple forms", async () => {
+    type InferOpArgs<T> = T extends Op<unknown, unknown, infer A> ? A : never;
+
     const op1 = fromGenFn(function* (a: number, b: number) {
       return a + b;
     });
     expect(isNullaryOp(op1)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<[a: number, b: number]>();
+    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<readonly [a: number, b: number]>();
+    await expect(op1.run(1, 2)).resolves.toMatchObject({ value: 3 });
 
     const op2 = fromGenFn(function* () {
       return 1;
     });
-    expect(isNullaryOp(op2)).toBe(true);
+    expect(isNullaryOp(op2)).toBe(false); // fromGenFn always returns an arity wrapper
     expectTypeOf<InferOpArgs<typeof op2>>().toEqualTypeOf<readonly []>();
+    await expect(op2.run()).resolves.toMatchObject({ value: 1 });
 
     const op3 = fromGenFn(function* (a?: number) {
       return (a ?? 0) * 2;
     });
     expect(isNullaryOp(op3)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<[a?: number]>();
-    op3.run(1);
+    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<readonly [a?: number]>();
+    await expect(op3.run()).resolves.toMatchObject({ value: 0 });
+    await expect(op3.run(1)).resolves.toMatchObject({ value: 2 });
 
     const op4 = fromGenFn(function* (a: number, b?: number) {
       return (a + (b ?? 0)) * 2;
     });
     expect(isNullaryOp(op4)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<[a: number, b?: number]>();
-    op4.run(1, 2);
+    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<readonly [a: number, b?: number]>();
+    await expect(op4.run(1)).resolves.toMatchObject({ value: 2 });
+    await expect(op4.run(1, 2)).resolves.toMatchObject({ value: 6 });
 
     const op5 = fromGenFn(function* (a: number = 1) {
       return a * 2;
     });
     expect(isNullaryOp(op5)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<[a?: number]>();
-    op5.run(1);
+    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<readonly [a?: number]>();
+    await expect(op5.run()).resolves.toMatchObject({ value: 2 });
+    await expect(op5.run(3)).resolves.toMatchObject({ value: 6 });
 
     const op6 = fromGenFn(function* (...args: readonly [a: number, b: number]) {
       return args.reduce((acc, curr) => acc + curr, 0);
     });
     expect(isNullaryOp(op6)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<[a: number, b: number]>();
-    op6.run(1, 2);
+    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<readonly [a: number, b: number]>();
+    await expect(op6.run(1, 2)).resolves.toMatchObject({ value: 3 });
+
+    const wrappedOptional = op3.withRetry();
+    await expect(wrappedOptional.run()).resolves.toMatchObject({ value: 0 });
+    await expect(wrappedOptional(5).run()).resolves.toMatchObject({ value: 10 });
+
+    const wrappedDefault = op5.withTimeout(100);
+    await expect(wrappedDefault.run()).resolves.toMatchObject({ value: 2 });
+    const wrappedDefaultNullary = wrappedDefault(4);
+    await expect(wrappedDefaultNullary.run()).resolves.toMatchObject({ value: 8 });
   });
   test("Ok result has correct shape", async () => {
     const result = await succeed(1).run();

@@ -13,6 +13,7 @@ import type {
 import { drive } from "./runtime.js";
 import {
   flatMapNullaryOp,
+  isNullaryOp,
   mapErrNullaryOp,
   mapNullaryOp,
   onExitNullaryOp,
@@ -37,6 +38,7 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
   let self: Op<T, E, A>;
   const handlers = () => makeHandlers(self);
   self = Object.assign(invoke, {
+    _opKind: "arity" as const,
     run: (...args: A) => drive(invoke(...args), new AbortController().signal),
     withRetry: (policy?: RetryPolicy) => handlers().withRetry(policy),
     withTimeout: (timeoutMs: number) => handlers().withTimeout(timeoutMs),
@@ -63,7 +65,7 @@ const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
     self: Op<TOut, EOut, A>,
   ) => FluentArityHandlers<TOut, EOut, A>,
 ): Op<TOut, EOut, A> => {
-  if (Symbol.iterator in op) {
+  if (isNullaryOp(op)) {
     return mapNullary(op) as unknown as Op<TOut, EOut, A>;
   }
 

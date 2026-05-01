@@ -21,7 +21,11 @@ type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited
 type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
 
 export function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
-  return typeof value === "function" && Symbol.iterator in value;
+  return (
+    typeof value === "function" &&
+    Symbol.iterator in value &&
+    typeof value[Symbol.iterator] === "function"
+  );
 }
 
 const conditionalPredicate = <E>(
