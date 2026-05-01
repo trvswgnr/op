@@ -35,15 +35,13 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
   makeHandlers: (self: Op<T, E, A>) => FluentArityHandlers<T, E, A>,
 ): Op<T, E, A> => {
-  let self: Op<T, E, A>;
-  const handlers = () => makeHandlers(self);
-  self = Object.assign(invoke, {
+  const self: Op<T, E, A> = Object.assign(invoke, {
     run: (...args: A) => drive(invoke(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => handlers().withRetry(policy),
-    withTimeout: (timeoutMs: number) => handlers().withTimeout(timeoutMs),
-    withSignal: (signal: AbortSignal) => handlers().withSignal(signal),
-    withRelease: (release: ReleaseFn<T>) => handlers().withRelease(release),
-    on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) => handlers().on(event, finalize),
+    withRetry: (policy?: RetryPolicy) => makeHandlers(self).withRetry(policy),
+    withTimeout: (timeoutMs: number) => makeHandlers(self).withTimeout(timeoutMs),
+    withSignal: (signal: AbortSignal) => makeHandlers(self).withSignal(signal),
+    withRelease: (release: ReleaseFn<T>) => makeHandlers(self).withRelease(release),
+    on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) => makeHandlers(self).on(event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
@@ -52,6 +50,9 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
       recoverOp(self, predicate, handler),
     _tag: "Op" as const,
+    // TS cannot represent a callable value that is also this exact fluent object shape
+    // without losing the tuple-arg generic `A`; we cast once at construction to preserve
+    // the runtime-correct shape that `drive` and all fluent helpers rely on.
   }) as unknown as Op<T, E, A>;
   return self;
 };
@@ -65,6 +66,8 @@ const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
   ) => FluentArityHandlers<TOut, EOut, A>,
 ): Op<TOut, EOut, A> => {
   if (isNullaryOp(op)) {
+    // TS cannot refine generic `A` to `[]` from this runtime check, even though nullary
+    // ops are guaranteed to satisfy that branch. We cast to preserve the caller's `A`.
     return mapNullary(op) as unknown as Op<TOut, EOut, A>;
   }
 

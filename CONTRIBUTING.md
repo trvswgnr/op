@@ -20,6 +20,11 @@ Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.ym
 
 All examples are consumer-level and live under `examples/*`.
 
+## Type Cast Policy
+
+- Every remaining cast must carry an inline comment describing the concrete TypeScript limitation.
+- Treat casts as a last resort after trying type-level restructuring first.
+
 ## Source Layout
 
 - Public package entrypoint stays at `src/index.ts`.
