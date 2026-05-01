@@ -7,6 +7,9 @@
     "smoke": "node ./smoke.ts",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "valibot": "^1.3.1"
+  },
   "devDependencies": {
     "@types/node": "^24.12.2"
   },

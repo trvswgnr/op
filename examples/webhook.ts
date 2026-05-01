@@ -1,13 +1,5 @@
 import { Op, TaggedError } from "@prodkit/op";
-
-type WebhookPayload = {
-  eventId: string;
-  orderId: string;
-  userId: string;
-  currency: string;
-  totalCents: number;
-  itemSkus: string[];
-};
+import * as v from "valibot";
 
 type InventoryReservation = {
   reservationId: string;
@@ -34,6 +26,16 @@ type PersistedOrder = ProcessedOrder & {
   processedAt: string;
 };
 
+const WebhookPayload = v.object({
+  eventId: v.string(),
+  orderId: v.string(),
+  userId: v.string(),
+  currency: v.string(),
+  totalCents: v.pipe(v.number(), v.finite(), v.integer(), v.minValue(0)),
+  itemSkus: v.array(v.string()),
+});
+type WebhookPayload = v.InferOutput<typeof WebhookPayload>;
+
 export type AppDeps = {
   isDuplicateEvent: (eventId: string, signal: AbortSignal) => Promise<boolean>;
   reserveInventory: (payload: WebhookPayload, signal: AbortSignal) => Promise<InventoryReservation>;
@@ -57,7 +59,6 @@ const retryTransient = {
 
 const BEST_EFFORT_SIDE_EFFECT_CONCURRENCY = 1;
 
-const isString = (value: unknown): value is string => typeof value === "string";
 const formatWarning = (error: unknown): string => {
   if (typeof error === "string") return error;
   if (error instanceof Error) return `${error.name}: ${error.message}`;
@@ -68,35 +69,10 @@ const formatWarning = (error: unknown): string => {
   }
 };
 
-const parseWebhook = (raw: unknown): WebhookPayload | null => {
-  if (typeof raw !== "object" || raw === null) return null;
-  const payload = raw as Record<string, unknown>;
-  if (!isString(payload.eventId)) return null;
-  if (!isString(payload.orderId)) return null;
-  if (!isString(payload.userId)) return null;
-  if (!isString(payload.currency)) return null;
-  if (
-    typeof payload.totalCents !== "number" ||
-    !Number.isFinite(payload.totalCents) ||
-    !Number.isInteger(payload.totalCents) ||
-    payload.totalCents < 0
-  ) {
-    return null;
-  }
-  if (!Array.isArray(payload.itemSkus)) return null;
-  if (payload.itemSkus.some((sku) => !isString(sku))) return null;
-  return {
-    eventId: payload.eventId,
-    orderId: payload.orderId,
-    userId: payload.userId,
-    currency: payload.currency,
-    totalCents: payload.totalCents,
-    itemSkus: payload.itemSkus,
-  };
-};
+type NonEmptyArray<T> = [T, ...T[]];
 
 export class InvalidWebhookError extends TaggedError("InvalidWebhookError")<{
-  issues: string;
+  issues: NonEmptyArray<v.InferIssue<typeof WebhookPayload>>;
 }>() {}
 export class DuplicateEventError extends TaggedError("DuplicateEventError")<{
   eventId: string;
@@ -133,11 +109,11 @@ export class ServiceCallError extends TaggedError("ServiceCallError")<{
 
 export const createApp = (deps: AppDeps) => {
   const parseWebhookPayload = Op(function* (raw: unknown) {
-    const payload = parseWebhook(raw);
-    if (payload === null) {
-      return yield* new InvalidWebhookError({ issues: "Invalid webhook payload shape" });
+    const parsed = v.safeParse(WebhookPayload, raw);
+    if (!parsed.success) {
+      return yield* new InvalidWebhookError({ issues: parsed.issues });
     }
-    return payload;
+    return parsed.output;
   });
 
   const checkDuplicate = Op(function* (eventId: string) {

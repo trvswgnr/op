@@ -227,6 +227,14 @@ const runWebhookExampleSmoke = async () => {
     invalidNegativeCents.isErr() && invalidNegativeCents.error instanceof InvalidWebhookError,
     "negative totalCents validation check failed",
   );
+  if (invalidNegativeCents.isErr() && invalidNegativeCents.error instanceof InvalidWebhookError) {
+    assert(
+      invalidNegativeCents.error.issues.some((issue) =>
+        issue.path?.some((segment) => segment.key === "totalCents"),
+      ),
+      "negative totalCents issue details check failed",
+    );
+  }
 
   const invalidNaNCents = await appWithWarning.processOrderWebhook.run({
     ...webhookPayload,
@@ -236,6 +244,14 @@ const runWebhookExampleSmoke = async () => {
     invalidNaNCents.isErr() && invalidNaNCents.error instanceof InvalidWebhookError,
     "NaN totalCents validation check failed",
   );
+  if (invalidNaNCents.isErr() && invalidNaNCents.error instanceof InvalidWebhookError) {
+    assert(
+      invalidNaNCents.error.issues.some((issue) =>
+        issue.path?.some((segment) => segment.key === "totalCents"),
+      ),
+      "NaN totalCents issue details check failed",
+    );
+  }
 
   let paymentAttempts = 0;
   const retryPaymentApp = createApp(
