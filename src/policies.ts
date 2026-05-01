@@ -8,15 +8,10 @@ import {
   type OpArity,
   type ReleaseFn,
   drive,
-  flatMapOp,
+  makeFluentArityOp,
   makeNullaryOp,
-  mapErrOp,
-  mapOp,
   onExitOp,
   onOp,
-  recoverOp,
-  tapErrOp,
-  tapOp,
   withReleaseOp,
 } from "./core.js";
 
@@ -81,27 +76,16 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   }
 
   const arity = op as OpArity<T, EIn, A>;
-  const g = (...args: A) => mapNullary(arity(...args));
-  const out = Object.assign(g, {
-    run: (...args: A) => drive(g(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => withRetryOp(out, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(out, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(out, signal),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(out, release),
-    on: (event: OpLifecycleHook, finalize: ExitFn<T, EOut>) => onOp(out, event, finalize),
-    map: <U>(transform: (value: T) => U) => mapOp(out, transform),
-    mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out, observe),
-    tapErr: <R>(observe: (error: EOut) => R) => tapErrOp(out, observe),
-    recover: <R>(predicate: (error: EOut) => boolean, handler: (error: EOut) => R) =>
-      recoverOp(out, predicate, handler),
-    _tag: "Op" as const,
-    // TS cannot fully model callable object construction from `Object.assign` with conditional arity.
-    // This cast is safe because `g` is the single execution path for all `A` arguments.
-  }) as unknown as Op<T, EOut, A>;
-
-  return out;
+  return makeFluentArityOp(
+    (...args: A) => mapNullary(arity(...args)),
+    (self) => ({
+      withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
+      withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
+      on: (event: OpLifecycleHook, finalize: ExitFn<T, EOut>) => onOp(self, event, finalize),
+    }),
+  );
 };
 
 const makePolicyNullaryOp = <T, E>(

@@ -1,14 +1,9 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import {
-  flatMapOp,
+  makeFluentArityOp,
   makeNullaryOp,
-  mapErrOp,
-  mapOp,
   onExitOp,
   onOp,
-  recoverOp,
-  tapOp,
-  tapErrOp,
   withReleaseOp,
   type AnyExitFn,
   type ExitFn,
@@ -17,7 +12,6 @@ import {
   type Instruction,
   type Op,
   type ReleaseFn,
-  runOp,
 } from "./core.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ok, type Result } from "./result.js";
@@ -126,8 +120,7 @@ export const _try = <T, E = UnhandledException>(
 const makeArityOp = <T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, readonly []>,
 ): Op<T, E, A> => {
-  const out = Object.assign(invoke, {
-    run: (...args: A) => runOp(invoke(...args)),
+  return makeFluentArityOp(invoke, (_self) => ({
     withRetry: (policy?: RetryPolicy) =>
       makeArityOp<T, E, A>((...args: A) => withRetryOp(invoke(...args), policy)),
     withTimeout: (timeoutMs: number) =>
@@ -140,20 +133,7 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
       makeArityOp<T, E, A>((...args: A) => withReleaseOp(invoke(...args), release)),
     on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) =>
       makeArityOp<T, E, A>((...args: A) => onOp(invoke(...args), event, finalize)),
-    map: <U>(transform: (value: T) => U) => mapOp(out, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(out, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(out, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(out, predicate, handler),
-    _tag: "Op" as const,
-    // TS cannot reconcile the callable signature switch between nullary and arity ops.
-    // This cast is safe because `invoke` always returns a nullary op and every fluent method
-    // delegates back through `makeArityOp`, preserving the same `A`.
-  }) as unknown as Op<T, E, A>;
-
-  return out;
+  }));
 };
 
 /**
