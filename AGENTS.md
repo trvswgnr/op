@@ -19,6 +19,7 @@
 - Does not want GitHub issues moved to `Done` without explicit approval first.
 - Does not want `try/finally` patterns used in this codebase; prefers fluent/compositional alternatives.
 - Prefers hard-cutover transitions, not gradual deprecations and migrations (this project is in alpha, so intentional breaking changes are acceptable)
+- Prefers the library to avoid throws whenever possible (normalize when able, otherwise surface as `Err(UnhandledException)` at run time).
 
 ## Learned Workspace Facts
 

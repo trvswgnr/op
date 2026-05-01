@@ -61,11 +61,29 @@ describe("public API (index)", () => {
       expect(delay).toBeLessThan(1000);
     });
 
-    test("throws an error on invalid options", () => {
-      expect(() => exponentialBackoff({ base: 0, max: 1000, jitter: 0.5 })).toThrow(RangeError);
-      expect(() => exponentialBackoff({ base: 100, max: 0, jitter: 0.5 })).toThrow(RangeError);
-      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: -0.5 })).toThrow(RangeError);
-      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: 1.5 })).toThrow(RangeError);
+    test("normalizes invalid options instead of throwing", () => {
+      expect(() => exponentialBackoff({ base: 0, max: 1000, jitter: 0.5 })).not.toThrow();
+      expect(() => exponentialBackoff({ base: 100, max: 0, jitter: 0.5 })).not.toThrow();
+      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: -0.5 })).not.toThrow();
+      expect(() => exponentialBackoff({ base: 100, max: 1000, jitter: 1.5 })).not.toThrow();
+
+      const baseFallback = exponentialBackoff({ base: 0, max: 1000, jitter: 0 });
+      expect(baseFallback(1)).toBe(1000);
+
+      const maxClampedToBase = exponentialBackoff({ base: 100, max: 0, jitter: 0 });
+      expect(maxClampedToBase(1)).toBe(100);
+      expect(maxClampedToBase(5)).toBe(100);
+
+      const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        const jitterFloor = exponentialBackoff({ base: 100, max: 1000, jitter: -0.5 });
+        expect(jitterFloor(1)).toBe(100);
+
+        const jitterCeiling = exponentialBackoff({ base: 100, max: 1000, jitter: 1.5 });
+        expect(jitterCeiling(1)).toBe(0);
+      } finally {
+        randomSpy.mockRestore();
+      }
     });
   });
   describe("UnhandledException", () => {
@@ -1380,11 +1398,17 @@ describe("Op.all", () => {
     expect(r.value).toEqual([]);
   });
 
-  test.each(invalidConcurrencies)("rejects invalid concurrency %s", (concurrency) => {
-    expect(() => Op.all([Op.of(1)], concurrency)).toThrow(
-      new RangeError("concurrency must be a positive integer"),
-    );
-  });
+  test.each(invalidConcurrencies)(
+    "invalid concurrency %s returns UnhandledException",
+    async (concurrency) => {
+      const r = await Op.all([Op.of(1)], concurrency).run();
+      assert(r.isErr(), "should be Err");
+      expect(r.error).toBeInstanceOf(UnhandledException);
+      if (r.error instanceof UnhandledException) {
+        expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
+      }
+    },
+  );
 
   test("fails fast on first Err and aborts siblings", async () => {
     let siblingAborted = false;
@@ -1534,11 +1558,17 @@ describe("Op.allSettled", () => {
     expect(r.value).toEqual([]);
   });
 
-  test.each(invalidConcurrencies)("rejects invalid concurrency %s", (concurrency) => {
-    expect(() => Op.allSettled([Op.of(1)], concurrency)).toThrow(
-      new RangeError("concurrency must be a positive integer"),
-    );
-  });
+  test.each(invalidConcurrencies)(
+    "invalid concurrency %s returns UnhandledException",
+    async (concurrency) => {
+      const r = await Op.allSettled([Op.of(1)], concurrency).run();
+      assert(r.isErr(), "should be Err");
+      expect(r.error).toBeInstanceOf(UnhandledException);
+      if (r.error instanceof UnhandledException) {
+        expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
+      }
+    },
+  );
 
   test("never fails", async () => {
     const combined = Op.allSettled([Op.fail(1), Op.fail("two" as const)]);

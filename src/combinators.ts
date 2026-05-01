@@ -42,12 +42,17 @@ const fanOut = <T, E>(
   return { runs, controllers, detach };
 };
 
-const concurrencyLimit = (concurrency: number | undefined, size: number): number => {
-  if (concurrency === undefined) return size;
+const concurrencyLimit = (
+  concurrency: number | undefined,
+  size: number,
+): Result<number, UnhandledException> => {
+  if (concurrency === undefined) return ok(size);
   if (!Number.isInteger(concurrency) || concurrency < 1) {
-    throw new RangeError("concurrency must be a positive integer");
+    return err(
+      new UnhandledException({ cause: new RangeError("concurrency must be a positive integer") }),
+    );
   }
-  return Math.min(concurrency, size);
+  return ok(Math.min(concurrency, size));
 };
 
 export const allOp = <const Ops extends readonly NullaryOp[]>(
@@ -55,10 +60,9 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   concurrency?: number,
 ): Op<{ [K in keyof Ops]: SuccessOf<Ops[K]> }, ErrorOf<Ops[number]> | UnhandledException, []> => {
   const snapshot = ops.slice();
-  const limit = concurrencyLimit(concurrency, snapshot.length);
   return makeCombinatorOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal) =>
-      driveAll(snapshot, outerSignal, limit),
+      driveAll(snapshot, outerSignal, concurrency),
     )) as Result<never, never>;
     if (result.isErr()) {
       return yield* err(result.error);
@@ -70,10 +74,13 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
 const driveAll = async <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-  concurrency: number,
+  concurrency: number | undefined,
 ): Promise<Result<T[], E | UnhandledException>> => {
+  const limit = concurrencyLimit(concurrency, ops.length);
+  if (limit.isErr()) return err(limit.error);
+
   if (ops.length === 0) return ok([]);
-  if (concurrency >= ops.length) return driveAllUnbounded(ops, outerSignal);
+  if (limit.value >= ops.length) return driveAllUnbounded(ops, outerSignal);
 
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
@@ -108,7 +115,7 @@ const driveAll = async <T, E>(
   };
 
   try {
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    await Promise.all(Array.from({ length: limit.value }, () => worker()));
   } finally {
     outerSignal.removeEventListener("abort", cascade);
   }
@@ -153,17 +160,23 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   concurrency?: number,
 ): Op<
   { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> },
-  never,
+  UnhandledException,
   []
 > => {
   const snapshot = ops.slice();
-  const limit = concurrencyLimit(concurrency, snapshot.length);
   type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> };
-  return makeCombinatorOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
-    const value = (yield new SuspendInstruction((outerSignal) =>
-      driveAllSettled(snapshot, outerSignal, limit),
-    )) as V;
-    return value;
+  return makeCombinatorOp<V, UnhandledException>(function* (): Generator<
+    Instruction<UnhandledException>,
+    V,
+    unknown
+  > {
+    const result = (yield new SuspendInstruction((outerSignal) =>
+      driveAllSettled(snapshot, outerSignal, concurrency),
+    )) as Result<V, UnhandledException>;
+    if (result.isErr()) {
+      return yield* err(result.error);
+    }
+    return result.value;
   });
 };
 
@@ -182,10 +195,13 @@ export const settleOp = <T, E>(
 const driveAllSettled = async <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-  concurrency: number,
-): Promise<Result<T, E | UnhandledException>[]> => {
-  if (ops.length === 0) return [];
-  if (concurrency >= ops.length) return driveAllSettledUnbounded(ops, outerSignal);
+  concurrency: number | undefined,
+): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> => {
+  const limit = concurrencyLimit(concurrency, ops.length);
+  if (limit.isErr()) return err(limit.error);
+
+  if (ops.length === 0) return ok([]);
+  if (limit.value >= ops.length) return ok(await driveAllSettledUnbounded(ops, outerSignal));
 
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
@@ -212,12 +228,12 @@ const driveAllSettled = async <T, E>(
   };
 
   try {
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    await Promise.all(Array.from({ length: limit.value }, () => worker()));
   } finally {
     outerSignal.removeEventListener("abort", cascade);
   }
 
-  return results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined);
+  return ok(results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined));
 };
 
 const driveAllSettledUnbounded = async <T, E>(

@@ -35,18 +35,33 @@ export interface BackoffOptions {
   jitter: number;
 }
 
+const DEFAULT_BACKOFF_OPTIONS: BackoffOptions = { base: 1_000, max: 30_000, jitter: 1 };
+
+const normalizeBackoffOptions = (opts?: BackoffOptions): BackoffOptions => {
+  const baseCandidate = opts?.base ?? DEFAULT_BACKOFF_OPTIONS.base;
+  const base =
+    Number.isFinite(baseCandidate) && baseCandidate > 0
+      ? baseCandidate
+      : DEFAULT_BACKOFF_OPTIONS.base;
+
+  const maxCandidate = opts?.max ?? DEFAULT_BACKOFF_OPTIONS.max;
+  const max = Number.isFinite(maxCandidate) && maxCandidate >= base ? maxCandidate : base;
+
+  const jitterCandidate = opts?.jitter ?? DEFAULT_BACKOFF_OPTIONS.jitter;
+  const jitter = Number.isFinite(jitterCandidate)
+    ? Math.min(1, Math.max(0, jitterCandidate))
+    : DEFAULT_BACKOFF_OPTIONS.jitter;
+
+  return { base, max, jitter };
+};
+
 /**
  * Creates a delay function for exponential backoff with optional jitter
  * @param opts Options for the backoff function
  * @returns A function that calculates the delay in milliseconds for a given attempt
- * @throws A {@link RangeError} if an option is invalid
  */
 export function exponentialBackoff(opts?: BackoffOptions): (attempt: number) => number {
-  const { base, max, jitter } = opts ?? { base: 1_000, max: 30_000, jitter: 1 };
-
-  if (base <= 0) throw new RangeError("baseMs must be positive");
-  if (max < base) throw new RangeError("maxMs must be >= baseMs");
-  if (jitter < 0 || jitter > 1) throw new RangeError("jitter must be between 0 and 1");
+  const { base, max, jitter } = normalizeBackoffOptions(opts);
 
   return (attempt: number): number => {
     const exp = Math.min(base * Math.pow(2, Math.max(0, attempt - 1)), max);
@@ -55,7 +70,7 @@ export function exponentialBackoff(opts?: BackoffOptions): (attempt: number) => 
     return exp - spread + Math.random() * spread;
   };
 }
-exponentialBackoff.DEFAULT = exponentialBackoff({ base: 1_000, max: 30_000, jitter: 1 });
+exponentialBackoff.DEFAULT = exponentialBackoff(DEFAULT_BACKOFF_OPTIONS);
 
 export const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxAttempts: 3,
