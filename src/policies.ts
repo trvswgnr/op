@@ -88,7 +88,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withTimeout: (timeoutMs: number) => withTimeoutOp(out, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(out, release),
-    on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(out, event, finalize),
+    on: (event: OpLifecycleHook, finalize: ExitFn<T, EOut>) => onOp(out, event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -113,7 +113,7 @@ const makePolicyNullaryOp = <T, E>(
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-    registerExitFinalize: (finalize: ExitFn) => onExitOp(self, finalize),
+    registerExitFinalize: (finalize: ExitFn<T, E>) => onExitOp(self, finalize),
   });
   return self;
 };

@@ -10,6 +10,7 @@ import {
   tapOp,
   tapErrOp,
   withReleaseOp,
+  type AnyExitFn,
   type ExitFn,
   type OpLifecycleHook,
   type FromGenFn,
@@ -39,7 +40,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn<Awaited<T>, never>) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -51,7 +52,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
 export const fail = <E>(value: E): Op<never, E, readonly []> => {
   let op!: Op<never, E, readonly []>;
   op = makeNullaryOp<never, E>(
-    function* () {
+    function* (): Generator<Instruction<E>, never, unknown> {
       return yield* err(value);
     },
     {
@@ -59,24 +60,24 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<never>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn<never, E>) => onExitOp(op, finalize),
     },
   );
   return op;
 };
 
 /**
- * Registers deferred cleanup for the current op run. Use as `yield* Op.defer(() => ...)`.
+ * Registers deferred cleanup for the current op run. Use as `yield* Op.defer((ctx) => ...)`.
  * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
  * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**.
  */
-export const defer = (finalize: ExitFn): Op<void, never, readonly []> => {
+export const defer = (finalize: AnyExitFn): Op<void, never, readonly []> => {
   let op!: Op<void, never, readonly []>;
   op = makeNullaryOp<void, never>(
     function* (): Generator<Instruction<never>, void, unknown> {
       yield {
         _tag: "RegisterCleanup" as const,
-        finalize: () => Promise.resolve(finalize()).then(() => {}),
+        finalize: (ctx) => Promise.resolve(finalize(ctx)).then(() => {}),
       };
     },
     {
@@ -84,7 +85,7 @@ export const defer = (finalize: ExitFn): Op<void, never, readonly []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<void>) => withReleaseOp(op, release),
-      registerExitFinalize: (nextFinalize: ExitFn) => onExitOp(op, nextFinalize),
+      registerExitFinalize: (nextFinalize: ExitFn<void, never>) => onExitOp(op, nextFinalize),
     },
   );
   return op;
@@ -120,7 +121,7 @@ export const _try = <T, E = UnhandledException>(
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn<Awaited<T>, E>) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -141,7 +142,7 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
       makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal)),
     withRelease: (release: ReleaseFn<T>) =>
       makeArityOp<T, E, A>((...args: A) => withReleaseOp(invoke(...args), release)),
-    on: (event: OpLifecycleHook, finalize: ExitFn) =>
+    on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) =>
       makeArityOp<T, E, A>((...args: A) => onOp(invoke(...args), event, finalize)),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out, transform),
@@ -172,7 +173,7 @@ export const fromGenFn: FromGenFn = (
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
       withRelease: (release: ReleaseFn<unknown>) => withReleaseOp(bound, release),
-      registerExitFinalize: (finalize: ExitFn) => onExitOp(bound, finalize),
+      registerExitFinalize: (finalize: ExitFn<unknown, unknown>) => onExitOp(bound, finalize),
     });
     return bound;
   };

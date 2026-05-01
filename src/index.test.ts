@@ -6,6 +6,7 @@ import {
   TaggedError,
   ErrorGroup,
   exponentialBackoff,
+  type ExitContext,
   type Result,
   type TaggedErrorInstance,
 } from "./index.js";
@@ -888,6 +889,76 @@ describe("public API (index)", () => {
       expectTypeOf(p1).toEqualTypeOf<Op<{ id: number }, never, []>>();
       expectTypeOf(p2).toEqualTypeOf<Op<number, never, [string]>>();
       expectTypeOf(p2.run).parameter(0).toEqualTypeOf<string>();
+    });
+
+    test('.on("exit") ExitContext.result is the same Result as .run()', async () => {
+      let okCtx!: ExitContext<number, never>;
+      const ok = await Op.of(99)
+        .on("exit", (c) => {
+          expectTypeOf(c).toEqualTypeOf<ExitContext<number, never>>();
+          expectTypeOf(c.result).toEqualTypeOf<Result<number, UnhandledException>>();
+          okCtx = c;
+        })
+        .run();
+      assert(ok.isOk());
+      assert(okCtx !== undefined);
+      expect(okCtx.result).toBe(ok);
+      expect(okCtx.signal.aborted).toBe(false);
+
+      let typedCtx!: ExitContext<never, string>;
+      const typedErr = await Op.fail("no")
+        .on("exit", (c) => {
+          expectTypeOf(c).toEqualTypeOf<ExitContext<never, string>>();
+          expectTypeOf(c.result).toEqualTypeOf<Result<never, string | UnhandledException>>();
+          typedCtx = c;
+        })
+        .run();
+      assert(typedErr.isErr());
+      assert(typedCtx !== undefined);
+      expect(typedCtx.result).toBe(typedErr);
+
+      let throwCtx!: ExitContext<never, never>;
+      const boom = new Error("sync");
+      const syncThrowOp = Op(function* () {
+        throw boom;
+      });
+      expectTypeOf(syncThrowOp).toEqualTypeOf<Op<never, never, []>>();
+      const threw = await syncThrowOp
+        .on("exit", (c) => {
+          expectTypeOf(c).toEqualTypeOf<ExitContext<never, never>>();
+          expectTypeOf(c.result).toEqualTypeOf<Result<never, UnhandledException>>();
+          throwCtx = c;
+        })
+        .run();
+      assert(threw.isErr());
+      expect(throwCtx).toBeDefined();
+      expect(throwCtx.result).toBe(threw);
+    });
+
+    test('.on("exit") ExitContext.result matches run after withTimeout', async () => {
+      vi.useFakeTimers();
+      try {
+        let timedCtx!: ExitContext<number, UnhandledException | TimeoutError>;
+        const runPromise = Op.try((_signal) => new Promise<number>(() => {}))
+          .withTimeout(10)
+          .on("exit", (c) => {
+            expectTypeOf(c).toEqualTypeOf<ExitContext<number, UnhandledException | TimeoutError>>();
+            expectTypeOf(c.result).toEqualTypeOf<
+              Result<number, UnhandledException | TimeoutError>
+            >();
+            timedCtx = c;
+          })
+          .run();
+        await vi.advanceTimersByTimeAsync(10);
+        const timed = await runPromise;
+
+        assert(timed.isErr());
+        expect(timedCtx).toBeDefined();
+        expect(timedCtx.result).toBe(timed);
+        expect(timed.error).toBeInstanceOf(TimeoutError);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
