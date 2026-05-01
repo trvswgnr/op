@@ -68,14 +68,14 @@ export interface WithFlatMap<T, E, A extends readonly unknown[]> {
   flatMap<U, E2>(bind: (value: T) => Op<U, E2, readonly []>): Op<U, E | E2, A>;
 }
 
-type TapError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
+type InferNullaryOpErr<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
 
 export interface WithTap<T, E, A extends readonly unknown[]> {
-  tap<R>(observe: (value: T) => R): Op<T, E | TapError<R>, A>;
+  tap<R>(observe: (value: T) => R): Op<T, E | InferNullaryOpErr<R>, A>;
 }
 
 export interface WithTapErr<T, E, A extends readonly unknown[]> {
-  tapErr<R>(observe: (error: E) => R): Op<T, E | TapError<R>, A>;
+  tapErr<R>(observe: (error: E) => R): Op<T, E | InferNullaryOpErr<R>, A>;
 }
 
 type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
@@ -508,8 +508,8 @@ const flatMapNullaryOp = <T, E, U, E2>(
 const tapNullaryOp = <T, E, R>(
   op: Op<T, E, readonly []>,
   observe: (value: T) => R,
-): Op<T, E | TapError<R>, readonly []> => {
-  return makeNullaryOp<T, E | TapError<R> | UnhandledException>(
+): Op<T, E | InferNullaryOpErr<R>, readonly []> => {
+  return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield {
         _tag: "Suspended" as const,
@@ -531,7 +531,7 @@ const tapNullaryOp = <T, E, R>(
       const observedResult = (yield {
         _tag: "Suspended" as const,
         suspend: (signal: AbortSignal) => drive(observed, signal),
-      }) as Result<unknown, TapError<R> | UnhandledException>;
+      }) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
         return yield* err(observedResult.error);
       }
@@ -543,17 +543,17 @@ const tapNullaryOp = <T, E, R>(
       withSignal: (signal: AbortSignal) => tapNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(tapNullaryOp(op, observe), release),
-      registerExitFinalize: (finalize: ExitFn<T, E | TapError<R>>) =>
+      registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
-  ) as Op<T, E | TapError<R>, readonly []>;
+  ) as Op<T, E | InferNullaryOpErr<R>, readonly []>;
 };
 
 const tapErrNullaryOp = <T, E, R>(
   op: Op<T, E, readonly []>,
   observe: (error: E) => R,
-): Op<T, E | TapError<R>, readonly []> => {
-  return makeNullaryOp<T, E | TapError<R> | UnhandledException>(
+): Op<T, E | InferNullaryOpErr<R>, readonly []> => {
+  return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield {
         _tag: "Suspended" as const,
@@ -578,7 +578,7 @@ const tapErrNullaryOp = <T, E, R>(
       const observedResult = (yield {
         _tag: "Suspended" as const,
         suspend: (signal: AbortSignal) => drive(observed, signal),
-      }) as Result<unknown, TapError<R> | UnhandledException>;
+      }) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
         return yield* err(observedResult.error);
       }
@@ -596,10 +596,10 @@ const tapErrNullaryOp = <T, E, R>(
       withSignal: (signal: AbortSignal) => tapErrNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(tapErrNullaryOp(op, observe), release),
-      registerExitFinalize: (finalize: ExitFn<T, E | TapError<R>>) =>
+      registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
     },
-  ) as Op<T, E | TapError<R>, readonly []>;
+  ) as Op<T, E | InferNullaryOpErr<R>, readonly []>;
 };
 
 const mapErrNullaryOp = <T, E, E2>(
@@ -862,7 +862,7 @@ export const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
 export const tapOp = <T, E, A extends readonly unknown[], R>(
   op: Op<T, E, A>,
   observe: (value: T) => R,
-): Op<T, E | TapError<R>, A> => {
+): Op<T, E | InferNullaryOpErr<R>, A> => {
   return liftArityOp(
     op,
     (resolved) => tapNullaryOp(resolved, observe),
@@ -871,7 +871,7 @@ export const tapOp = <T, E, A extends readonly unknown[], R>(
       withTimeout: (timeoutMs: number) => tapOp(source.withTimeout(timeoutMs), observe),
       withSignal: (signal: AbortSignal) => tapOp(source.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      on: (event: OpLifecycleHook, finalize: ExitFn<T, E | TapError<R>>) =>
+      on: (event: OpLifecycleHook, finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onOp(getSelf(), event, finalize),
     }),
   );
@@ -880,7 +880,7 @@ export const tapOp = <T, E, A extends readonly unknown[], R>(
 export const tapErrOp = <T, E, A extends readonly unknown[], R>(
   op: Op<T, E, A>,
   observe: (error: E) => R,
-): Op<T, E | TapError<R>, A> => {
+): Op<T, E | InferNullaryOpErr<R>, A> => {
   return liftArityOp(
     op,
     (resolved) => tapErrNullaryOp(resolved, observe),
@@ -894,7 +894,7 @@ export const tapErrOp = <T, E, A extends readonly unknown[], R>(
         }),
       withSignal: (signal: AbortSignal) => tapErrOp(source.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      on: (event: OpLifecycleHook, finalize: ExitFn<T, E | TapError<R>>) =>
+      on: (event: OpLifecycleHook, finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onOp(getSelf(), event, finalize),
     }),
   );
