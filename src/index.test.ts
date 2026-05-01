@@ -1251,6 +1251,57 @@ const deferred = <T>() => {
   return { promise, resolve };
 };
 
+const trackAbortListeners = (signal: AbortSignal) => {
+  type AbortListener = Parameters<AbortSignal["addEventListener"]>[1];
+  type Registration = { listener: AbortListener; once: boolean };
+
+  const registrations: Registration[] = [];
+  const originalAdd: AbortSignal["addEventListener"] = signal.addEventListener.bind(signal);
+  const originalRemove: AbortSignal["removeEventListener"] =
+    signal.removeEventListener.bind(signal);
+
+  const patchedAdd: AbortSignal["addEventListener"] = (type, listener, options) => {
+    if (type === "abort") {
+      const once = typeof options === "object" && options !== null ? options.once === true : false;
+      registrations.push({ listener, once });
+    }
+    return originalAdd(type, listener, options);
+  };
+
+  const patchedRemove: AbortSignal["removeEventListener"] = (type, listener) => {
+    if (type === "abort") {
+      const idx = registrations.findIndex((registration) => registration.listener === listener);
+      if (idx >= 0) registrations.splice(idx, 1);
+    }
+    return originalRemove(type, listener);
+  };
+
+  Object.assign(signal, {
+    addEventListener: patchedAdd,
+    removeEventListener: patchedRemove,
+  });
+
+  const clearOnceRegistrations: AbortListener = () => {
+    for (let i = registrations.length - 1; i >= 0; i -= 1) {
+      if (registrations[i]?.once) registrations.splice(i, 1);
+    }
+  };
+  originalAdd("abort", clearOnceRegistrations);
+
+  return {
+    get activeAbortListeners() {
+      return registrations.length;
+    },
+    restore() {
+      Object.assign(signal, {
+        addEventListener: originalAdd,
+        removeEventListener: originalRemove,
+      });
+      originalRemove("abort", clearOnceRegistrations);
+    },
+  };
+};
+
 const invalidConcurrencies = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY];
 
 describe("Op.all", () => {
@@ -1652,6 +1703,126 @@ describe("Op combinators compose with withTimeout / withRetry", () => {
     assert(r.isOk(), "should be Ok");
     expect(r.value).toBe(11);
     expect(attempts).toBe(2);
+  });
+});
+
+describe("combinator abort listener cleanup", () => {
+  test("pre-aborted outer signal does not leave abort listeners behind", async () => {
+    const outer = new AbortController();
+    outer.abort(new Error("already aborted"));
+    const tracked = trackAbortListeners(outer.signal);
+    try {
+      await Op.all([Op.of(1), Op.of(2)])
+        .withSignal(outer.signal)
+        .run();
+      expect(tracked.activeAbortListeners).toBe(0);
+    } finally {
+      tracked.restore();
+    }
+  });
+
+  test("unbounded all detaches abort listener after children settle", async () => {
+    const outer = new AbortController();
+    const tracked = trackAbortListeners(outer.signal);
+    try {
+      const r = await Op.all([Op.of(1), Op.of(2)])
+        .withSignal(outer.signal)
+        .run();
+      assert(r.isOk(), "should be Ok");
+      expect(r.value).toEqual([1, 2]);
+      expect(tracked.activeAbortListeners).toBe(0);
+
+      outer.abort(new Error("too late"));
+      expect(tracked.activeAbortListeners).toBe(0);
+    } finally {
+      tracked.restore();
+    }
+  });
+
+  test("bounded all detaches abort listener after children settle", async () => {
+    const outer = new AbortController();
+    const tracked = trackAbortListeners(outer.signal);
+    try {
+      const r = await Op.all([Op.of(1), Op.of(2)], 1)
+        .withSignal(outer.signal)
+        .run();
+      assert(r.isOk(), "should be Ok");
+      expect(r.value).toEqual([1, 2]);
+      expect(tracked.activeAbortListeners).toBe(0);
+
+      outer.abort(new Error("too late"));
+      expect(tracked.activeAbortListeners).toBe(0);
+    } finally {
+      tracked.restore();
+    }
+  });
+
+  test("bounded all cleans up outer abort listeners when aborted mid-flight after partial completion", async () => {
+    const outer = new AbortController();
+    const tracked = trackAbortListeners(outer.signal);
+    const secondGate = deferred<number>();
+    try {
+      const run = Op.all(
+        [
+          Op.of(1),
+          Op.try(
+            (signal) =>
+              new Promise<number>((resolve, reject) => {
+                if (signal.aborted) {
+                  reject(signal.reason);
+                  return;
+                }
+                signal.addEventListener("abort", () => reject(new Error("aborted")), {
+                  once: true,
+                });
+                secondGate.promise.then(resolve);
+              }),
+          ),
+        ],
+        1,
+      )
+        .withSignal(outer.signal)
+        .run();
+
+      await Promise.resolve();
+      outer.abort(new Error("cancel"));
+
+      const r = await run;
+      assert(r.isErr(), "should be Err");
+      expect(tracked.activeAbortListeners).toBe(0);
+    } finally {
+      tracked.restore();
+      secondGate.resolve(2);
+    }
+  });
+
+  test("any cleans up outer abort listeners when aborted mid-flight after partial completion", async () => {
+    const outer = new AbortController();
+    const tracked = trackAbortListeners(outer.signal);
+    try {
+      const run = Op.any([
+        Op.fail("fast-fail" as const),
+        Op.try(
+          (signal) =>
+            new Promise<never>((_resolve, reject) => {
+              signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+            }),
+        ),
+      ])
+        .withSignal(outer.signal)
+        .run();
+
+      await Promise.resolve();
+      outer.abort(new Error("cancel"));
+
+      const r = await run;
+      assert(r.isErr(), "should be Err");
+      assert(r.error instanceof ErrorGroup, "ErrorGroup");
+      expect(r.error.errors.length).toBeGreaterThan(0);
+      expect(tracked.activeAbortListeners).toBe(0);
+    } finally {
+      tracked.restore();
+    }
   });
 });
 
