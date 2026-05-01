@@ -168,7 +168,7 @@ Transforms an op's success value while preserving the same error channel and arg
 Use this when you want a one-step value transformation without writing a generator.
 
 ```ts
-const userId = Op.of({ id: 42, name: "Ada" }).map((user) => user.id);
+const userId = Op.of({ id: 69, name: "Marissa" }).map((user) => user.id);
 const result = await userId.run(); // Result<number, UnhandledException>
 ```
 
@@ -178,7 +178,7 @@ Chains to the next op using the previous success value. This is the monadic bind
 the next op only runs after the first one succeeds, and both error channels are preserved.
 
 ```ts
-const getUserTodos = getUser(42).flatMap((user) => getTodos(user.id));
+const getUserTodos = getUser(69).flatMap((user) => getTodos(user.id));
 const result = await getUserTodos.run();
 ```
 
@@ -198,7 +198,7 @@ const parseBody = (response: Response) =>
     (cause) => new Error(`parse failed: ${String(cause)}`),
   );
 
-const withLog = Op.try(() => fetch("https://example.com/user/42"))
+const withLog = Op.try(() => fetch("https://example.com/user/69"))
   .tap((response) => {
     console.log("status", response.status);
   })
@@ -216,7 +216,7 @@ if the returned op fails, that failure propagates. `UnhandledException` bypasses
 
 ```ts
 const withErrorMetric = Op.try(
-  () => fetch("https://example.com/user/42").then((r) => r.json()),
+  () => fetch("https://example.com/user/69").then((r) => r.json()),
   (cause) => new Error(`request failed: ${String(cause)}`),
 ).tapErr((error) => {
   console.error("user lookup failed", error.message);
@@ -428,8 +428,8 @@ in input index order. Empty input fails with an empty `ErrorGroup`.
 ```ts
 import { ErrorGroup } from "@prodkit/op";
 
-const r = await Op.any([Op.fail("a"), Op.of(42)]).run();
-if (r.isOk()) console.log(r.value); // 42
+const r = await Op.any([Op.fail("a"), Op.of(69)]).run();
+if (r.isOk()) console.log(r.value); // 69
 if (r.isErr() && r.error instanceof ErrorGroup) console.log(r.error.errors);
 ```
 

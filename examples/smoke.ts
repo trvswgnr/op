@@ -61,7 +61,7 @@ const webhookPayload = {
   orderId: "ord-123",
   userId: "usr-123",
   currency: "USD",
-  totalCents: 4200,
+  totalCents: 69_420,
   itemSkus: ["SKU-1", "SKU-2"],
 };
 
@@ -148,8 +148,8 @@ const runSimpleExampleSmoke = async () => {
     "mathComposeProgram failure check failed",
   );
 
-  const parseOk = await parseUser.run({ name: "Ada" });
-  assert(parseOk.isOk() && parseOk.value.name === "Ada", "parseUser success check failed");
+  const parseOk = await parseUser.run({ name: "Marissa" });
+  assert(parseOk.isOk() && parseOk.value.name === "Marissa", "parseUser success check failed");
 
   const parseErr = await parseUser.run({ notName: 1 });
   assert(parseErr.isErr() && parseErr.error instanceof ParseError, "parseUser error check failed");
@@ -157,13 +157,13 @@ const runSimpleExampleSmoke = async () => {
   const originalFetch = globalThis.fetch;
   try {
     globalThis.fetch = async () =>
-      new Response(JSON.stringify({ name: "Ada" }), {
+      new Response(JSON.stringify({ name: "Marissa" }), {
         status: 200,
         statusText: "OK",
       });
     const fetchOk = await fetchData.run("https://example.test/api/users/1");
     assert(
-      fetchOk.isOk() && isNamedUser(fetchOk.value) && fetchOk.value.name === "Ada",
+      fetchOk.isOk() && isNamedUser(fetchOk.value) && fetchOk.value.name === "Marissa",
       "fetchData success check failed",
     );
 
@@ -179,13 +179,16 @@ const runSimpleExampleSmoke = async () => {
 
     globalThis.fetch = async (url) => {
       assert(String(url) === "/api/users/123", "userProgram URL check failed");
-      return new Response(JSON.stringify({ name: "Ada" }), {
+      return new Response(JSON.stringify({ name: "Marissa" }), {
         status: 200,
         statusText: "OK",
       });
     };
     const userOk = await userProgram.run("123");
-    assert(userOk.isOk() && userOk.value.name === "Ada", "userProgram composition check failed");
+    assert(
+      userOk.isOk() && userOk.value.name === "Marissa",
+      "userProgram composition check failed",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

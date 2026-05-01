@@ -10,6 +10,7 @@ import {
   type Result,
   type TaggedErrorInstance,
 } from "./index.js";
+import { SuspendInstruction } from "./core/instructions.js";
 
 describe("public API (index)", () => {
   describe("OpFactory", () => {
@@ -1114,12 +1115,9 @@ describe("public API (index)", () => {
         const program = Op(function* () {
           try {
             events.push("start");
-            yield {
-              _tag: "Suspended" as const,
-              suspend: async () => {
-                throw cause;
-              },
-            };
+            yield new SuspendInstruction(async () => {
+              throw cause;
+            });
             return 1;
           } finally {
             events.push("finally");
@@ -1598,11 +1596,11 @@ describe("Op.allSettled", () => {
 
 describe("Op.settle", () => {
   test("wraps success in a settled Result", async () => {
-    const r = await Op.settle(Op.of(42)).run();
+    const r = await Op.settle(Op.of(69)).run();
     assert(r.isOk(), "should be Ok");
     const settled = r.value;
     assert(settled.isOk(), "inner op succeeded");
-    expect(settled.value).toBe(42);
+    expect(settled.value).toBe(69);
   });
 
   test("wraps failure in a settled Result", async () => {

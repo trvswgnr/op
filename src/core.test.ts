@@ -1,6 +1,7 @@
 import { describe, expect, test, assert, expectTypeOf } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
-import { UnhandledException } from "./errors.js";
+import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
+import { TimeoutError, UnhandledException } from "./errors.js";
 import { isNullaryOp } from "./core/nullary-ops.js";
 import { Op } from "./core/types.js";
 
@@ -90,6 +91,64 @@ describe("op.run", () => {
 
     assert(result.isErr() === true, "should be Err");
     expect(finalized).toBe(true);
+  });
+
+  test("SuspendInstruction resumes generator with resolved value", async () => {
+    const program = fromGenFn(function* () {
+      const value = (yield new SuspendInstruction(async () => 69)) as number;
+      return value + 1;
+    });
+
+    const result = await program.run();
+    assert(result.isOk() === true, "result should be Ok");
+    expect(result.value).toBe(70);
+  });
+
+  test("RegisterExitFinalizerInstruction runs on successful unwind", async () => {
+    const seen: string[] = [];
+    const program = fromGenFn(function* () {
+      yield new RegisterExitFinalizerInstruction(async (ctx) => {
+        seen.push(ctx.result.isOk() ? "ok" : "err");
+      });
+      return "done";
+    });
+
+    const result = await program.run();
+    assert(result.isOk() === true, "result should be Ok");
+    expect(result.value).toBe("done");
+    expect(seen).toEqual(["ok"]);
+  });
+
+  test("RegisterExitFinalizerInstruction runs when timeout cancels inner work", async () => {
+    const seen: string[] = [];
+    const program = fromGenFn(function* () {
+      yield new RegisterExitFinalizerInstruction(async (ctx) => {
+        seen.push(String(ctx.signal.aborted));
+        seen.push(ctx.result.isErr() ? "err" : "ok");
+      });
+
+      return yield* _try(
+        (signal) =>
+          new Promise<number>((_resolve, reject) => {
+            if (signal.aborted) {
+              reject(signal.reason);
+              return;
+            }
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      );
+    }).withTimeout(1);
+
+    const result = await program.run();
+    assert(result.isErr() === true, "should be Err");
+    expect(result.error).toBeInstanceOf(TimeoutError);
+    expect(seen).toEqual(["true", "err"]);
   });
 });
 
