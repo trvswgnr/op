@@ -241,6 +241,20 @@ export async function drive<T, E>(
     }
     return chainCleanupFaults(faults);
   };
+  const settleWithCleanup = async (
+    result: Result<T, E | UnhandledException>,
+    iter?: Iterator<Instruction<unknown>, T, unknown>,
+  ): Promise<Result<T, E | UnhandledException>> => {
+    if (iter !== undefined) {
+      closeGenerator(iter);
+    }
+    const exitCtx: ExitContext<T, E> = { signal, result };
+    const cleanupFault = await runFinalizersSafely(exitCtx);
+    if (cleanupFault !== undefined) {
+      return err(new UnhandledException({ cause: cleanupFault }));
+    }
+    return result;
+  };
 
   try {
     const ef = typeof op === "function" ? op() : op;
@@ -259,55 +273,22 @@ export async function drive<T, E>(
           continue;
         }
         if (isErrInstruction<E>(instr)) {
-          closeGenerator(iter);
-          const result = err(instr.error);
-          const exitCtx: ExitContext<T, E> = { signal, result };
-          const cleanupFault = await runFinalizersSafely(exitCtx);
-          if (cleanupFault !== undefined) {
-            return err(new UnhandledException({ cause: cleanupFault }));
-          }
-          return result;
+          return settleWithCleanup(err(instr.error), iter);
         }
-        closeGenerator(iter);
         const invalidErr = new UnhandledException({
           cause: new TypeError("Op generator yielded an invalid instruction"),
         });
-        const badResult = err(invalidErr);
-        const exitCtx: ExitContext<T, E> = { signal, result: badResult };
-        const cleanupFault = await runFinalizersSafely(exitCtx);
-        if (cleanupFault !== undefined) {
-          return err(new UnhandledException({ cause: cleanupFault }));
-        }
-        return badResult;
+        return settleWithCleanup(err(invalidErr), iter);
       } catch (cause) {
-        closeGenerator(iter);
         const unhandled = new UnhandledException({ cause });
-        const failResult = err(unhandled);
-        const exitCtx: ExitContext<T, E> = { signal, result: failResult };
-        const cleanupFault = await runFinalizersSafely(exitCtx);
-        if (cleanupFault !== undefined) {
-          return err(new UnhandledException({ cause: cleanupFault }));
-        }
-        return failResult;
+        return settleWithCleanup(err(unhandled), iter);
       }
     }
     const value = await step.value;
-    const successResult = ok(value);
-    const exitCtx: ExitContext<T, E> = { signal, result: successResult };
-    const cleanupFault = await runFinalizersSafely(exitCtx);
-    if (cleanupFault !== undefined) {
-      return err(new UnhandledException({ cause: cleanupFault }));
-    }
-    return successResult;
+    return settleWithCleanup(ok(value));
   } catch (cause) {
     const unhandled = new UnhandledException({ cause });
-    const failResult = err(unhandled);
-    const exitCtx: ExitContext<T, E> = { signal, result: failResult };
-    const cleanupFault = await runFinalizersSafely(exitCtx);
-    if (cleanupFault !== undefined) {
-      return err(new UnhandledException({ cause: cleanupFault }));
-    }
-    return failResult;
+    return settleWithCleanup(err(unhandled));
   }
 }
 
