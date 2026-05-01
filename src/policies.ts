@@ -9,6 +9,7 @@ import {
   type OpLifecycleHook,
   type ReleaseFn,
 } from "./core/types.js";
+import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { isNullaryOp, makeNullaryOp } from "./core/nullary-ops.js";
 
@@ -108,11 +109,9 @@ const withRetryNullaryOp = <T, E>(
     let attempt = 1;
 
     while (true) {
-      const attemptStep = (yield {
-        _tag: "Suspended",
-        suspend: (signal: AbortSignal) =>
-          drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
-      }) as { result: Result<T, E | UnhandledException>; aborted: boolean };
+      const attemptStep = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
+      )) as { result: Result<T, E | UnhandledException>; aborted: boolean };
 
       const result = attemptStep.result;
       if (result.isOk()) {
@@ -129,11 +128,9 @@ const withRetryNullaryOp = <T, E>(
 
       const delayMs = Math.max(0, policy.getDelay(attempt, cause));
       if (delayMs > 0) {
-        const delayAborted = yield {
-          _tag: "Suspended",
-          suspend: (signal: AbortSignal) =>
-            abortableDelay(delayMs, signal).then(() => signal.aborted),
-        };
+        const delayAborted = yield new SuspendInstruction((signal: AbortSignal) =>
+          abortableDelay(delayMs, signal).then(() => signal.aborted),
+        );
         if (delayAborted) {
           return yield* err(cause);
         }
@@ -152,11 +149,9 @@ const withTimeoutNullaryOp = <T, E>(
   // `drive` can still surface `UnhandledException` internally; we intentionally expose only
   // the public contract of `E | TimeoutError` for fluent API stability.
   return makePolicyNullaryOp<T, E | UnhandledException | TimeoutError>(function* () {
-    const result = (yield {
-      _tag: "Suspended",
-      suspend: (outerSignal: AbortSignal) =>
-        raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
-    }) as Result<T, E | UnhandledException | TimeoutError>;
+    const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
+      raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
+    )) as Result<T, E | UnhandledException | TimeoutError>;
     if (result.isErr()) {
       return yield* err(result.error);
     }
@@ -167,11 +162,9 @@ const withTimeoutNullaryOp = <T, E>(
 const withSignalNullaryOp = <T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> => {
   // Same contract as source op: binding a signal does not widen the typed error channel.
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
-    const result = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal: AbortSignal) =>
-        runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-    }) as Result<T, E | UnhandledException>;
+    const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
+      runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
+    )) as Result<T, E | UnhandledException>;
     if (result.isErr()) {
       return yield* err(result.error);
     }

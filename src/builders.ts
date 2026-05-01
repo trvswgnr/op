@@ -8,6 +8,7 @@ import {
   type OpLifecycleHook,
   type ReleaseFn,
 } from "./core/types.js";
+import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { err, ExtractErr, ok, type Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
@@ -62,10 +63,9 @@ export const fail = <E>(value: E): Op<never, E, []> => {
 export const defer = (finalize: AnyExitFn): Op<void, never, []> => {
   const op: Op<void, never, []> = makeNullaryOp(
     function* () {
-      yield {
-        _tag: "RegisterCleanup" as const,
-        finalize: (ctx) => Promise.resolve(finalize(ctx)).then(() => {}),
-      };
+      yield new RegisterExitFinalizerInstruction((ctx) =>
+        Promise.resolve(finalize(ctx)).then(() => {}),
+      );
     },
     {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
@@ -87,16 +87,14 @@ export const _try = <T, E = UnhandledException>(
 ): Op<Awaited<T>, E, []> => {
   const op: Op<Awaited<T>, E, []> = makeNullaryOp(
     function* () {
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) =>
-          Promise.resolve()
-            .then(() => f(signal))
-            .then(
-              (a) => ok(a),
-              (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
-            ),
-      }) as Result<T, E>;
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        Promise.resolve()
+          .then(() => f(signal))
+          .then(
+            (a) => ok(a),
+            (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
+          ),
+      )) as Result<T, E>;
       if (result.isErr()) {
         return yield* result;
       }

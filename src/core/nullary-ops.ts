@@ -12,6 +12,7 @@ import type {
   ReleaseFn,
   WithPredicateMethod,
 } from "./types.js";
+import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { drive } from "./runtime.js";
 import { mapOp, mapErrOp, flatMapOp, tapOp, tapErrOp, recoverOp } from "./arity-ops.js";
 import { runOp } from "./run-op.js";
@@ -78,18 +79,15 @@ export const makeNullaryOp = <T, E>(
 const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> => {
   return makeNullaryOp<T, E | UnhandledException>(
     function* () {
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         return yield* err(result.error);
       }
-      yield {
-        _tag: "RegisterCleanup" as const,
-        finalize: (_ctx: ExitContext<unknown, unknown>) =>
-          Promise.resolve(release(result.value)).then(() => {}),
-      };
+      yield new RegisterExitFinalizerInstruction((_ctx: ExitContext<unknown, unknown>) =>
+        Promise.resolve(release(result.value)).then(() => {}),
+      );
       return result.value;
     },
     {
@@ -107,15 +105,12 @@ const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op
 const onExitNullaryOp = <T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> => {
   return makeNullaryOp<T, E | UnhandledException>(
     function* () {
-      yield {
-        _tag: "RegisterCleanup" as const,
-        finalize: (ctx: ExitContext<unknown, unknown>) =>
-          Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => undefined),
-      };
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      yield new RegisterExitFinalizerInstruction((ctx: ExitContext<unknown, unknown>) =>
+        Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => undefined),
+      );
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         return yield* err(result.error);
       }
@@ -140,17 +135,15 @@ const mapNullaryOp = <T, E, U>(
 ): Op<Awaited<U>, E, []> => {
   return makeNullaryOp<Awaited<U>, E | UnhandledException>(
     function* () {
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         return yield* err(result.error);
       }
-      const mapped = (yield {
-        _tag: "Suspended" as const,
-        suspend: () => Promise.resolve(transform(result.value)),
-      }) as Awaited<U>;
+      const mapped = (yield new SuspendInstruction(() =>
+        Promise.resolve(transform(result.value)),
+      )) as Awaited<U>;
       return mapped;
     },
     {
@@ -171,18 +164,16 @@ const flatMapNullaryOp = <T, E, U, E2>(
 ): Op<U, E | E2, []> => {
   return makeNullaryOp<U, E | E2 | UnhandledException>(
     function* () {
-      const first = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const first = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (first.isErr()) {
         return yield* err(first.error);
       }
 
-      const second = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(bind(first.value), signal),
-      }) as Result<U, E2 | UnhandledException>;
+      const second = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(bind(first.value), signal),
+      )) as Result<U, E2 | UnhandledException>;
       if (second.isErr()) {
         return yield* err(second.error);
       }
@@ -206,27 +197,22 @@ const tapNullaryOp = <T, E, R>(
 ): Op<T, E | InferNullaryOpErr<R>, []> => {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
-      const source = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const source = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (source.isErr()) {
         return yield* err(source.error);
       }
 
-      const observed = yield {
-        _tag: "Suspended" as const,
-        suspend: () => Promise.resolve(observe(source.value)),
-      };
+      const observed = yield new SuspendInstruction(() => Promise.resolve(observe(source.value)));
 
       if (!isNullaryOp(observed)) {
         return source.value;
       }
 
-      const observedResult = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(observed, signal),
-      }) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
+      const observedResult = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(observed, signal),
+      )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
         return yield* err(observedResult.error);
       }
@@ -250,10 +236,9 @@ const tapErrNullaryOp = <T, E, R>(
 ): Op<T, E | InferNullaryOpErr<R>, []> => {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
-      const source = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const source = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (source.isOk()) {
         return source.value;
       }
@@ -262,18 +247,16 @@ const tapErrNullaryOp = <T, E, R>(
         return yield* err(source.error);
       }
 
-      const observed = yield {
-        _tag: "Suspended" as const,
-        suspend: () => Promise.resolve(observe(source.error as E)),
-      };
+      const observed = yield new SuspendInstruction(() =>
+        Promise.resolve(observe(source.error as E)),
+      );
       if (!isNullaryOp(observed)) {
         return yield* err(source.error);
       }
 
-      const observedResult = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(observed, signal),
-      }) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
+      const observedResult = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(observed, signal),
+      )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
         return yield* err(observedResult.error);
       }
@@ -303,19 +286,17 @@ const mapErrNullaryOp = <T, E, E2>(
 ): Op<T, E2, []> => {
   return makeNullaryOp<T, E2 | UnhandledException>(
     function* () {
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         if (result.error instanceof UnhandledException) {
           return yield* err(result.error);
         }
 
-        const mapped = (yield {
-          _tag: "Suspended" as const,
-          suspend: () => Promise.resolve(transform(result.error as E)),
-        }) as E2;
+        const mapped = (yield new SuspendInstruction(() =>
+          Promise.resolve(transform(result.error as E)),
+        )) as E2;
         return yield* err(mapped);
       }
       return result.value;
@@ -342,10 +323,9 @@ const recoverNullaryOp = <T, E, R>(
 ): Op<T | RecoverValue<R>, E | RecoverError<R>, []> => {
   return makeNullaryOp<T | RecoverValue<R>, E | RecoverError<R> | UnhandledException>(
     function* () {
-      const result = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(op, signal),
-      }) as Result<T, E | UnhandledException>;
+      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal),
+      )) as Result<T, E | UnhandledException>;
 
       if (result.isOk()) {
         return result.value;
@@ -361,19 +341,15 @@ const recoverNullaryOp = <T, E, R>(
         return yield* err(error);
       }
 
-      const recovered = yield {
-        _tag: "Suspended" as const,
-        suspend: () => Promise.resolve(handler(error)),
-      };
+      const recovered = yield new SuspendInstruction(() => Promise.resolve(handler(error)));
 
       if (!isNullaryOp(recovered)) {
         return recovered as RecoverValue<R>;
       }
 
-      const recoveredResult = (yield {
-        _tag: "Suspended" as const,
-        suspend: (signal: AbortSignal) => drive(recovered, signal),
-      }) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
+      const recoveredResult = (yield new SuspendInstruction((signal: AbortSignal) =>
+        drive(recovered, signal),
+      )) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
 
       if (recoveredResult.isErr()) {
         return yield* err(recoveredResult.error);

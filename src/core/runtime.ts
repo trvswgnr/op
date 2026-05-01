@@ -1,13 +1,10 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
 import { err, ok, type Result } from "../result.js";
-import type { ExitContext, Instruction, Op } from "./types.js";
+import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
+import { type ExitContext, type Instruction, type Op } from "./types.js";
 
-function isSuspended(
-  value: unknown,
-): value is { readonly _tag: "Suspended"; suspend: (signal: AbortSignal) => Promise<unknown> } {
-  return (
-    typeof value === "object" && value !== null && "_tag" in value && value._tag === "Suspended"
-  );
+function isSuspendInstruction(value: unknown): value is SuspendInstruction {
+  return value instanceof SuspendInstruction;
 }
 
 function isErrInstruction<E>(value: unknown): value is { isErr: () => boolean; error: E } {
@@ -22,18 +19,10 @@ function isErrInstruction<E>(value: unknown): value is { isErr: () => boolean; e
   return value.isErr();
 }
 
-function isRegisterCleanup(value: unknown): value is {
-  readonly _tag: "RegisterCleanup";
-  readonly finalize: (ctx: ExitContext<unknown, unknown>) => Promise<void>;
-} {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "_tag" in value &&
-    value._tag === "RegisterCleanup" &&
-    "finalize" in value &&
-    typeof value.finalize === "function"
-  );
+function isRegisterExitFinalizerInstruction(
+  value: unknown,
+): value is RegisterExitFinalizerInstruction {
+  return value instanceof RegisterExitFinalizerInstruction;
 }
 
 const closeGenerator = (iterator: Iterator<unknown, unknown, unknown>) => {
@@ -70,6 +59,17 @@ export async function drive<T, E>(
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<(ctx: ExitContext<unknown, unknown>) => Promise<void>> = [];
+  const resumeSuspended = async (
+    instruction: SuspendInstruction,
+    iter: Iterator<Instruction<E>, T, unknown>,
+  ) => iter.next(await instruction.suspend(signal));
+  const registerExitFinalizer = (
+    instruction: RegisterExitFinalizerInstruction,
+    iter: Iterator<Instruction<E>, T, unknown>,
+  ) => {
+    finalizers.push(instruction.finalize);
+    return iter.next(undefined);
+  };
   /** Run every finalizer LIFO; collect faults from each (later-registered runs first; all still run even if one throws). */
   const runFinalizersSafely = async (
     ctx: ExitContext<unknown, unknown>,
@@ -114,14 +114,13 @@ export async function drive<T, E>(
     let step = iter.next();
     while (!step.done) {
       try {
-        if (isSuspended(step.value)) {
-          step = iter.next(await step.value.suspend(signal));
+        if (isSuspendInstruction(step.value)) {
+          step = await resumeSuspended(step.value, iter);
           continue;
         }
         const instr = step.value;
-        if (isRegisterCleanup(instr)) {
-          finalizers.push(instr.finalize);
-          step = iter.next(undefined);
+        if (isRegisterExitFinalizerInstruction(instr)) {
+          step = registerExitFinalizer(instr, iter);
           continue;
         }
         if (isErrInstruction<E>(instr)) {
@@ -148,7 +147,7 @@ export {
   chainCleanupFaults,
   closeGenerator,
   isErrInstruction,
-  isRegisterCleanup,
-  isSuspended,
+  isRegisterExitFinalizerInstruction,
+  isSuspendInstruction,
   TimeoutError,
 };

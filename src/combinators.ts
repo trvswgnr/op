@@ -1,5 +1,6 @@
 import { ErrorGroup, UnhandledException } from "./errors.js";
 import { type Instruction, type Op, type ExitFn, type ReleaseFn } from "./core/types.js";
+import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { onExitOp, withReleaseOp } from "./core/arity-ops.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
@@ -56,10 +57,9 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
   const snapshot = ops.slice();
   const limit = concurrencyLimit(concurrency, snapshot.length);
   return makeCombinatorOp(function* () {
-    const result = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal) => driveAll(snapshot, outerSignal, limit),
-    }) as Result<never, never>;
+    const result = (yield new SuspendInstruction((outerSignal) =>
+      driveAll(snapshot, outerSignal, limit),
+    )) as Result<never, never>;
     if (result.isErr()) {
       return yield* err(result.error);
     }
@@ -160,10 +160,9 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
   const limit = concurrencyLimit(concurrency, snapshot.length);
   type V = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> };
   return makeCombinatorOp<V, never>(function* (): Generator<Instruction<never>, V, unknown> {
-    const value = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal) => driveAllSettled(snapshot, outerSignal, limit),
-    }) as V;
+    const value = (yield new SuspendInstruction((outerSignal) =>
+      driveAllSettled(snapshot, outerSignal, limit),
+    )) as V;
     return value;
   });
 };
@@ -172,10 +171,10 @@ export const settleOp = <T, E>(
   op: Op<T, E, []>,
 ): Op<Result<T, E | UnhandledException>, never, []> => {
   return makeCombinatorOp<Result<T, E | UnhandledException>, never>(function* () {
-    const value = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal) => drive(op, outerSignal),
-    }) as Result<T, E | UnhandledException>;
+    const value = (yield new SuspendInstruction((outerSignal) => drive(op, outerSignal))) as Result<
+      T,
+      E | UnhandledException
+    >;
     return value;
   });
 };
@@ -238,10 +237,9 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
   type V = SuccessOf<Ops[number]>;
   type E = ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>;
   return makeCombinatorOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
-    const result = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal) => driveAny(snapshot, outerSignal),
-    }) as Result<V, E>;
+    const result = (yield new SuspendInstruction((outerSignal) =>
+      driveAny(snapshot, outerSignal),
+    )) as Result<V, E>;
     if (result.isErr()) {
       return yield* err(result.error);
     }
@@ -292,10 +290,9 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
   type V = SuccessOf<Ops[number]>;
   type E = ErrorOf<Ops[number]> | UnhandledException;
   return makeCombinatorOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
-    const result = (yield {
-      _tag: "Suspended" as const,
-      suspend: (outerSignal) => driveRace(snapshot, outerSignal),
-    }) as Result<V, E>;
+    const result = (yield new SuspendInstruction((outerSignal) =>
+      driveRace(snapshot, outerSignal),
+    )) as Result<V, E>;
     if (result.isErr()) {
       return yield* err(result.error);
     }

@@ -2,11 +2,7 @@ import type { TimeoutError, UnhandledException } from "../errors.js";
 import type { Err, Result } from "../result.js";
 import type { RetryPolicy } from "../policies.js";
 import type { Tagged } from "../tagged.js";
-
-export interface Suspended {
-  readonly _tag: "Suspended";
-  readonly suspend: (signal: AbortSignal) => Promise<unknown>;
-}
+import type { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 
 /**
  * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
@@ -22,13 +18,10 @@ export type ExitFn<T = unknown, E = unknown> = (ctx: ExitContext<T, E>) => unkno
 /** Widened hook for {@link builders.defer} where enclosing `Op` `T`/`E` are not inferred. */
 export type AnyExitFn = ExitFn<unknown, unknown>;
 
-export interface RegisterCleanup {
-  readonly _tag: "RegisterCleanup";
-  /** Narrowed per-run `ExitContext<T, E>` is passed at runtime; widened here so instruction unions stay composable. */
-  readonly finalize: (ctx: ExitContext<unknown, unknown>) => Promise<void>;
-}
-
-export type Instruction<E> = Err<unknown, E> | Suspended | RegisterCleanup;
+export type Instruction<E> =
+  | Err<unknown, E>
+  | SuspendInstruction
+  | RegisterExitFinalizerInstruction;
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
   withRetry(policy?: RetryPolicy): Op<T, E, A>;
