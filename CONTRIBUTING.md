@@ -24,6 +24,7 @@ All examples are consumer-level and live under `examples/*`.
 
 - Every remaining cast must carry an inline comment describing the concrete TypeScript limitation.
 - Treat casts as a last resort after trying type-level restructuring first.
+- New casts should be called out in PR descriptions so reviewers can audit the tradeoff.
 
 ## Source Layout
 
