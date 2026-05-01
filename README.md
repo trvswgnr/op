@@ -77,7 +77,7 @@ Creates an op that always fails with `error`.
 ### `Op.defer(finalize)`
 
 Registers cleanup for the **current** op run inside a generator. Deferred callbacks share one stack
-with `.withRelease` / `.onExit`: they run in **LIFO** order when the run unwinds (success, typed
+with `.withRelease` / `.on("exit", ...)`: they run in **LIFO** order when the run unwinds (success, typed
 failure, `UnhandledException`, timeout, or external cancellation). **All** scheduled finalizers run;
 even if one throws, the **remaining** callbacks in the stack **still run**. If a single finalizer throws, `.run()` returns
 `Err(UnhandledException)` with `cause` set to that fault. If **multiple** finalizers throw, `cause`
@@ -108,7 +108,7 @@ const risky = Op(function* () {
 
 `Op.defer` is only meaningful inside an `Op(function* () { ... })` body (compose with `yield*`).
 For releasing the **success value** of a single op, `.withRelease` on that op is often clearer.
-For unconditional finalization at op boundaries, `.onExit` still fits, with the same finalizer stack and the
+For unconditional finalization at op boundaries, `.on("exit", fn)` fits, with the same finalizer stack and the
 same rules when a cleanup callback throws.
 
 ### `Op.try(f, onError?)`
@@ -309,15 +309,12 @@ const result = await runQuery.withTimeout(1000).run();
 with `UnhandledException` and `cause` set to that fault (other registered finalizers **still run**
 afterward in LIFO order; multiple faults become a **nested `Error.cause` chain**, same as `Op.defer`).
 
-### `.onExit(finalize)`
+### `.on("exit", finalize)`
 
-Registers unconditional finalization logic that runs when the enclosing op run settles, whether the
-run succeeds or fails, with the same LIFO finalizer stack as `Op.defer` and `.withRelease`. If `finalize`
-throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a **nested
-`error.cause` chain** if several finalizers fault, same as `Op.defer`).
+Registers unconditional finalization when the enclosing run settles (success or failure), on the same LIFO stack as `Op.defer` and `.withRelease`. If `finalize` throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a nested **`error.cause` chain** if several finalizers fault).
 
 ```ts
-const result = await doWork.onExit(() => telemetry.flush()).run();
+const result = await doWork.on("exit", () => telemetry.flush()).run();
 ```
 
 ## Typed errors
@@ -365,7 +362,7 @@ const policy = {
 - `UnhandledException`: default wrapper when a thrown/rejected value is not mapped to a domain error.
 - `TimeoutError`: produced by `.withTimeout(timeoutMs)` when the budget expires.
 - `ErrorGroup`: produced by `Op.any` when all children fail.
-- **Teardown chains:** if several of `Op.defer`, `.withRelease`, or `.onExit` callbacks throw in one run, `UnhandledException.cause` may be an `Error` whose `.cause` links onward (**first failure in LIFO execution order is the outermost message**).
+- **Teardown chains:** if several of `Op.defer`, `.withRelease`, or `.on("exit", ...)` callbacks throw in one run, `UnhandledException.cause` may be an `Error` whose `.cause` links onward (**first failure in LIFO execution order is the outermost message**).
 
 ## Concurrent combinators
 

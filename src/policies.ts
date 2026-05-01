@@ -3,6 +3,7 @@ import { err, type Result } from "./result.js";
 import {
   type ExitFn,
   type Instruction,
+  type OpLifecycleHook,
   type Op,
   type OpArity,
   type ReleaseFn,
@@ -12,6 +13,7 @@ import {
   mapErrOp,
   mapOp,
   onExitOp,
+  onOp,
   recoverOp,
   tapErrOp,
   tapOp,
@@ -86,7 +88,7 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
     withTimeout: (timeoutMs: number) => withTimeoutOp(out, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(out, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(out, release),
-    onExit: (finalize: ExitFn) => onExitOp(out, finalize),
+    on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(out, event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -111,7 +113,7 @@ const makePolicyNullaryOp = <T, E>(
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-    onExit: (finalize: ExitFn) => onExitOp(self, finalize),
+    registerExitFinalize: (finalize: ExitFn) => onExitOp(self, finalize),
   });
   return self;
 };

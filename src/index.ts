@@ -50,12 +50,14 @@ export const Op = Object.assign(fromGenFn, {
  *
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
  * `withRetry(policy)`, `withTimeout(ms)`, `withSignal(signal)`, `withRelease(release)`,
- * `onExit(finalize)`, and `Op.defer(finalize)` inside generators.
+ * `.on("exit", finalize)`, and `Op.defer(finalize)` inside generators.
  *
  * @template T Value returned when the operation succeeds.
  * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws).
  * @template A Argument tuple for parameterized operations.
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
+
+export type { OpLifecycleHook } from "./core.js";
 
 export { TimeoutError, ErrorGroup, exponentialBackoff };

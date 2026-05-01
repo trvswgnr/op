@@ -30,12 +30,16 @@ export interface WithSignal<T, E, A extends readonly unknown[]> {
 export type ReleaseFn<T> = (value: T) => unknown;
 export type ExitFn = () => unknown;
 
+/** Lifecycle channels exposed by {@link Op}. Today only `"exit"` is supported; more may be added later. */
+export type OpLifecycleHook = "exit";
+
 export interface WithRelease<T, E, A extends readonly unknown[]> {
   withRelease(release: ReleaseFn<T>): Op<T, E, A>;
 }
 
-export interface WithOnExit<T, E, A extends readonly unknown[]> {
-  onExit(finalize: ExitFn): Op<T, E, A>;
+export interface WithLifecycleHooks<T, E, A extends readonly unknown[]> {
+  /** Registers a lifecycle handler. `"exit"` runs when the run unwinds (success, failure, cancel). Chaining stacks handlers in LIFO order with `Op.defer` / `.withRelease` on the same run. */
+  on(event: OpLifecycleHook, finalize: ExitFn): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
@@ -101,7 +105,7 @@ export interface OpNullary<T, E>
     WithTimeout<T, E, []>,
     WithSignal<T, E, []>,
     WithRelease<T, E, []>,
-    WithOnExit<T, E, []>,
+    WithLifecycleHooks<T, E, []>,
     WithMap<T, E, []>,
     WithMapErr<T, E, []>,
     WithFlatMap<T, E, []>,
@@ -118,7 +122,7 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithTimeout<T, E, A>,
     WithSignal<T, E, A>,
     WithRelease<T, E, A>,
-    WithOnExit<T, E, A>,
+    WithLifecycleHooks<T, E, A>,
     WithMap<T, E, A>,
     WithMapErr<T, E, A>,
     WithFlatMap<T, E, A>,
@@ -296,8 +300,21 @@ export interface OpHooks<T, E> {
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, readonly []>;
   withSignal: (signal: AbortSignal) => Op<T, E, readonly []>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, readonly []>;
-  onExit: (finalize: ExitFn) => Op<T, E, readonly []>;
+  /** Backs public `.on("exit", fn)` on ops built from these hooks. */
+  registerExitFinalize: (finalize: ExitFn) => Op<T, E, readonly []>;
 }
+
+const dispatchLifecycleNullary = <T, E>(
+  hooks: OpHooks<T, E>,
+  event: OpLifecycleHook,
+  finalize: ExitFn,
+): Op<T, E, readonly []> => {
+  if (event !== "exit") {
+    const _: never = event;
+    return _;
+  }
+  return hooks.registerExitFinalize(finalize);
+};
 
 function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
   return typeof value === "function" && Symbol.iterator in value;
@@ -315,7 +332,8 @@ export const makeNullaryOp = <T, E>(
     withTimeout: hooks.withTimeout,
     withSignal: hooks.withSignal,
     withRelease: hooks.withRelease,
-    onExit: hooks.onExit,
+    on: (event: OpLifecycleHook, finalize: ExitFn) =>
+      dispatchLifecycleNullary(hooks, event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self, bind),
@@ -355,7 +373,8 @@ const withCleanupNullaryOp = <T, E>(
       withSignal: (signal: AbortSignal) => withCleanupNullaryOp(op.withSignal(signal), release),
       withRelease: (nextRelease: ReleaseFn<T>) =>
         withCleanupNullaryOp(withCleanupNullaryOp(op, release), nextRelease),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
     },
   ) as Op<T, E, readonly []>;
 };
@@ -385,7 +404,7 @@ const onExitNullaryOp = <T, E>(
       withSignal: (signal: AbortSignal) => onExitNullaryOp(op.withSignal(signal), finalize),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
-      onExit: (nextFinalize: ExitFn) =>
+      registerExitFinalize: (nextFinalize: ExitFn) =>
         onExitNullaryOp(onExitNullaryOp(op, finalize), nextFinalize),
     },
   ) as Op<T, E, readonly []>;
@@ -416,7 +435,8 @@ const mapNullaryOp = <T, E, U>(
       withSignal: (signal: AbortSignal) => mapNullaryOp(op.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<Awaited<U>>) =>
         withCleanupNullaryOp(mapNullaryOp(op, transform), release),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(mapNullaryOp(op, transform), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(mapNullaryOp(op, transform), finalize),
     },
   ) as Op<Awaited<U>, E, readonly []>;
 };
@@ -450,7 +470,8 @@ const flatMapNullaryOp = <T, E, U, E2>(
       withSignal: (signal: AbortSignal) => flatMapNullaryOp(op.withSignal(signal), bind),
       withRelease: (release: ReleaseFn<U>) =>
         withCleanupNullaryOp(flatMapNullaryOp(op, bind), release),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(flatMapNullaryOp(op, bind), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(flatMapNullaryOp(op, bind), finalize),
     },
   ) as Op<U, E | E2, readonly []>;
 };
@@ -493,7 +514,8 @@ const tapNullaryOp = <T, E, R>(
       withSignal: (signal: AbortSignal) => tapNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(tapNullaryOp(op, observe), release),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(tapNullaryOp(op, observe), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
   ) as Op<T, E | TapError<R>, readonly []>;
 };
@@ -545,7 +567,8 @@ const tapErrNullaryOp = <T, E, R>(
       withSignal: (signal: AbortSignal) => tapErrNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(tapErrNullaryOp(op, observe), release),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
     },
   ) as Op<T, E | TapError<R>, readonly []>;
 };
@@ -582,7 +605,8 @@ const mapErrNullaryOp = <T, E, E2>(
       withSignal: (signal: AbortSignal) => mapErrNullaryOp(op.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(mapErrNullaryOp(op, transform), release),
-      onExit: (finalize: ExitFn) => onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
+      registerExitFinalize: (finalize: ExitFn) =>
+        onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
     },
   ) as Op<T, E2, readonly []>;
 };
@@ -654,7 +678,7 @@ const recoverNullaryOp = <T, E, R>(
         recoverNullaryOp(op.withSignal(signal), predicate, handler),
       withRelease: (release: ReleaseFn<T | RecoverValue<R>>) =>
         withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler), release),
-      onExit: (finalize: ExitFn) =>
+      registerExitFinalize: (finalize: ExitFn) =>
         onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
     },
   ) as Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []>;
@@ -665,7 +689,7 @@ interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, A>;
   withSignal: (signal: AbortSignal) => Op<T, E, A>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, A>;
-  onExit: (finalize: ExitFn) => Op<T, E, A>;
+  on: (event: OpLifecycleHook, finalize: ExitFn) => Op<T, E, A>;
 }
 
 const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
@@ -690,7 +714,7 @@ const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
     withTimeout: (timeoutMs: number) => handlers.withTimeout(timeoutMs),
     withSignal: (signal: AbortSignal) => handlers.withSignal(signal),
     withRelease: (release: ReleaseFn<TOut>) => handlers.withRelease(release),
-    onExit: (finalize: ExitFn) => handlers.onExit(finalize),
+    on: (event: OpLifecycleHook, finalize: ExitFn) => handlers.on(event, finalize),
     map: <U>(transform: (value: TOut) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: EOut) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: TOut) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -715,7 +739,7 @@ export const withReleaseOp = <T, E, A extends readonly unknown[]>(
       withTimeout: (timeoutMs: number) => withReleaseOp(source.withTimeout(timeoutMs), release),
       withSignal: (signal: AbortSignal) => withReleaseOp(source.withSignal(signal), release),
       withRelease: (nextRelease: ReleaseFn<T>) => withReleaseOp(getSelf(), nextRelease),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -732,9 +756,21 @@ export const onExitOp = <T, E, A extends readonly unknown[]>(
       withTimeout: (timeoutMs: number) => onExitOp(source.withTimeout(timeoutMs), finalize),
       withSignal: (signal: AbortSignal) => onExitOp(source.withSignal(signal), finalize),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      onExit: (nextFinalize: ExitFn) => onExitOp(getSelf(), nextFinalize),
+      on: (event: OpLifecycleHook, hookFinalize: ExitFn) => onOp(getSelf(), event, hookFinalize),
     }),
   );
+};
+
+export const onOp = <T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  event: OpLifecycleHook,
+  finalize: ExitFn,
+): Op<T, E, A> => {
+  if (event !== "exit") {
+    const _: never = event;
+    return _;
+  }
+  return onExitOp(op, finalize);
 };
 
 export const mapOp = <T, E, A extends readonly unknown[], U>(
@@ -749,7 +785,7 @@ export const mapOp = <T, E, A extends readonly unknown[], U>(
       withTimeout: (timeoutMs: number) => mapOp(source.withTimeout(timeoutMs), transform),
       withSignal: (signal: AbortSignal) => mapOp(source.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<Awaited<U>>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -769,7 +805,7 @@ export const mapErrOp = <T, E, A extends readonly unknown[], E2>(
         ),
       withSignal: (signal: AbortSignal) => mapErrOp(source.withSignal(signal), transform),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -786,7 +822,7 @@ export const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
       withTimeout: (timeoutMs: number) => flatMapOp(source.withTimeout(timeoutMs), bind),
       withSignal: (signal: AbortSignal) => flatMapOp(source.withSignal(signal), bind),
       withRelease: (release: ReleaseFn<U>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -803,7 +839,7 @@ export const tapOp = <T, E, A extends readonly unknown[], R>(
       withTimeout: (timeoutMs: number) => tapOp(source.withTimeout(timeoutMs), observe),
       withSignal: (signal: AbortSignal) => tapOp(source.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -825,7 +861,7 @@ export const tapErrOp = <T, E, A extends readonly unknown[], R>(
         }),
       withSignal: (signal: AbortSignal) => tapErrOp(source.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };
@@ -848,7 +884,7 @@ export const recoverOp = <T, E, A extends readonly unknown[], R>(
         ),
       withSignal: (signal: AbortSignal) => recoverOp(source.withSignal(signal), predicate, handler),
       withRelease: (release: ReleaseFn<T | RecoverValue<R>>) => withReleaseOp(getSelf(), release),
-      onExit: (finalize: ExitFn) => onExitOp(getSelf(), finalize),
+      on: (event: OpLifecycleHook, finalize: ExitFn) => onOp(getSelf(), event, finalize),
     }),
   );
 };

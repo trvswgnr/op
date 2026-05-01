@@ -25,7 +25,7 @@ const makeCombinatorOp = <T, E>(
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-    onExit: (finalize: ExitFn) => onExitOp(self, finalize),
+    registerExitFinalize: (finalize: ExitFn) => onExitOp(self, finalize),
   });
   return self;
 };

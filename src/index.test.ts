@@ -832,11 +832,11 @@ describe("public API (index)", () => {
     });
   });
 
-  describe("op.onExit", () => {
-    test("runs finalizer after success", async () => {
+  describe('op.on("exit")', () => {
+    test('.on("exit") runs finalizer after success', async () => {
       const finalize = vi.fn();
       const result = await Op.of(123)
-        .onExit(() => {
+        .on("exit", () => {
           finalize();
         })
         .run();
@@ -846,10 +846,30 @@ describe("public API (index)", () => {
       expect(finalize).toHaveBeenCalledTimes(1);
     });
 
+    test('chains .on("exit") in LIFO order with inner registration running first', async () => {
+      const order: string[] = [];
+      await Op.of(1)
+        .on("exit", () => {
+          order.push("a");
+        })
+        .on("exit", () => {
+          order.push("b");
+        })
+        .run();
+      expect(order).toEqual(["a", "b"]);
+    });
+
+    test('.on("exit") preserves fluent combinators', async () => {
+      const finalize = vi.fn();
+      const result = await Op.of(1).withRetry().on("exit", finalize).run();
+      assert(result.isOk());
+      expect(finalize).toHaveBeenCalledTimes(1);
+    });
+
     test("runs finalizer after typed failure", async () => {
       const finalize = vi.fn();
       const result = await Op.fail("boom" as const)
-        .onExit(() => {
+        .on("exit", () => {
           finalize();
         })
         .run();
@@ -860,10 +880,10 @@ describe("public API (index)", () => {
     });
 
     test("preserves inferred op shapes", () => {
-      const p1 = Op.of({ id: 1 }).onExit(() => {});
+      const p1 = Op.of({ id: 1 }).on("exit", () => {});
       const p2 = Op(function* (name: string) {
         return name.length;
-      }).onExit(() => {});
+      }).on("exit", () => {});
 
       expectTypeOf(p1).toEqualTypeOf<Op<{ id: number }, never, []>>();
       expectTypeOf(p2).toEqualTypeOf<Op<number, never, [string]>>();

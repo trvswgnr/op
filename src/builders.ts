@@ -4,12 +4,14 @@ import {
   makeNullaryOp,
   mapErrOp,
   mapOp,
+  onExitOp,
+  onOp,
   recoverOp,
   tapOp,
   tapErrOp,
-  onExitOp,
   withReleaseOp,
   type ExitFn,
+  type OpLifecycleHook,
   type FromGenFn,
   type Instruction,
   type Op,
@@ -37,7 +39,7 @@ export const succeed = <T>(value: T): Op<Awaited<T>, never, []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -57,7 +59,7 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<never>) => withReleaseOp(op, release),
-      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -82,7 +84,7 @@ export const defer = (finalize: ExitFn): Op<void, never, readonly []> => {
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<void>) => withReleaseOp(op, release),
-      onExit: (nextFinalize: ExitFn) => onExitOp(op, nextFinalize),
+      registerExitFinalize: (nextFinalize: ExitFn) => onExitOp(op, nextFinalize),
     },
   );
   return op;
@@ -118,7 +120,7 @@ export const _try = <T, E = UnhandledException>(
       withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
       withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      onExit: (finalize: ExitFn) => onExitOp(op, finalize),
+      registerExitFinalize: (finalize: ExitFn) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -139,8 +141,8 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
       makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal)),
     withRelease: (release: ReleaseFn<T>) =>
       makeArityOp<T, E, A>((...args: A) => withReleaseOp(invoke(...args), release)),
-    onExit: (finalize: ExitFn) =>
-      makeArityOp<T, E, A>((...args: A) => onExitOp(invoke(...args), finalize)),
+    on: (event: OpLifecycleHook, finalize: ExitFn) =>
+      makeArityOp<T, E, A>((...args: A) => onOp(invoke(...args), event, finalize)),
     map: <U>(transform: (value: T) => U) => mapOp(out, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(out, transform),
     flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(out, bind),
@@ -170,7 +172,7 @@ export const fromGenFn: FromGenFn = (
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
       withRelease: (release: ReleaseFn<unknown>) => withReleaseOp(bound, release),
-      onExit: (finalize: ExitFn) => onExitOp(bound, finalize),
+      registerExitFinalize: (finalize: ExitFn) => onExitOp(bound, finalize),
     });
     return bound;
   };
