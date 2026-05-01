@@ -25,13 +25,14 @@ export const Tagged: TaggedFactory = <Tag extends string, Base extends AbstractC
   tag: Tag,
   Base?: Base,
 ) => {
-  if (Base) {
+  if (Base !== undefined) {
     // @ts-expect-error 2545: TS can't reconcile `class extends Base`
     // with `ConstructorParameters<Base>` and infers `readonly never[]`
     return class extends Base implements Tagged<Tag> {
       readonly _tag = tag;
     };
   }
+
   return class implements Tagged<Tag> {
     readonly _tag = tag;
   };

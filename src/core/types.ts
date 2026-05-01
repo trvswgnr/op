@@ -1,8 +1,8 @@
 import type { TimeoutError, UnhandledException } from "../errors.js";
 import type { Err, Result } from "../result.js";
 import type { RetryPolicy } from "../policies.js";
-import type { Tagged } from "../tagged.js";
 import type { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
+import { Tagged } from "../tagged.js";
 
 /**
  * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
@@ -91,14 +91,8 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
   ): Op<T | RecoverValue<R>, E | RecoverError<R>, A>;
 }
 
-export interface OpBase<T, E> {
-  readonly _tag: "Op";
-  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
-}
-
 export interface OpNullary<T, E>
   extends
-    OpBase<T, E>,
     WithRetry<T, E, []>,
     WithTimeout<T, E, []>,
     WithSignal<T, E, []>,
@@ -110,8 +104,10 @@ export interface OpNullary<T, E>
     WithTap<T, E, []>,
     WithTapErr<T, E, []>,
     WithRecover<T, E, []> {
-  (): OpBase<T, E>;
+  (): OpNullary<T, E>;
   run(): Promise<Result<T, E | UnhandledException>>;
+  readonly _tag: "Op";
+  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>

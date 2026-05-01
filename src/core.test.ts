@@ -267,7 +267,7 @@ describe("edge cases and invariants", () => {
 
   test("returns UnhandledException when generator yields invalid instruction", async () => {
     const result = await fromGenFn(function* () {
-      yield { _tag: "NotAnInstruction" } as unknown as never;
+      yield { _tag: "NotAnInstruction" } as never;
       return 1;
     }).run();
     assert(result.isErr() === true, "should be Err");

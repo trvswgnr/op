@@ -1102,6 +1102,7 @@ describe("public API (index)", () => {
       const wrappedDefault = op5.withTimeout(100);
       expectTypeOf(wrappedDefault).toEqualTypeOf<Op<number, TimeoutError, [a?: number]>>();
       await expect(wrappedDefault.run()).resolves.toMatchObject({ value: 2 });
+
       const wrappedDefaultNullary = wrappedDefault(4);
       expectTypeOf(wrappedDefaultNullary).toEqualTypeOf<Op<number, TimeoutError, []>>();
       await expect(wrappedDefaultNullary.run()).resolves.toMatchObject({ value: 8 });

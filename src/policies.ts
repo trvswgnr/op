@@ -83,8 +83,8 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
 ): Op<T, EOut, A> => {
   if (isNullaryOp(op)) {
-    // TS cannot express that `[] extends A` may collapse to the nullary branch here.
-    // Runtime behavior is correct: nullary input remains nullary after mapping.
+    // TS cannot express that `[] extends A` may collapse to the nullary branch here
+    // Runtime behavior is correct: nullary input remains nullary after mapping
     return mapNullary(op) as unknown as Op<T, EOut, A>;
   }
 

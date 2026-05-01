@@ -6,9 +6,9 @@ import type {
   ExitFn,
   Instruction,
   Op,
-  OpBase,
   OpHooks,
   OpLifecycleHook,
+  OpNullary,
   ReleaseFn,
   WithPredicateMethod,
 } from "./types.js";
@@ -71,7 +71,7 @@ export const makeNullaryOp = <T, E>(
       recoverOp(self, predicate, handler),
     _tag: "Op" as const,
   };
-  const callable = (() => state) as () => OpBase<T, E>;
+  const callable = (() => state) as () => OpNullary<T, E>;
   self = Object.assign(callable, state) as Op<T, E, []>;
   return self;
 };
