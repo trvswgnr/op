@@ -38,7 +38,6 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
   let self: Op<T, E, A>;
   const handlers = () => makeHandlers(self);
   self = Object.assign(invoke, {
-    _opKind: "arity" as const,
     run: (...args: A) => drive(invoke(...args), new AbortController().signal),
     withRetry: (policy?: RetryPolicy) => handlers().withRetry(policy),
     withTimeout: (timeoutMs: number) => handlers().withTimeout(timeoutMs),
