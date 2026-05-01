@@ -1,6 +1,10 @@
-import { describe, expect, test, assert } from "vitest";
+import { describe, expect, test, assert, expectTypeOf } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
 import { UnhandledException } from "./errors.js";
+import { isNullaryOp } from "./core/nullary-ops.js";
+import { Op } from "./core/types.js";
+
+type InferOpArgs<T> = T extends Op<unknown, unknown, infer A> ? A : never;
 
 describe("op.run", () => {
   test("sync op completes without awaiting", async () => {
@@ -92,6 +96,47 @@ describe("op.run", () => {
 });
 
 describe("edge cases and invariants", () => {
+  test("fromGenFn handles arity correctly", async () => {
+    const op1 = fromGenFn(function* (a: number, b: number) {
+      return a + b;
+    });
+    expect(isNullaryOp(op1)).toBe(false);
+    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<[a: number, b: number]>();
+
+    const op2 = fromGenFn(function* () {
+      return 1;
+    });
+    expect(isNullaryOp(op2)).toBe(true);
+    expectTypeOf<InferOpArgs<typeof op2>>().toEqualTypeOf<readonly []>();
+
+    const op3 = fromGenFn(function* (a?: number) {
+      return (a ?? 0) * 2;
+    });
+    expect(isNullaryOp(op3)).toBe(false);
+    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<[a?: number]>();
+    op3.run(1);
+
+    const op4 = fromGenFn(function* (a: number, b?: number) {
+      return (a + (b ?? 0)) * 2;
+    });
+    expect(isNullaryOp(op4)).toBe(false);
+    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<[a: number, b?: number]>();
+    op4.run(1, 2);
+
+    const op5 = fromGenFn(function* (a: number = 1) {
+      return a * 2;
+    });
+    expect(isNullaryOp(op5)).toBe(false);
+    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<[a?: number]>();
+    op5.run(1);
+
+    const op6 = fromGenFn(function* (...args: readonly [a: number, b: number]) {
+      return args.reduce((acc, curr) => acc + curr, 0);
+    });
+    expect(isNullaryOp(op6)).toBe(false);
+    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<[a: number, b: number]>();
+    op6.run(1, 2);
+  });
   test("Ok result has correct shape", async () => {
     const result = await succeed(1).run();
     assert(result.isOk() === true, "result should be Ok");

@@ -20,7 +20,7 @@ type InferNullaryOpErr<R> = R extends Op<unknown, infer E, readonly []> ? E : ne
 type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
 type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
 
-function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
+export function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
   return typeof value === "function" && Symbol.iterator in value;
 }
 

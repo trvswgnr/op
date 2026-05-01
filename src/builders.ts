@@ -133,6 +133,19 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
   }));
 };
 
+export const hasParams = (f: (...args: unknown[]) => unknown): boolean => {
+  if (typeof f !== "function") throw new TypeError("Expected a function");
+  if (f.length > 0) return true;
+  const source = Function.prototype.toString.call(f);
+  const firstParen = source.indexOf("(");
+  const secondParen = source.indexOf(")", firstParen + 1);
+  return (
+    firstParen >= 0 &&
+    secondParen > firstParen + 1 &&
+    source.slice(firstParen + 1, secondParen).trim() !== ""
+  );
+};
+
 /**
  * Turns a generator function into an {@link Op}.
  */
@@ -150,8 +163,8 @@ export const fromGenFn: FromGenFn = (
     return bound;
   };
 
-  if (f.length === 0) {
-    // `FromGenFn` has an explicit zero-arg overload, but TS does not narrow on `f.length`.
+  // keep true nullary generator functions as nullary ops
+  if (!hasParams(f)) {
     return makeBoundOp();
   }
 

@@ -138,15 +138,16 @@ export interface OpArity<T, E, A extends readonly unknown[]>
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
 
-type _Op<T, E, A extends readonly unknown[]> = [] extends A ? OpNullary<T, E> : OpArity<T, E, A>;
+type _Op<T, E, A extends readonly unknown[]> = A extends readonly []
+  ? OpNullary<T, E>
+  : OpArity<T, E, A>;
 
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A> & Tagged<"Op">;
 
 export interface FromGenFn {
-  <Y extends Instruction<unknown>, T>(f: () => Generator<Y, T, unknown>): Op<T, ExtractErr<Y>, []>;
   <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
     f: (...args: A) => Generator<Y, T, unknown>,
-  ): Op<T, ExtractErr<Y>, A>;
+  ): Op<T, ExtractErr<Y>, A extends readonly [] ? readonly [] : A>;
   (
     f: (...args: unknown[]) => Generator<Instruction<unknown>, unknown, unknown>,
   ): Op<unknown, unknown, []> | Op<unknown, unknown, readonly unknown[]>;
