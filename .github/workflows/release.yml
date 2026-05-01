@@ -24,9 +24,22 @@ jobs:
         id: validate
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main
+          git fetch --force --tags origin main
           if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
             echo "Tag ${GITHUB_REF_NAME} is not on main; skipping publish."
+            echo "allow_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          latest_tag="$(git tag --merged "origin/main" --list "v*" | sort -V | tail -n 1)"
+          if [ -z "$latest_tag" ]; then
+            echo "No release tags found on main; skipping publish."
+            echo "allow_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${GITHUB_REF_NAME}" != "$latest_tag" ]; then
+            echo "Tag ${GITHUB_REF_NAME} is not the latest release tag (${latest_tag}); skipping publish."
             echo "allow_publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
