@@ -16,11 +16,11 @@ import { drive } from "./runtime.js";
 import { mapOp, mapErrOp, flatMapOp, tapOp, tapErrOp, recoverOp } from "./arity-ops.js";
 import { runOp } from "./run-op.js";
 
-type InferNullaryOpErr<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
-type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
-type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
+type InferNullaryOpErr<R> = R extends Op<unknown, infer E, []> ? E : never;
+type RecoverValue<R> = R extends Op<infer T, unknown, []> ? T : Awaited<R>;
+type RecoverError<R> = R extends Op<unknown, infer E, []> ? E : never;
 
-export function isNullaryOp(value: unknown): value is Op<unknown, unknown, readonly []> {
+export function isNullaryOp(value: unknown): value is Op<unknown, unknown, []> {
   return (
     typeof value === "function" &&
     Symbol.iterator in value &&
@@ -39,7 +39,7 @@ const dispatchLifecycleNullary = <T, E>(
   hooks: OpHooks<T, E>,
   event: OpLifecycleHook,
   finalize: ExitFn<T, E>,
-): Op<T, E, readonly []> => {
+): Op<T, E, []> => {
   if (event !== "exit") {
     const _: never = event;
     return _;
@@ -50,8 +50,8 @@ const dispatchLifecycleNullary = <T, E>(
 export const makeNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
-): Op<T, E, readonly []> => {
-  let self: Op<T, E, readonly []>;
+): Op<T, E, []> => {
+  let self: Op<T, E, []>;
   const state = {
     [Symbol.iterator]: gen,
     run: () => runOp(self),
@@ -63,7 +63,7 @@ export const makeNullaryOp = <T, E>(
       dispatchLifecycleNullary(hooks, event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self, bind),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
     tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
     tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
@@ -71,14 +71,11 @@ export const makeNullaryOp = <T, E>(
     _tag: "Op" as const,
   };
   const callable = (() => state) as () => OpBase<T, E>;
-  self = Object.assign(callable, state) as Op<T, E, readonly []>;
+  self = Object.assign(callable, state) as Op<T, E, []>;
   return self;
 };
 
-const withCleanupNullaryOp = <T, E>(
-  op: Op<T, E, readonly []>,
-  release: ReleaseFn<T>,
-): Op<T, E, readonly []> => {
+const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> => {
   return makeNullaryOp<T, E | UnhandledException>(
     function* () {
       const result = (yield {
@@ -104,13 +101,10 @@ const withCleanupNullaryOp = <T, E>(
       registerExitFinalize: (finalize: ExitFn<T, E>) =>
         onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
     },
-  ) as Op<T, E, readonly []>;
+  ) as Op<T, E, []>;
 };
 
-const onExitNullaryOp = <T, E>(
-  op: Op<T, E, readonly []>,
-  finalize: ExitFn<T, E>,
-): Op<T, E, readonly []> => {
+const onExitNullaryOp = <T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> => {
   return makeNullaryOp<T, E | UnhandledException>(
     function* () {
       yield {
@@ -137,13 +131,13 @@ const onExitNullaryOp = <T, E>(
       registerExitFinalize: (nextFinalize: ExitFn<T, E>) =>
         onExitNullaryOp(onExitNullaryOp(op, finalize), nextFinalize),
     },
-  ) as Op<T, E, readonly []>;
+  ) as Op<T, E, []>;
 };
 
 const mapNullaryOp = <T, E, U>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   transform: (value: T) => U,
-): Op<Awaited<U>, E, readonly []> => {
+): Op<Awaited<U>, E, []> => {
   return makeNullaryOp<Awaited<U>, E | UnhandledException>(
     function* () {
       const result = (yield {
@@ -168,13 +162,13 @@ const mapNullaryOp = <T, E, U>(
       registerExitFinalize: (finalize: ExitFn<Awaited<U>, E>) =>
         onExitNullaryOp(mapNullaryOp(op, transform), finalize),
     },
-  ) as Op<Awaited<U>, E, readonly []>;
+  ) as Op<Awaited<U>, E, []>;
 };
 
 const flatMapNullaryOp = <T, E, U, E2>(
-  op: Op<T, E, readonly []>,
-  bind: (value: T) => Op<U, E2, readonly []>,
-): Op<U, E | E2, readonly []> => {
+  op: Op<T, E, []>,
+  bind: (value: T) => Op<U, E2, []>,
+): Op<U, E | E2, []> => {
   return makeNullaryOp<U, E | E2 | UnhandledException>(
     function* () {
       const first = (yield {
@@ -203,13 +197,13 @@ const flatMapNullaryOp = <T, E, U, E2>(
       registerExitFinalize: (finalize: ExitFn<U, E | E2>) =>
         onExitNullaryOp(flatMapNullaryOp(op, bind), finalize),
     },
-  ) as Op<U, E | E2, readonly []>;
+  ) as Op<U, E | E2, []>;
 };
 
 const tapNullaryOp = <T, E, R>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   observe: (value: T) => R,
-): Op<T, E | InferNullaryOpErr<R>, readonly []> => {
+): Op<T, E | InferNullaryOpErr<R>, []> => {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield {
@@ -247,13 +241,13 @@ const tapNullaryOp = <T, E, R>(
       registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
-  ) as Op<T, E | InferNullaryOpErr<R>, readonly []>;
+  ) as Op<T, E | InferNullaryOpErr<R>, []>;
 };
 
 const tapErrNullaryOp = <T, E, R>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   observe: (error: E) => R,
-): Op<T, E | InferNullaryOpErr<R>, readonly []> => {
+): Op<T, E | InferNullaryOpErr<R>, []> => {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield {
@@ -300,13 +294,13 @@ const tapErrNullaryOp = <T, E, R>(
       registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
     },
-  ) as Op<T, E | InferNullaryOpErr<R>, readonly []>;
+  ) as Op<T, E | InferNullaryOpErr<R>, []>;
 };
 
 const mapErrNullaryOp = <T, E, E2>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   transform: (error: E) => E2,
-): Op<T, E2, readonly []> => {
+): Op<T, E2, []> => {
   return makeNullaryOp<T, E2 | UnhandledException>(
     function* () {
       const result = (yield {
@@ -338,14 +332,14 @@ const mapErrNullaryOp = <T, E, E2>(
       registerExitFinalize: (finalize: ExitFn<T, E2>) =>
         onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
     },
-  ) as Op<T, E2, readonly []>;
+  ) as Op<T, E2, []>;
 };
 
 const recoverNullaryOp = <T, E, R>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   predicate: ((error: E) => boolean) | WithPredicateMethod<E>,
   handler: (error: E) => R,
-): Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []> => {
+): Op<T | RecoverValue<R>, E | RecoverError<R>, []> => {
   return makeNullaryOp<T | RecoverValue<R>, E | RecoverError<R> | UnhandledException>(
     function* () {
       const result = (yield {
@@ -404,7 +398,7 @@ const recoverNullaryOp = <T, E, R>(
       registerExitFinalize: (finalize: ExitFn<T | RecoverValue<R>, E | RecoverError<R>>) =>
         onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
     },
-  ) as Op<T | RecoverValue<R>, E | RecoverError<R>, readonly []>;
+  ) as Op<T | RecoverValue<R>, E | RecoverError<R>, []>;
 };
 
 export {

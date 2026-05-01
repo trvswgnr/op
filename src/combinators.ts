@@ -6,14 +6,12 @@ import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./po
 import { err, ok, type Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
-type NullaryOp = Op<unknown, unknown, readonly []>;
-type SuccessOf<O> = O extends Op<infer T, unknown, readonly []> ? T : never;
-type ErrorOf<O> = O extends Op<unknown, infer E, readonly []> ? E : never;
+type NullaryOp = Op<unknown, unknown, []>;
+type SuccessOf<O> = O extends Op<infer T, unknown, []> ? T : never;
+type ErrorOf<O> = O extends Op<unknown, infer E, []> ? E : never;
 
-const makeCombinatorOp = <T, E>(
-  gen: () => Generator<Instruction<E>, T, unknown>,
-): Op<T, E, readonly []> => {
-  const self: Op<T, E, readonly []> = makeNullaryOp(gen, {
+const makeCombinatorOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
+  const self: Op<T, E, []> = makeNullaryOp(gen, {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
@@ -24,7 +22,7 @@ const makeCombinatorOp = <T, E>(
 };
 
 const fanOut = <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): {
   runs: readonly Promise<Result<T, E | UnhandledException>>[];
@@ -54,11 +52,7 @@ const concurrencyLimit = (concurrency: number | undefined, size: number): number
 export const allOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
   concurrency?: number,
-): Op<
-  { [K in keyof Ops]: SuccessOf<Ops[K]> },
-  ErrorOf<Ops[number]> | UnhandledException,
-  readonly []
-> => {
+): Op<{ [K in keyof Ops]: SuccessOf<Ops[K]> }, ErrorOf<Ops[number]> | UnhandledException, []> => {
   const snapshot = ops.slice();
   const limit = concurrencyLimit(concurrency, snapshot.length);
   return makeCombinatorOp(function* () {
@@ -74,7 +68,7 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
 };
 
 const driveAll = async <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
   concurrency: number,
 ): Promise<Result<T[], E | UnhandledException>> => {
@@ -126,7 +120,7 @@ const driveAll = async <T, E>(
 };
 
 const driveAllUnbounded = async <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T[], E | UnhandledException>> => {
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
@@ -160,7 +154,7 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
 ): Op<
   { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> },
   never,
-  readonly []
+  []
 > => {
   const snapshot = ops.slice();
   const limit = concurrencyLimit(concurrency, snapshot.length);
@@ -175,8 +169,8 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
 };
 
 export const settleOp = <T, E>(
-  op: Op<T, E, readonly []>,
-): Op<Result<T, E | UnhandledException>, never, readonly []> => {
+  op: Op<T, E, []>,
+): Op<Result<T, E | UnhandledException>, never, []> => {
   return makeCombinatorOp<Result<T, E | UnhandledException>, never>(function* () {
     const value = (yield {
       _tag: "Suspended" as const,
@@ -187,7 +181,7 @@ export const settleOp = <T, E>(
 };
 
 const driveAllSettled = async <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
   concurrency: number,
 ): Promise<Result<T, E | UnhandledException>[]> => {
@@ -228,7 +222,7 @@ const driveAllSettled = async <T, E>(
 };
 
 const driveAllSettledUnbounded = async <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>[]> => {
   const fan = fanOut(ops, outerSignal);
@@ -239,11 +233,7 @@ const driveAllSettledUnbounded = async <T, E>(
 
 export const anyOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
-): Op<
-  SuccessOf<Ops[number]>,
-  ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>,
-  readonly []
-> => {
+): Op<SuccessOf<Ops[number]>, ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>, []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
   type E = ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>;
@@ -260,7 +250,7 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
 };
 
 const driveAny = <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
   if (ops.length === 0) {
@@ -297,7 +287,7 @@ const driveAny = <T, E>(
 
 export const raceOp = <const Ops extends readonly NullaryOp[]>(
   ops: Ops,
-): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnhandledException, readonly []> => {
+): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnhandledException, []> => {
   const snapshot = ops.slice();
   type V = SuccessOf<Ops[number]>;
   type E = ErrorOf<Ops[number]> | UnhandledException;
@@ -314,7 +304,7 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
 };
 
 const driveRace = <T, E>(
-  ops: readonly Op<T, E, readonly []>[],
+  ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> => {
   if (ops.length === 0) {

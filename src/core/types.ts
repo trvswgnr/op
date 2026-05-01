@@ -65,10 +65,10 @@ export interface WithMapErr<T, E, A extends readonly unknown[]> {
 }
 
 export interface WithFlatMap<T, E, A extends readonly unknown[]> {
-  flatMap<U, E2>(bind: (value: T) => Op<U, E2, readonly []>): Op<U, E | E2, A>;
+  flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Op<U, E | E2, A>;
 }
 
-export type InferNullaryOpErr<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
+export type InferNullaryOpErr<R> = R extends Op<unknown, infer E, []> ? E : never;
 
 export interface WithTap<T, E, A extends readonly unknown[]> {
   tap<R>(observe: (value: T) => R): Op<T, E | InferNullaryOpErr<R>, A>;
@@ -78,8 +78,8 @@ export interface WithTapErr<T, E, A extends readonly unknown[]> {
   tapErr<R>(observe: (error: E) => R): Op<T, E | InferNullaryOpErr<R>, A>;
 }
 
-export type RecoverValue<R> = R extends Op<infer T, unknown, readonly []> ? T : Awaited<R>;
-export type RecoverError<R> = R extends Op<unknown, infer E, readonly []> ? E : never;
+export type RecoverValue<R> = R extends Op<infer T, unknown, []> ? T : Awaited<R>;
+export type RecoverError<R> = R extends Op<unknown, infer E, []> ? E : never;
 
 export type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
 
@@ -106,17 +106,17 @@ export interface OpBase<T, E> {
 export interface OpNullary<T, E>
   extends
     OpBase<T, E>,
-    WithRetry<T, E, readonly []>,
-    WithTimeout<T, E, readonly []>,
-    WithSignal<T, E, readonly []>,
-    WithRelease<T, E, readonly []>,
-    WithLifecycleHooks<T, E, readonly []>,
-    WithMap<T, E, readonly []>,
-    WithMapErr<T, E, readonly []>,
-    WithFlatMap<T, E, readonly []>,
-    WithTap<T, E, readonly []>,
-    WithTapErr<T, E, readonly []>,
-    WithRecover<T, E, readonly []> {
+    WithRetry<T, E, []>,
+    WithTimeout<T, E, []>,
+    WithSignal<T, E, []>,
+    WithRelease<T, E, []>,
+    WithLifecycleHooks<T, E, []>,
+    WithMap<T, E, []>,
+    WithMapErr<T, E, []>,
+    WithFlatMap<T, E, []>,
+    WithTap<T, E, []>,
+    WithTapErr<T, E, []>,
+    WithRecover<T, E, []> {
   (): OpBase<T, E>;
   run(): Promise<Result<T, E | UnhandledException>>;
 }
@@ -134,20 +134,20 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithTap<T, E, A>,
     WithTapErr<T, E, A>,
     WithRecover<T, E, A> {
-  (...args: A): Op<T, E, readonly []>;
+  (...args: A): Op<T, E, []>;
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
 
-export type Op<T, E, A extends readonly unknown[]> = (A extends readonly []
+export type Op<T, E, A extends readonly unknown[]> = (A extends []
   ? OpNullary<T, E>
   : OpArity<T, E, A>) &
   Tagged<"Op">;
 
 export interface OpHooks<T, E> {
-  withRetry: (policy?: RetryPolicy) => Op<T, E, readonly []>;
-  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, readonly []>;
-  withSignal: (signal: AbortSignal) => Op<T, E, readonly []>;
-  withRelease: (release: ReleaseFn<T>) => Op<T, E, readonly []>;
+  withRetry: (policy?: RetryPolicy) => Op<T, E, []>;
+  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, []>;
+  withSignal: (signal: AbortSignal) => Op<T, E, []>;
+  withRelease: (release: ReleaseFn<T>) => Op<T, E, []>;
   /** Backs public `.on("exit", fn)` on ops built from these hooks. */
-  registerExitFinalize: (finalize: ExitFn<T, E>) => Op<T, E, readonly []>;
+  registerExitFinalize: (finalize: ExitFn<T, E>) => Op<T, E, []>;
 }

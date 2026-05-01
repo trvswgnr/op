@@ -114,21 +114,21 @@ describe("edge cases and invariants", () => {
       return a + b;
     });
     expect(isNullaryOp(op1)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<readonly [a: number, b: number]>();
+    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<[a: number, b: number]>();
     await expect(op1.run(1, 2)).resolves.toMatchObject({ value: 3 });
 
     const op2 = fromGenFn(function* () {
       return 1;
     });
     expect(isNullaryOp(op2)).toBe(false); // fromGenFn always returns an arity wrapper
-    expectTypeOf<InferOpArgs<typeof op2>>().toEqualTypeOf<readonly []>();
+    expectTypeOf<InferOpArgs<typeof op2>>().toEqualTypeOf<[]>();
     await expect(op2.run()).resolves.toMatchObject({ value: 1 });
 
     const op3 = fromGenFn(function* (a?: number) {
       return (a ?? 0) * 2;
     });
     expect(isNullaryOp(op3)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<readonly [a?: number]>();
+    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<[a?: number]>();
     await expect(op3.run()).resolves.toMatchObject({ value: 0 });
     await expect(op3.run(1)).resolves.toMatchObject({ value: 2 });
 
@@ -136,7 +136,7 @@ describe("edge cases and invariants", () => {
       return (a + (b ?? 0)) * 2;
     });
     expect(isNullaryOp(op4)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<readonly [a: number, b?: number]>();
+    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<[a: number, b?: number]>();
     await expect(op4.run(1)).resolves.toMatchObject({ value: 2 });
     await expect(op4.run(1, 2)).resolves.toMatchObject({ value: 6 });
 
@@ -144,15 +144,15 @@ describe("edge cases and invariants", () => {
       return a * 2;
     });
     expect(isNullaryOp(op5)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<readonly [a?: number]>();
+    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<[a?: number]>();
     await expect(op5.run()).resolves.toMatchObject({ value: 2 });
     await expect(op5.run(3)).resolves.toMatchObject({ value: 6 });
 
-    const op6 = fromGenFn(function* (...args: readonly [a: number, b: number]) {
+    const op6 = fromGenFn(function* (...args: [a: number, b: number]) {
       return args.reduce((acc, curr) => acc + curr, 0);
     });
     expect(isNullaryOp(op6)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<readonly [a: number, b: number]>();
+    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<[a: number, b: number]>();
     await expect(op6.run(1, 2)).resolves.toMatchObject({ value: 3 });
 
     const wrappedOptional = op3.withRetry();

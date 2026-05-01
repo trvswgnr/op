@@ -32,7 +32,7 @@ export interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
 }
 
 export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
-  invoke: (...args: A) => Op<T, E, readonly []>,
+  invoke: (...args: A) => Op<T, E, []>,
   makeHandlers: (self: Op<T, E, A>) => FluentArityHandlers<T, E, A>,
 ): Op<T, E, A> => {
   let self: Op<T, E, A>;
@@ -46,7 +46,7 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
     on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) => handlers().on(event, finalize),
     map: <U>(transform: (value: T) => U) => mapOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, readonly []>) => flatMapOp(self, bind),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
     tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
     tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
@@ -58,7 +58,7 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
 
 const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
   op: Op<TIn, EIn, A>,
-  mapNullary: (resolved: Op<TIn, EIn, readonly []>) => Op<TOut, EOut, readonly []>,
+  mapNullary: (resolved: Op<TIn, EIn, []>) => Op<TOut, EOut, []>,
   makeHandlers: (
     source: OpArity<TIn, EIn, A>,
     self: Op<TOut, EOut, A>,
@@ -159,7 +159,7 @@ const mapErrOp = <T, E, A extends readonly unknown[], E2>(
 
 const flatMapOp = <T, E, A extends readonly unknown[], U, E2>(
   op: Op<T, E, A>,
-  bind: (value: T) => Op<U, E2, readonly []>,
+  bind: (value: T) => Op<U, E2, []>,
 ): Op<U, E | E2, A> => {
   return liftArityOp(
     op,

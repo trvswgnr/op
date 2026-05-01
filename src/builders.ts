@@ -20,7 +20,7 @@ export const succeed = <T>(value: Awaited<T> | Promise<T>): Op<Awaited<T>, never
     return _try(() => value);
   }
 
-  const op: Op<Awaited<T>, never, readonly []> = makeNullaryOp(
+  const op: Op<Awaited<T>, never, []> = makeNullaryOp(
     function* () {
       return value;
     },
@@ -38,8 +38,8 @@ export const succeed = <T>(value: Awaited<T> | Promise<T>): Op<Awaited<T>, never
 /**
  * Lifts a value into an operation that always fails.
  */
-export const fail = <E>(value: E): Op<never, E, readonly []> => {
-  const op: Op<never, E, readonly []> = makeNullaryOp(
+export const fail = <E>(value: E): Op<never, E, []> => {
+  const op: Op<never, E, []> = makeNullaryOp(
     function* () {
       return yield* err(value);
     },
@@ -59,8 +59,8 @@ export const fail = <E>(value: E): Op<never, E, readonly []> => {
  * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
  * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**.
  */
-export const defer = (finalize: AnyExitFn): Op<void, never, readonly []> => {
-  const op: Op<void, never, readonly []> = makeNullaryOp(
+export const defer = (finalize: AnyExitFn): Op<void, never, []> => {
+  const op: Op<void, never, []> = makeNullaryOp(
     function* () {
       yield {
         _tag: "RegisterCleanup" as const,
@@ -84,8 +84,8 @@ export const defer = (finalize: AnyExitFn): Op<void, never, readonly []> => {
 export const _try = <T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
-): Op<Awaited<T>, E, readonly []> => {
-  const op: Op<Awaited<T>, E, readonly []> = makeNullaryOp(
+): Op<Awaited<T>, E, []> => {
+  const op: Op<Awaited<T>, E, []> = makeNullaryOp(
     function* () {
       const result = (yield {
         _tag: "Suspended" as const,
@@ -114,7 +114,7 @@ export const _try = <T, E = UnhandledException>(
 };
 
 const makeArityOp = <T, E, A extends readonly unknown[]>(
-  invoke: (...args: A) => Op<T, E, readonly []>,
+  invoke: (...args: A) => Op<T, E, []>,
 ): Op<T, E, A> => {
   return makeFluentArityOp(invoke, (_self) => ({
     withRetry: (policy?: RetryPolicy) =>
@@ -137,9 +137,9 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
  */
 export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
   f: (...args: A) => Generator<Y, T, unknown>,
-): Op<T, ExtractErr<Y>, Readonly<A>> => {
+): Op<T, ExtractErr<Y>, A> => {
   const makeBoundOp = (...args: A) => {
-    const bound: Op<unknown, unknown, readonly []> = makeNullaryOp(() => f(...args), {
+    const bound: Op<unknown, unknown, []> = makeNullaryOp(() => f(...args), {
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),

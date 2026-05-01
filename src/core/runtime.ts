@@ -66,7 +66,7 @@ function chainCleanupFaults(faults: readonly unknown[]): unknown {
 }
 
 export async function drive<T, E>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<(ctx: ExitContext<unknown, unknown>) => Promise<void>> = [];

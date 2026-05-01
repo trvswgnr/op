@@ -23,7 +23,7 @@ describe("public API (index)", () => {
       expect(Op.of).toBeInstanceOf(Function);
     });
     test("empty is a stable singleton op", async () => {
-      expectTypeOf(Op.empty).toEqualTypeOf<Op<void, never, readonly []>>();
+      expectTypeOf(Op.empty).toEqualTypeOf<Op<void, never, []>>();
       expect(Op.empty).toBe(Op.empty);
 
       const result = await Op.empty.run();
@@ -1034,7 +1034,7 @@ describe("public API (index)", () => {
         return a + b;
       });
       expect(Symbol.iterator in op1).toBe(false);
-      expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<readonly [a: number, b: number]>();
+      expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<[a: number, b: number]>();
       await expect(op1.run(1, 2)).resolves.toMatchObject({ value: 3 });
 
       const op2 = Op(function* () {
@@ -1049,7 +1049,7 @@ describe("public API (index)", () => {
         return (a ?? 0) * 2;
       });
       expect(Symbol.iterator in op3).toBe(false);
-      expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<readonly [a?: number]>();
+      expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<[a?: number]>();
       await expect(op3.run()).resolves.toMatchObject({ value: 0 });
       await expect(op3.run(1)).resolves.toMatchObject({ value: 2 });
 
@@ -1057,7 +1057,7 @@ describe("public API (index)", () => {
         return (a + (b ?? 0)) * 2;
       });
       expect(Symbol.iterator in op4).toBe(false);
-      expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<readonly [a: number, b?: number]>();
+      expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<[a: number, b?: number]>();
       await expect(op4.run(1)).resolves.toMatchObject({ value: 2 });
       await expect(op4.run(1, 2)).resolves.toMatchObject({ value: 6 });
 
@@ -1065,15 +1065,15 @@ describe("public API (index)", () => {
         return a * 2;
       });
       expect(Symbol.iterator in op5).toBe(false);
-      expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<readonly [a?: number]>();
+      expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<[a?: number]>();
       await expect(op5.run()).resolves.toMatchObject({ value: 2 });
       await expect(op5.run(3)).resolves.toMatchObject({ value: 6 });
 
-      const op6 = Op(function* (...args: readonly [a: number, b: number]) {
+      const op6 = Op(function* (...args: [a: number, b: number]) {
         return args.reduce((acc, curr) => acc + curr, 0);
       });
       expect(Symbol.iterator in op6).toBe(false);
-      expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<readonly [a: number, b: number]>();
+      expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<[a: number, b: number]>();
       await expect(op6.run(1, 2)).resolves.toMatchObject({ value: 3 });
 
       const wrappedOptional = op3.withRetry();
@@ -1081,10 +1081,10 @@ describe("public API (index)", () => {
       await expect(wrappedOptional(5).run()).resolves.toMatchObject({ value: 10 });
 
       const wrappedDefault = op5.withTimeout(100);
-      expectTypeOf(wrappedDefault).toEqualTypeOf<Op<number, TimeoutError, readonly [a?: number]>>();
+      expectTypeOf(wrappedDefault).toEqualTypeOf<Op<number, TimeoutError, [a?: number]>>();
       await expect(wrappedDefault.run()).resolves.toMatchObject({ value: 2 });
       const wrappedDefaultNullary = wrappedDefault(4);
-      expectTypeOf(wrappedDefaultNullary).toEqualTypeOf<Op<number, TimeoutError, readonly []>>();
+      expectTypeOf(wrappedDefaultNullary).toEqualTypeOf<Op<number, TimeoutError, []>>();
       await expect(wrappedDefaultNullary.run()).resolves.toMatchObject({ value: 8 });
     });
 

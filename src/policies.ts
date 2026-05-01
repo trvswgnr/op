@@ -64,7 +64,7 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
 
 const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
   op: Op<T, EIn, A>,
-  mapNullary: (resolved: Op<T, EIn, readonly []>) => Op<T, EOut, readonly []>,
+  mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
 ): Op<T, EOut, A> => {
   if (isNullaryOp(op)) {
     // TS cannot express that `[] extends A` may collapse to the nullary branch here.
@@ -87,8 +87,8 @@ const mapFluentOp = <T, EIn, EOut, A extends readonly unknown[]>(
 
 const makePolicyNullaryOp = <T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
-): Op<T, E, readonly []> => {
-  const self: Op<T, E, readonly []> = makeNullaryOp(gen, {
+): Op<T, E, []> => {
+  const self: Op<T, E, []> = makeNullaryOp(gen, {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
@@ -99,9 +99,9 @@ const makePolicyNullaryOp = <T, E>(
 };
 
 const withRetryNullaryOp = <T, E>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
-): Op<T, E, readonly []> => {
+): Op<T, E, []> => {
   // Retries only re-run the same op; the exposed typed error channel remains `E`.
   // Internally we include `UnhandledException` for runtime safety in `drive`.
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
@@ -141,13 +141,13 @@ const withRetryNullaryOp = <T, E>(
 
       attempt += 1;
     }
-  }) as Op<T, E, readonly []>;
+  }) as Op<T, E, []>;
 };
 
 const withTimeoutNullaryOp = <T, E>(
-  op: Op<T, E, readonly []>,
+  op: Op<T, E, []>,
   timeoutMs: number,
-): Op<T, E | TimeoutError, readonly []> => {
+): Op<T, E | TimeoutError, []> => {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
   // `drive` can still surface `UnhandledException` internally; we intentionally expose only
   // the public contract of `E | TimeoutError` for fluent API stability.
@@ -161,13 +161,10 @@ const withTimeoutNullaryOp = <T, E>(
       return yield* err(result.error);
     }
     return result.value;
-  }) as Op<T, E | TimeoutError, readonly []>;
+  }) as Op<T, E | TimeoutError, []>;
 };
 
-const withSignalNullaryOp = <T, E>(
-  op: Op<T, E, readonly []>,
-  signal: AbortSignal,
-): Op<T, E, readonly []> => {
+const withSignalNullaryOp = <T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> => {
   // Same contract as source op: binding a signal does not widen the typed error channel.
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     const result = (yield {
@@ -179,7 +176,7 @@ const withSignalNullaryOp = <T, E>(
       return yield* err(result.error);
     }
     return result.value;
-  }) as Op<T, E, readonly []>;
+  }) as Op<T, E, []>;
 };
 
 export const withRetryOp = <T, E, A extends readonly unknown[]>(

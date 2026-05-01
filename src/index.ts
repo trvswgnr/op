@@ -33,7 +33,7 @@ export type {
   TaggedErrorInstance,
 } from "better-result";
 
-const empty: _Op<void, never, readonly []> = succeed(undefined);
+const empty: _Op<void, never, []> = succeed(undefined);
 
 export const Op = Object.assign(fromGenFn, {
   _tag: "OpFactory" as const,
