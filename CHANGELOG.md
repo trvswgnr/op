@@ -11,6 +11,12 @@ breaking changes may occur between minor releases.
 
 - No entries yet.
 
+## [0.1.52] - 2026-05-02
+
+### Changed
+
+- No user-facing changes in this release.
+
 ## [0.1.51] - 2026-05-02
 
 ### Changed
