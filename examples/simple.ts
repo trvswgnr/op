@@ -98,8 +98,4 @@ export function pollUntil<T, E>(
       (e) => _PollPending.is(e),
       (e) => Op.of(e.value),
     );
-  // .recover(
-  //   (e): e is _PollPending<T> => _PollPending.is(e),
-  //   (e) => Op.of(e.value),
-  // );
 }
