@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Op, TaggedError, matchError } from "@prodkit/op";
@@ -48,6 +49,7 @@ class SmokePackOutputError extends TaggedError("SmokePackOutputError")<{ message
 class SmokeMissingDistError extends TaggedError("SmokeMissingDistError")<{ message: string }>() {}
 
 class SmokeSetupError extends TaggedError("SmokeSetupError")<{ message: string }>() {}
+
 class SmokeGithubRefResolveError extends TaggedError("SmokeGithubRefResolveError")<{
   message: string;
 }>() {}
@@ -59,6 +61,8 @@ class SmokeCommandExitError extends TaggedError("SmokeCommandExitError")<{
   stdout: string;
   stderr?: string;
 }>() {}
+
+class SmokeAbortedError extends TaggedError("SmokeAbortedError")<{ message: string }>() {}
 
 function readOwnObjectField(value: unknown, key: string): unknown {
   if (typeof value !== "object" || value === null) return undefined;
@@ -384,7 +388,12 @@ const execOp = Op(function* (
 ) {
   return yield* Op.try(
     (signal) => runCommand(command, args, cwd, capture, signal),
-    (cause) => new SmokeExecError({ command, args, cwd, cause: normalizeExecCause(cause) }),
+    (cause) => {
+      if (readOwnObjectField(cause, "name") === "AbortError") {
+        return new SmokeAbortedError({ message: "Operation aborted" });
+      }
+      return new SmokeExecError({ command, args, cwd, cause: normalizeExecCause(cause) });
+    },
   );
 });
 
@@ -409,8 +418,8 @@ const ensureInstalledPackageReady = Op(function* (examplesDir: string, sourceLab
   const packageJson = readPackageJsonIfPresent(installedPkgDir);
   const entryCandidates = new Set<string>(["./dist/index.mjs"]);
 
-  const main = readOwnObjectField(packageJson, "main");
-  if (typeof main === "string" && main.length > 0) entryCandidates.add(main);
+  const mainField = readOwnObjectField(packageJson, "main");
+  if (typeof mainField === "string" && mainField.length > 0) entryCandidates.add(mainField);
 
   const moduleField = readOwnObjectField(packageJson, "module");
   if (typeof moduleField === "string" && moduleField.length > 0) entryCandidates.add(moduleField);
@@ -460,6 +469,11 @@ const installAndSmoke = Op(function* (
   yield* execOp("npm", ["run", "smoke"], examplesDir);
 });
 
+async function cleanupPackOutput(tarballPath: string) {
+  logger.info(`[smoke pack] cleaning up tarball: ${tarballPath}`);
+  await rm(tarballPath, { force: true });
+}
+
 const installFromPack = Op(function* (repoRoot: string) {
   const examplesDir = path.join(repoRoot, "examples");
   yield* execOp("npm", ["run", "build"], repoRoot);
@@ -467,12 +481,18 @@ const installFromPack = Op(function* (repoRoot: string) {
   // --ignore-scripts: we just built above, and letting `prepare` run tsdown
   // again would pollute stdout (including ANSI escapes) and corrupt --json.
   const packOutput = yield* execOp("npm", ["pack", "--json", "--ignore-scripts"], repoRoot, true);
+  const filename = parseNpmPackFilenameFromOutput(packOutput);
+
+  if (!filename) {
+    logger.warn(`[smoke pack] unable to parse tarball filename from npm pack JSON: ${packOutput}`);
+    return;
+  }
+
   const preview =
     packOutput.length > PACK_OUTPUT_PREVIEW
       ? `${packOutput.slice(0, PACK_OUTPUT_PREVIEW)}...`
       : packOutput;
 
-  const filename = parseNpmPackFilenameFromOutput(packOutput);
   if (!filename) {
     return yield* new SmokePackOutputError({
       message: `Unable to read tarball filename from npm pack JSON (preview):\n${preview}`,
@@ -480,23 +500,14 @@ const installFromPack = Op(function* (repoRoot: string) {
   }
 
   const tarballPath = path.resolve(repoRoot, filename);
+  yield* Op.defer(() => cleanupPackOutput(tarballPath));
+
   const relativeToRepoRoot = path.relative(path.resolve(repoRoot), tarballPath);
   if (relativeToRepoRoot.startsWith("..") || path.isAbsolute(relativeToRepoRoot)) {
     return yield* new SmokePackOutputError({
       message: `npm pack filename resolves outside the repo root: ${filename}`,
     });
   }
-
-  yield* Op.defer(() => {
-    if (!existsSync(tarballPath)) return;
-    try {
-      rmSync(tarballPath, { force: true });
-    } catch (cause) {
-      logger.warn(
-        `[smoke cleanup] unable to remove temporary tarball ${tarballPath}: ${String(cause)}`,
-      );
-    }
-  });
 
   yield* installAndSmoke(examplesDir, tarballPath, "npm pack tarball");
 });
@@ -523,7 +534,7 @@ const resetExamplesInstall = Op(function* (examplesDir: string) {
   if (existsSync(packageLockPath)) rmSync(packageLockPath, { force: true });
 });
 
-const main = Op(function* (rawMode: string | undefined) {
+const smoke = Op(function* (rawMode: string | undefined) {
   const repoRoot = yield* getRepoRoot();
   const examplesDir = path.join(repoRoot, "examples");
   if (!existsSync(examplesDir)) {
@@ -553,38 +564,61 @@ const main = Op(function* (rawMode: string | undefined) {
       yield* installFromNpm(examplesDir);
       break;
   }
-}).withTimeout(resolveSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV]));
-
-const smokeResult = await main.run(process.argv[2]);
-
-smokeResult.match({
-  ok: () => logger.info("Smoke test completed successfully"),
-  err: (error) => {
-    matchError(error, {
-      SmokeExecError: (e) => {
-        logger.error(
-          `[smoke exec] ${formatSmokeExecInvocation(e.command, e.args)} (cwd: ${e.cwd})`,
-        );
-        logger.error(
-          {
-            message: e.cause.message,
-            name: e.cause.name,
-            code: e.cause.code,
-            signal: e.cause.signal,
-            status: e.cause.status,
-          },
-          "Command failed",
-        );
-      },
-      SmokeRepoRootError: (e) => logger.error(`[smoke] ${e.message}`),
-      SmokePackOutputError: (e) => logger.error(`[smoke] ${e.message}`),
-      SmokeMissingDistError: (e) => logger.error(`[smoke] ${e.message}`),
-      SmokeSetupError: (e) => logger.error(`[smoke] ${e.message}`),
-      SmokeGithubRefResolveError: (e) => logger.error(`[smoke] ${e.message}`),
-      InvalidModeError: (e) => logger.error(`[smoke] ${e.message}`),
-      TimeoutError: (e) => logger.error(`[smoke] ${e.message}`),
-      UnhandledException: (e) => logger.error(e),
-    });
-    process.exit(1);
-  },
 });
+
+async function main() {
+  const controller = new AbortController();
+
+  let shuttingDown = false;
+  for (const sig of ["SIGINT", "SIGTERM"]) {
+    process.on(sig, async () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      controller.abort();
+      logger.warn(`Received ${sig}; cancelling in-flight command(s)`);
+    });
+  }
+
+  const smokeResult = await smoke
+    .withTimeout(resolveSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV]))
+    .withSignal(controller.signal)
+    .run(process.argv[2]);
+
+  smokeResult.match({
+    ok: () => logger.info("Smoke test completed successfully"),
+    err: (error) => {
+      matchError(error, {
+        SmokeAbortedError: () => {
+          logger.warn("[smoke] operation aborted");
+          process.exit(0);
+        },
+        SmokeExecError: (e) => {
+          logger.error(
+            `[smoke exec] ${formatSmokeExecInvocation(e.command, e.args)} (cwd: ${e.cwd})`,
+          );
+          logger.error(
+            {
+              message: e.cause.message,
+              name: e.cause.name,
+              code: e.cause.code,
+              signal: e.cause.signal,
+              status: e.cause.status,
+            },
+            "Command failed",
+          );
+        },
+        SmokeRepoRootError: (e) => logger.error(`[smoke] ${e.message}`),
+        SmokePackOutputError: (e) => logger.error(`[smoke] ${e.message}`),
+        SmokeMissingDistError: (e) => logger.error(`[smoke] ${e.message}`),
+        SmokeSetupError: (e) => logger.error(`[smoke] ${e.message}`),
+        SmokeGithubRefResolveError: (e) => logger.error(`[smoke] ${e.message}`),
+        InvalidModeError: (e) => logger.error(`[smoke] ${e.message}`),
+        TimeoutError: (e) => logger.error(`[smoke] ${e.message}`),
+        UnhandledException: (e) => logger.error(e),
+      });
+      process.exit(1);
+    },
+  });
+}
+
+main();
