@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["./*.ts"]
+  "include": ["./*.ts", "../scripts/run-examples-smoke.ts"]
 }

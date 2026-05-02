@@ -3,9 +3,6 @@
   "private": true,
   "description": "Project-level scripts for @prodkit/op",
   "type": "module",
-  "scripts": {
-    "start": "node ./index.ts"
-  },
   "devDependencies": {
     "@types/node": "^24.12.2"
   },

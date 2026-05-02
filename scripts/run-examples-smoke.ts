@@ -3,7 +3,7 @@ import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 
-function getRepoRoot(maxDepth = 5) {
+const getRepoRoot = (maxDepth = 5) => {
   let currentDir = path.dirname(new URL(import.meta.url).pathname);
   let depth = 0;
 
@@ -30,14 +30,14 @@ Current directory: ${currentDir}`,
       );
     }
   }
-}
+};
 
 const repoRoot = getRepoRoot();
 const examplesDir = path.join(repoRoot, "examples");
 const installedPkgDir = path.join(examplesDir, "node_modules", "@prodkit", "op");
 const installedEntryPath = path.join(installedPkgDir, "dist", "index.mjs");
 
-const mode = process.argv[2] ?? "pack";
+const mode = process.argv[2];
 const validModes = new Set(["pack", "github", "npm"]);
 
 if (!validModes.has(mode)) {
