@@ -11,6 +11,13 @@ breaking changes may occur between minor releases.
 
 - No entries yet.
 
+## [0.1.50] - 2026-05-02
+
+### Added
+
+- Added a release guard that requires a changelog heading matching the current
+  package version before publish steps run.
+
 ## [0.1.49] - 2026-05-02
 
 ### Added

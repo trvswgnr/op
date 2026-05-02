@@ -54,28 +54,24 @@ npm run test
 
 ## Release Workflow (Recommended)
 
-1. Run local release checks:
+1. Make sure `CHANGELOG.md` has real entries under `## [Unreleased]`:
+   - Keep user-visible changes under `Unreleased` during development.
+   - If `Unreleased` is empty, the cut script records a minimal
+     "No user-facing changes" release note.
+
+1. Cut the release in one step (this promotes `Unreleased`, bumps
+   `package.json`, runs release checks, then creates commit + tag):
 
 ```bash
-npm run release:prepare
+npm run release:cut:patch
 ```
 
-1. Update `CHANGELOG.md` before versioning:
-   - Add user-visible changes under `## [Unreleased]` during development.
-   - At release time, promote `Unreleased` into a new version section
-     (`## [x.y.z] - YYYY-MM-DD`) in the same release commit that bumps
-     `package.json`.
-
-1. Bump package version (`patch`, `minor`, or `major`) after changelog updates:
-
-```bash
-npm version patch
-```
+Use `release:cut:minor` or `release:cut:major` when needed.
 
 1. Push commit and tag:
 
 ```bash
-git push && git push --tags
+npm run release:push
 ```
 
 1. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
