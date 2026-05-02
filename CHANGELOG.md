@@ -11,6 +11,12 @@ breaking changes may occur between minor releases.
 
 - No entries yet.
 
+## [0.1.51] - 2026-05-02
+
+### Changed
+
+- No user-facing changes in this release.
+
 ## [0.1.50] - 2026-05-02
 
 ### Added
@@ -61,3 +67,4 @@ breaking changes may occur between minor releases.
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
