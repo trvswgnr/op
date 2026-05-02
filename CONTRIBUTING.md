@@ -54,19 +54,22 @@ npm run test
 
 ## Release Workflow (Recommended)
 
-1. Make sure `CHANGELOG.md` has real entries under `## [Unreleased]`:
-   - Keep user-visible changes under `Unreleased` during development.
-   - If `Unreleased` is empty, the cut script records a minimal
-     "No user-facing changes" release note.
+Use this flow every time:
 
-1. Cut the release in one step (this promotes `Unreleased`, bumps
-   `package.json`, runs release checks, then creates commit + tag):
+1. Keep `CHANGELOG.md` updated under `## [Unreleased]` as work lands.
+
+1. Cut a release (this promotes `Unreleased`, bumps npm version in
+   `package.json` and `package-lock.json`, runs release checks, commits, and
+   creates git tag `vX.Y.Z`):
 
 ```bash
 npm run release:cut:patch
 ```
 
 Use `release:cut:minor` or `release:cut:major` when needed.
+
+If `Unreleased` is empty, the cut script writes a minimal
+"No user-facing changes" note for the new version.
 
 1. Push commit and tag:
 

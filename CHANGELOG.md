@@ -15,19 +15,15 @@ breaking changes may occur between minor releases.
 
 ### Changed
 
-- No user-facing changes in this release.
-
-## [0.1.52] - 2026-05-02
-
-### Changed
-
-- No user-facing changes in this release.
-
-## [0.1.51] - 2026-05-02
-
-### Changed
-
-- No user-facing changes in this release.
+- Hardened release cut automation so changelog promotion is formatted before
+  validation checks run.
+- Kept release behavior consistent when `Unreleased` is empty by generating a
+  minimal release note automatically.
+- Consolidated release scripts so cuts promote changelog entries, bump version,
+  and tag in one flow.
+- Aligned CONTRIBUTING release guidance with the automated cut path.
+- Captured and validated intermediate release-candidate behavior that
+  previously failed changelog/version gating.
 
 ## [0.1.50] - 2026-05-02
 
