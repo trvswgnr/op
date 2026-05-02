@@ -11,7 +11,14 @@ breaking changes may occur between minor releases.
 
 - No entries yet.
 
-## [0.1.1 - 0.1.49] - 2026-05-02
+## [0.1.49] - 2026-05-02
+
+### Added
+
+- Added the first project changelog and captured the pre-changelog release
+  history to establish a stable baseline for future release notes.
+
+## [0.1.1 - 0.1.48] - 2026-05-02
 
 ### Added
 

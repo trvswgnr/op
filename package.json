@@ -38,6 +38,7 @@
   },
   "scripts": {
     "build": "tsdown --config-loader unrun",
+    "changelog:check-version": "node ./scripts/check-changelog-version.ts",
     "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:smoke:pack && npm run examples:typecheck",
     "clean": "rm -rf dist",
     "examples:smoke:pack": "node ./scripts/run-examples-smoke.ts pack",
@@ -51,8 +52,8 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run check",
-    "release:prepare": "npm run check && npm pack --dry-run",
+    "prepublishOnly": "npm run check && npm run changelog:check-version",
+    "release:prepare": "npm run check && npm run changelog:check-version && npm pack --dry-run",
     "release:patch": "npm version patch",
     "release:publish": "npm publish --access public --provenance",
     "release:push": "git push && git push --tags",
