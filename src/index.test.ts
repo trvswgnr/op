@@ -1006,7 +1006,7 @@ describe("public API (index)", () => {
       {
         const program = Op(function* () {
           const a = yield* Op.of(10);
-          const b = yield* Op.of<Promise<number>>(Promise.reject("boom"));
+          const b = yield* Op.of<number>(Promise.reject("boom"));
           return a + b;
         });
         const r = await program.run();

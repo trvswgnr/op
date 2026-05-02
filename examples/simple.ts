@@ -73,3 +73,33 @@ export const userProgram = Op(function* (id: string) {
   const user = yield* parseUser(userPayload);
   return user;
 });
+
+class _PollPending<T> extends TaggedError("_PollPending")() {
+  readonly value: T;
+
+  constructor(value: T) {
+    super();
+    this.value = value;
+  }
+}
+
+export function pollUntil<T, E>(
+  op: Op<T, E, []>,
+  opts: { until: (value: T) => boolean; intervalMs: number },
+): Op<T, E, []> {
+  return op
+    .flatMap((value) => (opts.until(value) ? Op.of(value) : Op.fail(new _PollPending(value))))
+    .withRetry({
+      shouldRetry: _PollPending.is,
+      getDelay: () => opts.intervalMs,
+      maxAttempts: 1,
+    })
+    .recover(
+      (e) => _PollPending.is(e),
+      (e) => Op.of(e.value),
+    );
+  // .recover(
+  //   (e): e is _PollPending<T> => _PollPending.is(e),
+  //   (e) => Op.of(e.value),
+  // );
+}

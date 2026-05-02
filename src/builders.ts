@@ -13,11 +13,15 @@ import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./po
 import { err, ExtractErr, ok, type Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
+const isAwaited = <T>(value: T | Promise<T>): value is Awaited<T> => {
+  return !(value instanceof Promise);
+};
+
 /**
  * Lifts a value into an operation that always completes successfully.
  */
-export const succeed = <T>(value: Awaited<T> | Promise<T>): Op<Awaited<T>, never, []> => {
-  if (value instanceof Promise) {
+export const succeed = <T>(value: T | Promise<T>): Op<Awaited<T>, never, []> => {
+  if (!isAwaited(value)) {
     return _try(() => value);
   }
 
