@@ -63,10 +63,10 @@ Use this flow every time:
    creates git tag `vX.Y.Z`):
 
 ```bash
-npm run release:cut:patch
+npm run release:patch
 ```
 
-Use `release:cut:minor` or `release:cut:major` when needed.
+*note:* `release:minor` and `release:major` will be added when needed.
 
 If `Unreleased` is empty, the cut script writes a minimal
 "No user-facing changes" note for the new version.
@@ -94,7 +94,7 @@ changelog/version mismatch), use a forward-fix workflow:
 1. Cut the next patch release:
 
 ```bash
-npm run release:cut:patch
+npm run release:patch
 ```
 
 1. Push commit and tag:
