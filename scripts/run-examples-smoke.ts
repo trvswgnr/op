@@ -22,6 +22,10 @@ const PACK_OUTPUT_PREVIEW = 4000;
 const UPSTREAM_REPO_URL = "https://github.com/trvswgnr/op.git";
 const UPSTREAM_MAIN_REF = "refs/heads/main";
 
+const VALID_MODES = ["pack", "github", "npm"] as const;
+type Mode = (typeof VALID_MODES)[number];
+const VALID_MODE_SET = new Set<string>(VALID_MODES);
+
 class SmokeRepoRootError extends TaggedError("SmokeRepoRootError")<{ message: string }>() {}
 
 class SmokeExecError extends TaggedError("SmokeExecError")<{
@@ -357,10 +361,6 @@ const getRepoRoot = Op(function* () {
     currentDir = parentDir;
   }
 });
-
-const VALID_MODES = ["pack", "github", "npm"] as const;
-type Mode = (typeof VALID_MODES)[number];
-const VALID_MODE_SET = new Set<string>(VALID_MODES);
 
 class InvalidModeError extends TaggedError("InvalidModeError")<{ message: string }>() {
   constructor(mode: string | undefined) {
