@@ -105,6 +105,7 @@ const main = async (): Promise<void> => {
   await writeUtf8("../CHANGELOG.md", updatedChangelog);
 
   run(`npm version ${bumpKind} --no-git-tag-version`);
+  run("npm run fmt");
   run("npm run release:prepare");
   run("git add CHANGELOG.md package.json package-lock.json");
   run(`git commit -m "${nextVersion}"`);
