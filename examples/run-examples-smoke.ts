@@ -1,11 +1,38 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
+function getRepoRoot(maxDepth = 5) {
+  let currentDir = path.dirname(new URL(import.meta.url).pathname);
+  let depth = 0;
+
+  while (true) {
+    const packageJsonPath = path.join(currentDir, "package.json");
+
+    if (
+      existsSync(packageJsonPath) &&
+      JSON.parse(readFileSync(packageJsonPath, "utf8")).name === "@prodkit/op"
+    ) {
+      return currentDir;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      throw new Error('Unable to locate repo root with package name "@prodkit/op"');
+    }
+
+    currentDir = parentDir;
+    if (depth++ >= maxDepth) {
+      throw new Error(
+        `Depth limit (${maxDepth}) exceeded before finding repo root with package name "@prodkit/op"
+Current directory: ${currentDir}`,
+      );
+    }
+  }
+}
+
+const repoRoot = getRepoRoot();
 const examplesDir = path.join(repoRoot, "examples");
 const installedPkgDir = path.join(examplesDir, "node_modules", "@prodkit", "op");
 const installedEntryPath = path.join(installedPkgDir, "dist", "index.mjs");
@@ -18,7 +45,7 @@ if (!validModes.has(mode)) {
   throw new Error(`Unknown mode "${mode}". Expected one of: ${choices}`);
 }
 
-const run = (command, args, cwd = repoRoot, capture = false) => {
+const run = (command: string, args: string[], cwd = repoRoot, capture = false) => {
   if (capture) {
     return execFileSync(command, args, {
       cwd,
@@ -39,7 +66,13 @@ const resetExamplesInstall = () => {
   if (existsSync(packageLockPath)) rmSync(packageLockPath, { force: true });
 };
 
-const ensureInstalledPackageReady = ({ sourceLabel, allowBuildFallback }) => {
+const ensureInstalledPackageReady = ({
+  sourceLabel,
+  allowBuildFallback,
+}: {
+  sourceLabel: string;
+  allowBuildFallback: boolean;
+}) => {
   if (existsSync(installedEntryPath)) return;
 
   if (allowBuildFallback && existsSync(installedPkgDir)) {
