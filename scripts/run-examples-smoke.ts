@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Op, TaggedError, matchError } from "../dist/index.mjs";
+import { Op, TaggedError, matchError } from "@prodkit/op";
 
 const logger = console;
 
