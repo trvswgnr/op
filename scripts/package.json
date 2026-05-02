@@ -3,13 +3,13 @@
   "private": true,
   "description": "Project-level scripts for @prodkit/op",
   "type": "module",
+  "dependencies": {
+    "@prodkit/op": "^0.1.49"
+  },
   "devDependencies": {
     "@types/node": "^24.12.2"
   },
   "engines": {
     "node": ">=24"
-  },
-  "dependencies": {
-    "@prodkit/op": "^0.1.49"
   }
 }
