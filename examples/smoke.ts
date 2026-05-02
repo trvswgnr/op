@@ -11,6 +11,7 @@ import {
   parseUser,
   sqrt,
   userProgram,
+  exampleWithPoll,
 } from "./simple.ts";
 import {
   DuplicateEventError,
@@ -20,8 +21,13 @@ import {
   createApp,
 } from "./webhook.ts";
 
-const assert = (condition: unknown, message: string) => {
-  if (!condition) throw new Error(message);
+class AssertionError extends Error {
+  name = "AssertionError";
+}
+
+type Assert = (condition: unknown, message: string) => asserts condition;
+const assert: Assert = (condition, message) => {
+  if (!condition) throw new AssertionError(message);
 };
 
 const isNamedUser = (value: unknown): value is { name: string } => {
@@ -192,6 +198,10 @@ const runSimpleExampleSmoke = async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+
+  const pollResult = await exampleWithPoll.run();
+  assert(pollResult.isOk(), "pollResult should be Ok");
+  assert(pollResult.value.count === 10, `expected 10, got ${pollResult.value.count}`);
 };
 
 const runWebhookExampleSmoke = async () => {

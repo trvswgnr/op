@@ -1,6 +1,6 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
 import { err, type Result } from "../result.js";
-import type { RetryPolicy } from "../policies.js";
+import { withRetryOp, withSignalOp, withTimeoutOp, type RetryPolicy } from "../policies.js";
 import type {
   ExitContext,
   ExitFn,
@@ -162,7 +162,7 @@ const flatMapNullaryOp = <T, E, U, E2>(
   op: Op<T, E, []>,
   bind: (value: T) => Op<U, E2, []>,
 ): Op<U, E | E2, []> => {
-  return makeNullaryOp<U, E | E2 | UnhandledException>(
+  const mapped: Op<U, E | E2, []> = makeNullaryOp<U, E | E2 | UnhandledException>(
     function* () {
       const first = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
@@ -180,15 +180,14 @@ const flatMapNullaryOp = <T, E, U, E2>(
       return second.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => flatMapNullaryOp(op.withRetry(policy), bind),
-      withTimeout: (timeoutMs: number) => flatMapNullaryOp(op.withTimeout(timeoutMs), bind),
-      withSignal: (signal: AbortSignal) => flatMapNullaryOp(op.withSignal(signal), bind),
-      withRelease: (release: ReleaseFn<U>) =>
-        withCleanupNullaryOp(flatMapNullaryOp(op, bind), release),
-      registerExitFinalize: (finalize: ExitFn<U, E | E2>) =>
-        onExitNullaryOp(flatMapNullaryOp(op, bind), finalize),
+      withRetry: (policy?: RetryPolicy) => withRetryOp(mapped, policy),
+      withTimeout: (timeoutMs: number) => withTimeoutOp(mapped, timeoutMs),
+      withSignal: (signal: AbortSignal) => withSignalOp(mapped, signal),
+      withRelease: (release: ReleaseFn<U>) => withCleanupNullaryOp(mapped, release),
+      registerExitFinalize: (finalize: ExitFn<U, E | E2>) => onExitNullaryOp(mapped, finalize),
     },
   ) as Op<U, E | E2, []>;
+  return mapped;
 };
 
 const tapNullaryOp = <T, E, R>(

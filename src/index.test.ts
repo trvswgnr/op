@@ -654,6 +654,34 @@ describe("public API (index)", () => {
       expect(genResult.value).toBe("OK");
       expect(genAttempts).toBe(2);
     });
+
+    test("retries failures raised from flatMap stage", async () => {
+      let attempts = 0;
+      const transient = new Error("transient");
+      const program = Op.of("seed")
+        .flatMap(() =>
+          Op.try(
+            () => {
+              attempts += 1;
+              if (attempts < 3) {
+                throw transient;
+              }
+              return attempts;
+            },
+            (cause) => cause,
+          ),
+        )
+        .withRetry({
+          maxAttempts: 3,
+          shouldRetry: (cause) => cause === transient,
+          getDelay: () => 0,
+        });
+
+      const result = await program.run();
+      assert(result.isOk(), "result should be Ok");
+      expect(result.value).toBe(3);
+      expect(attempts).toBe(3);
+    });
   });
 
   describe("op.withTimeout", () => {

@@ -99,3 +99,18 @@ export function pollUntil<T, E>(
       (e) => Op.of(e.value),
     );
 }
+
+export const exampleWithPoll = Op(function* () {
+  const o = { count: 0 };
+  const interval = setInterval(() => {
+    o.count++;
+  }, 50);
+  const result = yield* pollUntil(Op.of(o), {
+    until: (v) => {
+      return v.count === 10;
+    },
+    intervalMs: 10,
+  });
+  clearInterval(interval);
+  return result;
+});
