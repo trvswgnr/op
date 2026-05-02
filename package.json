@@ -36,7 +36,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown --config-loader unrun",
     "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:test:pack && npm run examples:typecheck",
     "clean": "rm -rf dist",
     "examples:test:pack": "node ./examples/run-examples-smoke.ts pack",

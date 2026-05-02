@@ -77,7 +77,7 @@ const ensureInstalledPackageReady = ({
 
   if (allowBuildFallback && existsSync(installedPkgDir)) {
     run("npm", ["install"], installedPkgDir);
-    run("npm", ["run", "build", "--", "--config-loader", "unrun"], installedPkgDir);
+    run("npm", ["run", "build"], installedPkgDir);
   }
 
   if (!existsSync(installedEntryPath)) {
