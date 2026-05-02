@@ -60,7 +60,13 @@ npm run test
 npm run release:prepare
 ```
 
-1. Bump package version (`patch`, `minor`, or `major`):
+1. Update `CHANGELOG.md` before versioning:
+   - Add user-visible changes under `## [Unreleased]` during development.
+   - At release time, promote `Unreleased` into a new version section
+     (`## [x.y.z] - YYYY-MM-DD`) in the same release commit that bumps
+     `package.json`.
+
+1. Bump package version (`patch`, `minor`, or `major`) after changelog updates:
 
 ```bash
 npm version patch
