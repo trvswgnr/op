@@ -6,9 +6,6 @@
     "lib": ["ESNext"],
     "types": ["node"],
     "baseUrl": ".",
-    "paths": {
-      "@prodkit/op": ["../src/index.ts"]
-    },
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,

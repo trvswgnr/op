@@ -3,6 +3,9 @@
   "private": true,
   "description": "Project-level scripts for @prodkit/op",
   "type": "module",
+  "dependencies": {
+    "@prodkit/op": "^0.1.46"
+  },
   "devDependencies": {
     "@types/node": "^24.12.2"
   },
