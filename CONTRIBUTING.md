@@ -70,6 +70,8 @@ Use `release:cut:minor` or `release:cut:major` when needed.
 
 If `Unreleased` is empty, the cut script writes a minimal
 "No user-facing changes" note for the new version.
+The changelog/version updates must be committed before tag creation because
+release validation runs against the tagged commit.
 
 1. Push commit and tag:
 
@@ -81,6 +83,30 @@ npm run release:push
 
 - installs with `npm ci`
 - publishes with npm trusted publishing (OIDC) and provenance (`npm publish --provenance --access public`)
+
+## Release Failure Recovery
+
+If a release tag is pushed but the release workflow fails (for example,
+changelog/version mismatch), use a forward-fix workflow:
+
+1. Leave the failed tag as-is (do not rewrite tag history by default).
+1. Add the missing changelog note under `## [Unreleased]`.
+1. Cut the next patch release:
+
+```bash
+npm run release:cut:patch
+```
+
+1. Push commit and tag:
+
+```bash
+npm run release:push
+```
+
+The failed run remains red in history, but the next tag should publish cleanly.
+
+Only use tag deletion/force-retagging when absolutely necessary and explicitly
+approved.
 
 ## Manual Publish Fallback
 
