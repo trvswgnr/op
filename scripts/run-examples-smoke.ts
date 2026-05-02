@@ -568,16 +568,29 @@ const smoke = Op(function* (rawMode: string | undefined) {
 
 async function main() {
   const controller = new AbortController();
+  const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
 
   let shuttingDown = false;
-  for (const sig of ["SIGINT", "SIGTERM"]) {
-    process.on(sig, async () => {
+  const handlers = new Map<NodeJS.Signals, (signalName: NodeJS.Signals) => Promise<void>>();
+  for (const sig of signals) {
+    const handler = async (signalName: NodeJS.Signals) => {
       if (shuttingDown) return;
       shuttingDown = true;
       controller.abort();
+      process.exitCode = signalName === "SIGINT" ? 130 : 143;
       logger.warn(`Received ${sig}; cancelling in-flight command(s)`);
-    });
+    };
+    process.on(sig, handler);
+
+    handlers.set(sig, handler);
   }
+
+  process.on("exit", (code) => {
+    logger.warn(`[smoke] Process exiting with code ${code}`);
+    for (const [sig, handler] of handlers) {
+      process.off(sig, handler);
+    }
+  });
 
   const smokeResult = await smoke
     .withTimeout(resolveSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV]))
@@ -589,8 +602,7 @@ async function main() {
     err: (error) => {
       matchError(error, {
         SmokeAbortedError: () => {
-          logger.warn("[smoke] operation aborted");
-          process.exit(0);
+          logger.warn("[smoke] Operation aborted");
         },
         SmokeExecError: (e) => {
           logger.error(
@@ -616,7 +628,7 @@ async function main() {
         TimeoutError: (e) => logger.error(`[smoke] ${e.message}`),
         UnhandledException: (e) => logger.error(e),
       });
-      process.exit(1);
+      process.exit(process.exitCode);
     },
   });
 }
