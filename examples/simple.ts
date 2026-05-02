@@ -92,7 +92,7 @@ export function pollUntil<T, E>(
     .withRetry({
       shouldRetry: _PollPending.is,
       getDelay: () => opts.intervalMs,
-      maxAttempts: 1,
+      maxAttempts: Infinity,
     })
     .recover(
       (e) => _PollPending.is(e),
