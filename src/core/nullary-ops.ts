@@ -1,6 +1,6 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
 import { Result } from "../result.js";
-import { withRetryOp, withSignalOp, withTimeoutOp, type RetryPolicy } from "../policies.js";
+import { withRetryOp, withSignalOp, withTimeoutOp } from "../policies.js";
 import type {
   ExitContext,
   ExitFn,
@@ -44,6 +44,7 @@ function dispatchLifecycleNullary<T, E>(
     const _: never = event;
     return _;
   }
+
   return hooks.registerExitFinalize(finalize);
 }
 
@@ -73,61 +74,64 @@ export function makeNullaryOp<T, E>(
   };
   const callable = () => state;
   self = Object.assign(callable, state) as Op<T, Exclude<E, UnhandledException>, []>;
+
   return self;
 }
 
-function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> {
+export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (result.isErr()) {
-        return yield* Result.err(result.error);
-      }
+
+      if (result.isErr()) return yield* result;
+
       yield new RegisterExitFinalizerInstruction(() =>
         Promise.resolve(release(result.value)).then(() => {}),
       );
+
       return result.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => withCleanupNullaryOp(op.withRetry(policy), release),
-      withTimeout: (timeoutMs: number) => withCleanupNullaryOp(op.withTimeout(timeoutMs), release),
-      withSignal: (signal: AbortSignal) => withCleanupNullaryOp(op.withSignal(signal), release),
-      withRelease: (nextRelease: ReleaseFn<T>) =>
+      withRetry: (policy?) => withCleanupNullaryOp(op.withRetry(policy), release),
+      withTimeout: (timeoutMs) => withCleanupNullaryOp(op.withTimeout(timeoutMs), release),
+      withSignal: (signal) => withCleanupNullaryOp(op.withSignal(signal), release),
+      withRelease: (nextRelease) =>
         withCleanupNullaryOp(withCleanupNullaryOp(op, release), nextRelease),
-      registerExitFinalize: (finalize: ExitFn<T, E>) =>
+      registerExitFinalize: (finalize) =>
         onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
     },
   );
 }
 
-function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> {
+export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
       yield new RegisterExitFinalizerInstruction((ctx) =>
         Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => {}),
       );
+
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
+
       if (result.isErr()) return yield* Result.err(result.error);
       return result.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => onExitNullaryOp(op.withRetry(policy), finalize),
-      withTimeout: (timeoutMs: number) =>
+      withRetry: (policy?) => onExitNullaryOp(op.withRetry(policy), finalize),
+      withTimeout: (timeoutMs) =>
         onExitNullaryOp(op.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError>),
-      withSignal: (signal: AbortSignal) => onExitNullaryOp(op.withSignal(signal), finalize),
-      withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
-      registerExitFinalize: (nextFinalize: ExitFn<T, E>) =>
+      withSignal: (signal) => onExitNullaryOp(op.withSignal(signal), finalize),
+      withRelease: (release) => withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
+      registerExitFinalize: (nextFinalize) =>
         onExitNullaryOp(onExitNullaryOp(op, finalize), nextFinalize),
     },
   );
 }
 
-function mapNullaryOp<T, E, U>(
+export function mapNullaryOp<T, E, U>(
   op: Op<T, E, []>,
   transform: (value: T) => U,
 ): Op<Awaited<U>, E, []> {
@@ -136,25 +140,26 @@ function mapNullaryOp<T, E, U>(
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
+
       if (result.isErr()) return yield* result;
+
       const mapped = (yield new SuspendInstruction(() =>
         Promise.resolve(transform(result.value)),
       )) as Awaited<U>;
+
       return mapped;
     },
     {
-      withRetry: (policy?: RetryPolicy) => mapNullaryOp(op.withRetry(policy), transform),
-      withTimeout: (timeoutMs: number) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
-      withSignal: (signal: AbortSignal) => mapNullaryOp(op.withSignal(signal), transform),
-      withRelease: (release: ReleaseFn<Awaited<U>>) =>
-        withCleanupNullaryOp(mapNullaryOp(op, transform), release),
-      registerExitFinalize: (finalize: ExitFn<Awaited<U>, E>) =>
-        onExitNullaryOp(mapNullaryOp(op, transform), finalize),
+      withRetry: (policy?) => mapNullaryOp(op.withRetry(policy), transform),
+      withTimeout: (timeoutMs) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
+      withSignal: (signal) => mapNullaryOp(op.withSignal(signal), transform),
+      withRelease: (release) => withCleanupNullaryOp(mapNullaryOp(op, transform), release),
+      registerExitFinalize: (finalize) => onExitNullaryOp(mapNullaryOp(op, transform), finalize),
     },
   );
 }
 
-function flatMapNullaryOp<T, E, U, E2>(
+export function flatMapNullaryOp<T, E, U, E2>(
   op: Op<T, E, []>,
   bind: (value: T) => Op<U, E2, []>,
 ): Op<U, E | E2, []> {
@@ -163,26 +168,29 @@ function flatMapNullaryOp<T, E, U, E2>(
       const first = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (first.isErr()) return yield* Result.err(first.error);
+
+      if (first.isErr()) return yield* first;
 
       const second = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(bind(first.value), signal),
       )) as Result<U, E2 | UnhandledException>;
-      if (second.isErr()) return yield* Result.err(second.error);
+
+      if (second.isErr()) return yield* second;
       return second.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(mapped, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(mapped, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(mapped, signal),
-      withRelease: (release: ReleaseFn<U>) => withCleanupNullaryOp(mapped, release),
-      registerExitFinalize: (finalize: ExitFn<U, E | E2>) => onExitNullaryOp(mapped, finalize),
+      withRetry: (policy?) => withRetryOp(mapped, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(mapped, timeoutMs),
+      withSignal: (signal) => withSignalOp(mapped, signal),
+      withRelease: (release) => withCleanupNullaryOp(mapped, release),
+      registerExitFinalize: (finalize) => onExitNullaryOp(mapped, finalize),
     },
   );
+
   return mapped;
 }
 
-function tapNullaryOp<T, E, R>(
+export function tapNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   observe: (value: T) => R,
 ): Op<T, E | InferNullaryOpErr<R>, []> {
@@ -202,22 +210,20 @@ function tapNullaryOp<T, E, R>(
         drive(observed, signal),
       )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
 
-      if (observedResult.isErr()) return yield* Result.err(observedResult.error);
+      if (observedResult.isErr()) return yield* observedResult;
       return source.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => tapNullaryOp(op.withRetry(policy), observe),
-      withTimeout: (timeoutMs: number) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
-      withSignal: (signal: AbortSignal) => tapNullaryOp(op.withSignal(signal), observe),
-      withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(tapNullaryOp(op, observe), release),
-      registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
-        onExitNullaryOp(tapNullaryOp(op, observe), finalize),
+      withRetry: (policy?) => tapNullaryOp(op.withRetry(policy), observe),
+      withTimeout: (timeoutMs) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
+      withSignal: (signal) => tapNullaryOp(op.withSignal(signal), observe),
+      withRelease: (release) => withCleanupNullaryOp(tapNullaryOp(op, observe), release),
+      registerExitFinalize: (finalize) => onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
   );
 }
 
-function tapErrNullaryOp<T, E, R>(
+export function tapErrNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   observe: (error: E) => R,
 ): Op<T, E | InferNullaryOpErr<R>, []> {
@@ -226,38 +232,29 @@ function tapErrNullaryOp<T, E, R>(
       const source = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (source.isOk()) {
-        return source.value;
-      }
 
-      if (source.error instanceof UnhandledException) {
-        return yield* Result.err(source.error);
-      }
+      if (source.isOk()) return source.value;
+      const sourceError = source.error;
 
-      const observed = yield new SuspendInstruction(() =>
-        Promise.resolve(observe(source.error as E)),
-      );
-      if (!isNullaryOp(observed)) {
-        return yield* Result.err(source.error);
-      }
+      if (UnhandledException.is(sourceError)) return yield* sourceError;
+
+      const observed = yield new SuspendInstruction(() => Promise.resolve(observe(sourceError)));
+
+      if (!isNullaryOp(observed)) return yield* source;
 
       const observedResult = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(observed, signal),
-      )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
-      if (observedResult.isErr()) {
-        return yield* Result.err(observedResult.error);
-      }
+      )) as Result<T, InferNullaryOpErr<R> | UnhandledException>;
 
-      return yield* Result.err(source.error);
+      if (observedResult.isErr()) return yield* observedResult;
+      return yield* source;
     },
     {
-      withRetry: (policy?: RetryPolicy) => tapErrNullaryOp(op.withRetry(policy), observe),
-      withTimeout: (timeoutMs: number) =>
-        tapErrNullaryOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) => {
-          if (!(error instanceof TimeoutError)) {
-            return observe(error);
-          }
-        }),
+      withRetry: (policy?) => tapErrNullaryOp(op.withRetry(policy), observe),
+      withTimeout: (timeoutMs) =>
+        tapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
+          TimeoutError.is(error) ? undefined : observe(error),
+        ),
       withSignal: (signal: AbortSignal) => tapErrNullaryOp(op.withSignal(signal), observe),
       withRelease: (release: ReleaseFn<T>) =>
         withCleanupNullaryOp(tapErrNullaryOp(op, observe), release),
@@ -267,40 +264,40 @@ function tapErrNullaryOp<T, E, R>(
   ) as Op<T, E | InferNullaryOpErr<R>, []>;
 }
 
-function mapErrNullaryOp<T, E, E2>(op: Op<T, E, []>, transform: (error: E) => E2): Op<T, E2, []> {
+export function mapErrNullaryOp<T, E, E2>(
+  op: Op<T, E, []>,
+  transform: (error: E) => E2,
+): Op<T, E2, []> {
   return makeNullaryOp<T, E2 | UnhandledException>(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (result.isErr()) {
-        if (result.error instanceof UnhandledException) {
-          return yield* Result.err(result.error);
-        }
 
-        const mapped = (yield new SuspendInstruction(() =>
-          Promise.resolve(transform(result.error as E)),
-        )) as E2;
-        return yield* Result.err(mapped);
-      }
-      return result.value;
+      if (result.isOk()) return result.value;
+
+      if (UnhandledException.is(result.error)) return yield* result.error;
+
+      const mapped = (yield new SuspendInstruction(() =>
+        Promise.resolve(transform(result.error as E)),
+      )) as E2;
+
+      return yield* Result.err(mapped);
     },
     {
-      withRetry: (policy?: RetryPolicy) => mapErrNullaryOp(op.withRetry(policy), transform),
-      withTimeout: (timeoutMs: number) =>
-        mapErrNullaryOp(op.withTimeout(timeoutMs), (error: E | TimeoutError) =>
-          error instanceof TimeoutError ? error : transform(error),
+      withRetry: (policy?) => mapErrNullaryOp(op.withRetry(policy), transform),
+      withTimeout: (timeoutMs) =>
+        mapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
+          TimeoutError.is(error) ? error : transform(error),
         ),
-      withSignal: (signal: AbortSignal) => mapErrNullaryOp(op.withSignal(signal), transform),
-      withRelease: (release: ReleaseFn<T>) =>
-        withCleanupNullaryOp(mapErrNullaryOp(op, transform), release),
-      registerExitFinalize: (finalize: ExitFn<T, E2>) =>
-        onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
+      withSignal: (signal) => mapErrNullaryOp(op.withSignal(signal), transform),
+      withRelease: (release) => withCleanupNullaryOp(mapErrNullaryOp(op, transform), release),
+      registerExitFinalize: (finalize) => onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
     },
-  ) as Op<T, E2, []>;
+  );
 }
 
-function recoverNullaryOp<T, E, R>(
+export function recoverNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   predicate: ((error: E) => boolean) | WithPredicateMethod<E>,
   handler: (error: E) => R,
@@ -311,63 +308,40 @@ function recoverNullaryOp<T, E, R>(
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
 
-      if (result.isOk()) {
-        return result.value;
-      }
+      if (result.isOk()) return result.value;
 
-      if (result.error instanceof UnhandledException) {
-        return yield* Result.err(result.error);
-      }
+      if (UnhandledException.is(result.error)) return yield* result;
 
       const error = result.error;
 
-      if (!conditionalPredicate(predicate, error)) {
-        return yield* Result.err(error);
-      }
+      if (!conditionalPredicate(predicate, error)) return yield* Result.err(error);
 
-      const recovered = yield new SuspendInstruction(() => Promise.resolve(handler(error)));
+      const recovered = (yield new SuspendInstruction(() =>
+        Promise.resolve(handler(error)),
+      )) as RecoverValue<R>;
 
-      if (!isNullaryOp(recovered)) {
-        return recovered as RecoverValue<R>;
-      }
+      if (!isNullaryOp(recovered)) return recovered;
 
       const recoveredResult = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(recovered, signal),
       )) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
 
-      if (recoveredResult.isErr()) {
-        return yield* Result.err(recoveredResult.error);
-      }
-
+      if (recoveredResult.isErr()) return yield* recoveredResult;
       return recoveredResult.value;
     },
     {
-      withRetry: (policy?: RetryPolicy) =>
-        recoverNullaryOp(op.withRetry(policy), predicate, handler),
-      withTimeout: (timeoutMs: number) =>
+      withRetry: (policy?) => recoverNullaryOp(op.withRetry(policy), predicate, handler),
+      withTimeout: (timeoutMs) =>
         recoverNullaryOp(
           op.withTimeout(timeoutMs),
-          (error: E | TimeoutError) =>
-            !(error instanceof TimeoutError) && conditionalPredicate(predicate, error),
+          (error) => !TimeoutError.is(error) && conditionalPredicate(predicate, error),
           handler as (error: E | TimeoutError) => R,
         ),
-      withSignal: (signal: AbortSignal) =>
-        recoverNullaryOp(op.withSignal(signal), predicate, handler),
-      withRelease: (release: ReleaseFn<T | RecoverValue<R>>) =>
+      withSignal: (signal) => recoverNullaryOp(op.withSignal(signal), predicate, handler),
+      withRelease: (release) =>
         withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler), release),
-      registerExitFinalize: (finalize: ExitFn<T | RecoverValue<R>, E | RecoverError<R>>) =>
+      registerExitFinalize: (finalize) =>
         onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
     },
-  ) as Op<T | RecoverValue<R>, E | RecoverError<R>, []>;
+  );
 }
-
-export {
-  flatMapNullaryOp,
-  mapErrNullaryOp,
-  mapNullaryOp,
-  onExitNullaryOp,
-  recoverNullaryOp,
-  tapErrNullaryOp,
-  tapNullaryOp,
-  withCleanupNullaryOp,
-};
