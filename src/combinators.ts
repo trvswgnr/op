@@ -316,13 +316,13 @@ const driveAny = <T, E>(
     );
   }
   const fan = fanOut(ops, outerSignal);
-  let winnerValue: T | undefined;
+  let winner: { value: T } | undefined;
 
   return Promise.all(
     fan.runs.map((p, i) =>
       p.then((res) => {
-        if (res.isOk() && winnerValue === undefined) {
-          winnerValue = res.value;
+        if (res.isOk() && winner === undefined) {
+          winner = { value: res.value };
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
           });
@@ -332,7 +332,7 @@ const driveAny = <T, E>(
     ),
   ).then((results) => {
     fan.detach();
-    if (winnerValue !== undefined) return Result.ok(winnerValue);
+    if (winner !== undefined) return Result.ok(winner.value);
     const errors: (E | UnhandledException)[] = [];
     for (const r of results) if (r.isErr()) errors.push(r.error);
     return Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed"));

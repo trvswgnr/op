@@ -288,6 +288,12 @@ describe("Op.any", () => {
     expect(slowAborted).toBe(true);
   });
 
+  test("first success can be undefined", async () => {
+    const r = await Op.any([Op.of(undefined), Op.of(1)]).run();
+    assert(r.isOk(), "should be Ok");
+    expect(r.value).toBeUndefined();
+  });
+
   test("all-fail surfaces ErrorGroup with errors in input order", async () => {
     const r = await Op.any([
       Op.fail("a" as const),
