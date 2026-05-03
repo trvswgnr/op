@@ -71,7 +71,7 @@ jobs:
         run: npm ci --prefix scripts
 
       - name: Verify changelog includes current package version
-        run: npm run changelog:check-version
+        run: npm run changelog:check
 
       - name: Publish to npm
         run: npm publish --access public --provenance
