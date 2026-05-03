@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused `core` runtime unit coverage for `drive` internals (signal
   handoff, instruction validation, finalizer LIFO ordering, and cleanup-fault
   precedence), plus direct tests for internal helper/type-guard behavior.
+- Added `DESIGN.md` documenting execution invariants (cleanup ordering, error
+  precedence, and combinator chain-order guarantees) with direct links to
+  representative runtime paths and tests to reduce semantic drift risk.
 
 ### Changed
 
