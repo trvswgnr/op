@@ -38,9 +38,7 @@ const fanOut = <T, E>(
   detach: () => void;
 } => {
   const entries = ops.map((op) => ({ op, controller: new AbortController() }));
-  const cascade = () => {
-    for (const e of entries) e.controller.abort(outerSignal.reason);
-  };
+  const cascade = () => entries.forEach((e) => e.controller.abort(outerSignal.reason));
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
   const detach = () => outerSignal.removeEventListener("abort", cascade);
@@ -94,51 +92,38 @@ const driveAll = async <T, E>(
 ): Promise<Result<T[], E | UnhandledException>> => {
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return Result.err(limit.error);
-
   if (ops.length === 0) return Result.ok([]);
   if (limit.value >= ops.length) return driveAllUnbounded(ops, outerSignal);
-
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
-  const cascade = () => {
-    for (const c of controllers) c.abort(outerSignal.reason);
-  };
+  const cascade = () => controllers.forEach((c) => c.abort(outerSignal.reason));
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
-
   let nextIndex = 0;
   let firstErr: (E | UnhandledException) | undefined;
-
   const worker = async () => {
     while (firstErr === undefined) {
       const i = nextIndex;
       nextIndex += 1;
       const op = ops[i];
       if (op === undefined) return;
-
       const controller = new AbortController();
       controllers.add(controller);
       if (outerSignal.aborted) controller.abort(outerSignal.reason);
       const res = await drive(op, controller.signal);
       controllers.delete(controller);
       results[i] = res;
-
       if (res.isErr() && firstErr === undefined) {
         firstErr = res.error;
         for (const c of controllers) c.abort();
       }
     }
   };
-
-  try {
-    await Promise.all(Array.from({ length: limit.value }, () => worker()));
-  } finally {
-    outerSignal.removeEventListener("abort", cascade);
-  }
-
+  await Promise.all(Array.from({ length: limit.value }, () => worker())).finally(() =>
+    outerSignal.removeEventListener("abort", cascade),
+  );
   if (firstErr !== undefined) return Result.err(firstErr);
-  const values: T[] = [];
-  for (const r of results) if (r?.isOk()) values.push(r.value);
+  const values = results.filter((r) => r !== undefined && r.isOk()).map((r) => r.value);
   return Result.ok(values);
 };
 
@@ -154,9 +139,7 @@ const driveAllUnbounded = async <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T[], E | UnhandledException>> => {
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
-
   let firstErr: (E | UnhandledException) | undefined;
-
   const observed = runs.map((p, i) =>
     p.then((res) => {
       if (res.isErr() && firstErr === undefined) {
@@ -168,13 +151,10 @@ const driveAllUnbounded = async <T, E>(
       return res;
     }),
   );
-
   const results = await Promise.all(observed);
   detach();
-
   if (firstErr !== undefined) return Result.err(firstErr);
-  const values: T[] = [];
-  for (const r of results) if (r.isOk()) values.push(r.value);
+  const values = results.filter((r) => r.isOk()).map((r) => r.value);
   return Result.ok(values);
 };
 
@@ -230,18 +210,13 @@ const driveAllSettled = async <T, E>(
 ): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> => {
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return Result.err(limit.error);
-
   if (ops.length === 0) return Result.ok([]);
   if (limit.value >= ops.length) return Result.ok(await driveAllSettledUnbounded(ops, outerSignal));
-
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
-  const cascade = () => {
-    for (const c of controllers) c.abort(outerSignal.reason);
-  };
+  const cascade = () => controllers.forEach((c) => c.abort(outerSignal.reason));
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
-
   let nextIndex = 0;
   const worker = async () => {
     while (true) {
@@ -257,13 +232,9 @@ const driveAllSettled = async <T, E>(
       controllers.delete(controller);
     }
   };
-
-  try {
-    await Promise.all(Array.from({ length: limit.value }, () => worker()));
-  } finally {
-    outerSignal.removeEventListener("abort", cascade);
-  }
-
+  await Promise.all(Array.from({ length: limit.value }, () => worker())).finally(() =>
+    outerSignal.removeEventListener("abort", cascade),
+  );
   return Result.ok(results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined));
 };
 
@@ -306,7 +277,7 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
  * `Op.any` waits for aborted losers to settle so cleanup/finalizers finish
  * deterministically before run() returns; winner success still takes precedence
  */
-const driveAny = <T, E>(
+const driveAny = async <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
@@ -317,8 +288,7 @@ const driveAny = <T, E>(
   }
   const fan = fanOut(ops, outerSignal);
   let winner: { value: T } | undefined;
-
-  return Promise.all(
+  const results = await Promise.all(
     fan.runs.map((p, i) =>
       p.then((res) => {
         if (res.isOk() && winner === undefined) {
@@ -330,13 +300,12 @@ const driveAny = <T, E>(
         return res;
       }),
     ),
-  ).then((results) => {
-    fan.detach();
-    if (winner !== undefined) return Result.ok(winner.value);
-    const errors: (E | UnhandledException)[] = [];
-    for (const r of results) if (r.isErr()) errors.push(r.error);
-    return Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed"));
-  });
+  );
+  fan.detach();
+  if (winner !== undefined) return Result.ok(winner.value);
+  const errors: (E | UnhandledException)[] = [];
+  for (const r of results) if (r.isErr()) errors.push(r.error);
+  return Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed"));
 };
 
 export const raceOp = <const Ops extends readonly NullaryOp[]>(
@@ -368,7 +337,7 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
  * `Op.race` returns the first settler's outcome, but waits for aborted
  * losers to settle so cleanup/finalizers complete before run() returns
  */
-const driveRace = <T, E>(
+const driveRace = async <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> => {
@@ -380,10 +349,8 @@ const driveRace = <T, E>(
     );
   }
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
-
   let winner: Result<T, E | UnhandledException> | undefined;
-
-  return Promise.all(
+  await Promise.all(
     runs.map((p, i) =>
       p.then((res) => {
         if (winner === undefined) {
@@ -395,11 +362,10 @@ const driveRace = <T, E>(
         return res;
       }),
     ),
-  ).then(() => {
-    detach();
-    if (winner !== undefined) return winner;
-    return Result.err(
-      new UnhandledException({ cause: new Error("Op.race failed to produce a winner") }),
-    );
-  });
+  );
+  detach();
+  if (winner !== undefined) return winner;
+  return Result.err(
+    new UnhandledException({ cause: new Error("Op.race failed to produce a winner") }),
+  );
 };
