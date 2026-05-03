@@ -26,6 +26,15 @@ All examples are consumer-level and live under `examples/*`.
 - Treat casts as a last resort after trying type-level restructuring first.
 - New casts should be called out in PR descriptions so reviewers can audit the tradeoff.
 
+## Testing Strategy
+
+Use a strict two-tier model so behavior has one clear home.
+
+- Unit tests (`src/<module>.test.ts`) verify module-local invariants, edge cases, and implementation details by importing the module under test directly.
+- Integration tests (`src/index.test.ts`) verify public API shape, re-exports, and cross-module composition contracts by importing only from `./index.js`.
+- If a behavior is an internal invariant of one module, keep it in the unit test; if it is a public composition/API contract, keep it in integration.
+- Avoid duplicate assertions across tiers unless each tier validates meaningfully different risk.
+
 ## Source Layout
 
 - Public package entrypoint stays at `src/index.ts`.

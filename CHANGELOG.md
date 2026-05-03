@@ -9,7 +9,9 @@ breaking changes may occur between minor releases.
 
 ### Added
 
-- No entries yet.
+- Clarified contributor testing governance with an explicit two-tier strategy in
+  `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
+  no-duplication decision rule for placing assertions.
 
 ## [0.1.53] - 2026-05-02
 
