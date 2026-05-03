@@ -8,9 +8,7 @@ export function rejectAfter(reason: unknown, ms: number) {
 
 export function deferredPromise<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
+  const promise = new Promise<T>((r) => (resolve = r));
   return { promise, resolve };
 }
 
@@ -28,6 +26,7 @@ export function trackAbortListeners(signal: AbortSignal) {
       const once = typeof options === "object" && options !== null ? options.once === true : false;
       registrations.push({ listener, once });
     }
+
     return originalAdd(type, listener, options);
   };
 
@@ -36,6 +35,7 @@ export function trackAbortListeners(signal: AbortSignal) {
       const idx = registrations.findIndex((registration) => registration.listener === listener);
       if (idx >= 0) registrations.splice(idx, 1);
     }
+
     return originalRemove(type, listener);
   };
 
@@ -49,6 +49,7 @@ export function trackAbortListeners(signal: AbortSignal) {
       if (registrations[i]?.once) registrations.splice(i, 1);
     }
   };
+
   originalAdd("abort", clearOnceRegistrations);
 
   return {

@@ -86,7 +86,7 @@ export function onExitOp<T, E, A extends readonly unknown[]>(
     op,
     (resolved) => onExitNullaryOp(resolved, finalize),
     (source, self) => ({
-      withRetry: (policy?) => onExitOp(source.withRetry(policy), finalize),
+      withRetry: (policy) => onExitOp(source.withRetry(policy), finalize),
       withTimeout: (timeoutMs) =>
         onExitOp(source.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError>),
       withSignal: (signal) => onExitOp(source.withSignal(signal), finalize),
@@ -116,7 +116,7 @@ export function withReleaseOp<T, E, A extends readonly unknown[]>(
     op,
     (resolved) => withCleanupNullaryOp(resolved, release),
     (source, self) => ({
-      withRetry: (policy?) => withReleaseOp(source.withRetry(policy), release),
+      withRetry: (policy) => withReleaseOp(source.withRetry(policy), release),
       withTimeout: (timeoutMs) => withReleaseOp(source.withTimeout(timeoutMs), release),
       withSignal: (signal) => withReleaseOp(source.withSignal(signal), release),
       withRelease: (nextRelease) => withReleaseOp(self, nextRelease),
@@ -133,7 +133,7 @@ export function mapOp<T, E, A extends readonly unknown[], U>(
     op,
     (resolved) => mapNullaryOp(resolved, transform),
     (source, self) => ({
-      withRetry: (policy?) => mapOp(source.withRetry(policy), transform),
+      withRetry: (policy) => mapOp(source.withRetry(policy), transform),
       withTimeout: (timeoutMs) => mapOp(source.withTimeout(timeoutMs), transform),
       withSignal: (signal) => mapOp(source.withSignal(signal), transform),
       withRelease: (release) => withReleaseOp(self, release),
@@ -150,7 +150,7 @@ export function mapErrOp<T, E, A extends readonly unknown[], E2>(
     op,
     (resolved) => mapErrNullaryOp(resolved, transform),
     (source, self) => ({
-      withRetry: (policy?) => mapErrOp(source.withRetry(policy), transform),
+      withRetry: (policy) => mapErrOp(source.withRetry(policy), transform),
       withTimeout: (timeoutMs) =>
         mapErrOp(source.withTimeout(timeoutMs), (error) =>
           error instanceof TimeoutError ? error : transform(error),
@@ -170,7 +170,7 @@ export function flatMapOp<T, E, A extends readonly unknown[], U, E2>(
     op,
     (resolved) => flatMapNullaryOp(resolved, bind),
     (source, self) => ({
-      withRetry: (policy?) => flatMapOp(source.withRetry(policy), bind),
+      withRetry: (policy) => flatMapOp(source.withRetry(policy), bind),
       withTimeout: (timeoutMs) => flatMapOp(source.withTimeout(timeoutMs), bind),
       withSignal: (signal) => flatMapOp(source.withSignal(signal), bind),
       withRelease: (release) => withReleaseOp(self, release),
@@ -187,7 +187,7 @@ export function tapOp<T, E, A extends readonly unknown[], R>(
     op,
     (resolved) => tapNullaryOp(resolved, observe),
     (source, self) => ({
-      withRetry: (policy?) => tapOp(source.withRetry(policy), observe),
+      withRetry: (policy) => tapOp(source.withRetry(policy), observe),
       withTimeout: (timeoutMs) => tapOp(source.withTimeout(timeoutMs), observe),
       withSignal: (signal) => tapOp(source.withSignal(signal), observe),
       withRelease: (release) => withReleaseOp(self, release),
@@ -204,7 +204,7 @@ export function tapErrOp<T, E, A extends readonly unknown[], R>(
     op,
     (resolved) => tapErrNullaryOp(resolved, observe),
     (source, self) => ({
-      withRetry: (policy?) => tapErrOp(source.withRetry(policy), observe),
+      withRetry: (policy) => tapErrOp(source.withRetry(policy), observe),
       withTimeout: (timeoutMs) =>
         tapErrOp(source.withTimeout(timeoutMs), (error) =>
           TimeoutError.is(error) ? undefined : observe(error),
@@ -225,7 +225,7 @@ export function recoverOp<T, E, A extends readonly unknown[], R>(
     op,
     (resolved) => recoverNullaryOp(resolved, predicate, handler),
     (source, self) => ({
-      withRetry: (policy?) => recoverOp(source.withRetry(policy), predicate, handler),
+      withRetry: (policy) => recoverOp(source.withRetry(policy), predicate, handler),
       withTimeout: (timeoutMs) =>
         recoverOp(
           source.withTimeout(timeoutMs),

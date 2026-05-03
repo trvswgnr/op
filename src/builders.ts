@@ -1,15 +1,8 @@
-import { TimeoutError, UnhandledException } from "./errors.js";
+import { UnhandledException } from "./errors.js";
 import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import {
-  type AnyExitFn,
-  type ExitFn,
-  type Instruction,
-  type Op,
-  type OpLifecycleHook,
-  type ReleaseFn,
-} from "./core/types.js";
+import { type AnyExitFn, type Instruction, type Op } from "./core/types.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
-import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
+import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
@@ -30,13 +23,14 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
       return value;
     },
     {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn<Awaited<T>, never>) => onExitOp(op, finalize),
+      withRetry: (policy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal) => withSignalOp(op, signal),
+      withRelease: (release) => withReleaseOp(op, release),
+      registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
+
   return op;
 }
 
@@ -49,13 +43,14 @@ export function fail<E>(value: E): Op<never, E, []> {
       return yield* Result.err(value);
     },
     {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withRelease: (release: ReleaseFn<never>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn<never, E>) => onExitOp(op, finalize),
+      withRetry: (policy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal) => withSignalOp(op, signal),
+      withRelease: (release) => withReleaseOp(op, release),
+      registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
+
   return op;
 }
 
@@ -72,11 +67,11 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
       );
     },
     {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withRelease: (release: ReleaseFn<void>) => withReleaseOp(op, release),
-      registerExitFinalize: (nextFinalize: ExitFn<void, never>) => onExitOp(op, nextFinalize),
+      withRetry: (policy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal) => withSignalOp(op, signal),
+      withRelease: (release) => withReleaseOp(op, release),
+      registerExitFinalize: (nextFinalize) => onExitOp(op, nextFinalize),
     },
   );
   return op;
@@ -99,15 +94,16 @@ export function _try<T, E = UnhandledException>(
             (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
           ),
       )) as Result<T, E>;
+
       if (result.isErr()) return yield* result;
       return result.value as Awaited<T>;
     },
     {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(op, signal),
-      withRelease: (release: ReleaseFn<Awaited<T>>) => withReleaseOp(op, release),
-      registerExitFinalize: (finalize: ExitFn<Awaited<T>, E>) => onExitOp(op, finalize),
+      withRetry: (policy) => withRetryOp(op, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
+      withSignal: (signal) => withSignalOp(op, signal),
+      withRelease: (release) => withReleaseOp(op, release),
+      registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
   return op;
@@ -117,18 +113,11 @@ function makeArityOp<T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
 ): Op<T, E, A> {
   return makeFluentArityOp(invoke, (_self) => ({
-    withRetry: (policy?: RetryPolicy) =>
-      makeArityOp<T, E, A>((...args: A) => withRetryOp(invoke(...args), policy)),
-    withTimeout: (timeoutMs: number) =>
-      makeArityOp<T, E | TimeoutError, A>((...args: A) =>
-        withTimeoutOp(invoke(...args), timeoutMs),
-      ),
-    withSignal: (signal: AbortSignal) =>
-      makeArityOp<T, E, A>((...args: A) => withSignalOp(invoke(...args), signal)),
-    withRelease: (release: ReleaseFn<T>) =>
-      makeArityOp<T, E, A>((...args: A) => withReleaseOp(invoke(...args), release)),
-    on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) =>
-      makeArityOp<T, E, A>((...args: A) => onOp(invoke(...args), event, finalize)),
+    withRetry: (policy) => makeArityOp((...args) => withRetryOp(invoke(...args), policy)),
+    withTimeout: (timeoutMs) => makeArityOp((...args) => withTimeoutOp(invoke(...args), timeoutMs)),
+    withSignal: (signal) => makeArityOp((...args) => withSignalOp(invoke(...args), signal)),
+    withRelease: (release) => makeArityOp((...args) => withReleaseOp(invoke(...args), release)),
+    on: (event, finalize) => makeArityOp((...args) => onOp(invoke(...args), event, finalize)),
   }));
 }
 
@@ -142,12 +131,12 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   // this keeps arity/nullary classification deterministic via explicit op kind metadata
   // instead of runtime function reflection or shape guessing in correctness paths
   return makeArityOp((...args: A) => {
-    const bound: Op<T, InferErr<Y>, []> = makeNullaryOp<T, InferErr<Y>>(() => f(...args) as never, {
-      withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(bound, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(bound, signal),
-      withRelease: (release: ReleaseFn<T>) => withReleaseOp(bound, release),
-      registerExitFinalize: (finalize: ExitFn<T, InferErr<Y>>) => onExitOp(bound, finalize),
+    const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(() => f(...args) as never, {
+      withRetry: (policy) => withRetryOp(bound, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
+      withSignal: (signal) => withSignalOp(bound, signal),
+      withRelease: (release) => withReleaseOp(bound, release),
+      registerExitFinalize: (finalize) => onExitOp(bound, finalize),
     });
     return bound;
   });

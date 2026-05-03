@@ -1,14 +1,7 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import {
-  type ExitFn,
-  type Instruction,
-  type Op,
-  type OpArity,
-  type OpLifecycleHook,
-  type ReleaseFn,
-} from "./core/types.js";
+import { type Instruction, type Op } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { isNullaryOp, makeNullaryOp } from "./core/nullary-ops.js";
@@ -63,20 +56,23 @@ function normalizeBackoffOptions(opts?: BackoffOptions): BackoffOptions {
 export function exponentialBackoff(opts?: BackoffOptions): (attempt: number) => number {
   const { base, max, jitter } = normalizeBackoffOptions(opts);
 
-  return (attempt: number): number => {
+  return (attempt) => {
     const exp = Math.min(base * Math.pow(2, Math.max(0, attempt - 1)), max);
+
     if (jitter === 0) return exp;
+
     const spread = exp * jitter;
+
     return exp - spread + Math.random() * spread;
   };
 }
 exponentialBackoff.DEFAULT = exponentialBackoff(DEFAULT_BACKOFF_OPTIONS);
 
-export const DEFAULT_RETRY_POLICY: RetryPolicy = {
+export const DEFAULT_RETRY_POLICY = Object.freeze({
   maxAttempts: 3,
   shouldRetry: () => true,
   getDelay: exponentialBackoff.DEFAULT,
-};
+}) satisfies RetryPolicy;
 
 function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
   op: Op<T, EIn, A>,
@@ -88,15 +84,14 @@ function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
     return mapNullary(op) as unknown as Op<T, EOut, A>;
   }
 
-  const arity = op as OpArity<T, EIn, A>;
   return makeFluentArityOp(
-    (...args: A) => mapNullary(arity(...args)),
+    (...args: A) => mapNullary(op(...args)),
     (self) => ({
-      withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
-      withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
-      withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
-      withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-      on: (event: OpLifecycleHook, finalize: ExitFn<T, EOut>) => onOp(self, event, finalize),
+      withRetry: (policy) => withRetryOp(self, policy),
+      withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
+      withSignal: (signal) => withSignalOp(self, signal),
+      withRelease: (release) => withReleaseOp(self, release),
+      on: (event, finalize) => onOp(self, event, finalize),
     }),
   );
 }
@@ -105,12 +100,13 @@ function makePolicyNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
 ): Op<T, Exclude<E, UnhandledException>, []> {
   const self: Op<T, Exclude<E, UnhandledException>, []> = makeNullaryOp(gen, {
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-    registerExitFinalize: (finalize: ExitFn<T, E>) => onExitOp(self, finalize),
+    withRetry: (policy) => withRetryOp(self, policy),
+    withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
+    withSignal: (signal) => withSignalOp(self, signal),
+    withRelease: (release) => withReleaseOp(self, release),
+    registerExitFinalize: (finalize) => onExitOp(self, finalize),
   });
+
   return self;
 }
 
@@ -123,14 +119,17 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
       resolve();
       return;
     }
+
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
+
     const onAbort = () => {
       clearTimeout(timer);
       resolve();
     };
+
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -157,19 +156,21 @@ function withRetryNullaryOp<T, E>(
 
       if (result.isOk()) return result.value;
 
-      const cause = result.error;
-      const retryCause = cause instanceof UnhandledException ? cause.cause : cause;
+      const error = result.error;
+      const retryCause = UnhandledException.is(error) ? error.cause : error;
+
       const canRetry =
         !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
 
-      if (!canRetry) return yield* Result.err(cause);
+      if (!canRetry) return yield* Result.err(error);
 
-      const delayMs = Math.max(0, policy.getDelay(attempt, cause));
+      const delayMs = Math.max(0, policy.getDelay(attempt, error));
       if (delayMs > 0) {
         const delayAborted = yield new SuspendInstruction((signal: AbortSignal) =>
           abortableDelay(delayMs, signal).then(() => signal.aborted),
         );
-        if (delayAborted) return yield* Result.err(cause);
+
+        if (delayAborted) return yield* result;
       }
 
       attempt += 1;
@@ -188,10 +189,12 @@ function withTimeoutNullaryOp<T, E>(
   timeoutMs: number,
 ): Op<T, E | TimeoutError, []> {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
+
   return makePolicyNullaryOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
       raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
     )) as Result<T, E | UnhandledException | TimeoutError>;
+
     if (result.isErr()) return yield* result;
     return result.value;
   });
@@ -207,6 +210,7 @@ function withSignalNullaryOp<T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T,
     const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
       runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
     )) as Result<T, E | UnhandledException>;
+
     if (result.isErr()) return yield* result;
     return result.value;
   });
@@ -281,6 +285,7 @@ async function raceTimeout<T, E>(
 ): Promise<Result<T, E | TimeoutError>> {
   const controller = new AbortController();
   const cascade = () => controller.abort(outerSignal.reason);
+
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
 

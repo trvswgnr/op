@@ -94,7 +94,7 @@ export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<
       return result.value;
     },
     {
-      withRetry: (policy?) => withCleanupNullaryOp(op.withRetry(policy), release),
+      withRetry: (policy) => withCleanupNullaryOp(op.withRetry(policy), release),
       withTimeout: (timeoutMs) => withCleanupNullaryOp(op.withTimeout(timeoutMs), release),
       withSignal: (signal) => withCleanupNullaryOp(op.withSignal(signal), release),
       withRelease: (nextRelease) =>
@@ -120,7 +120,7 @@ export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>):
       return result.value;
     },
     {
-      withRetry: (policy?) => onExitNullaryOp(op.withRetry(policy), finalize),
+      withRetry: (policy) => onExitNullaryOp(op.withRetry(policy), finalize),
       withTimeout: (timeoutMs) =>
         onExitNullaryOp(op.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError>),
       withSignal: (signal) => onExitNullaryOp(op.withSignal(signal), finalize),
@@ -150,7 +150,7 @@ export function mapNullaryOp<T, E, U>(
       return mapped;
     },
     {
-      withRetry: (policy?) => mapNullaryOp(op.withRetry(policy), transform),
+      withRetry: (policy) => mapNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
       withSignal: (signal) => mapNullaryOp(op.withSignal(signal), transform),
       withRelease: (release) => withCleanupNullaryOp(mapNullaryOp(op, transform), release),
@@ -179,7 +179,7 @@ export function flatMapNullaryOp<T, E, U, E2>(
       return second.value;
     },
     {
-      withRetry: (policy?) => withRetryOp(mapped, policy),
+      withRetry: (policy) => withRetryOp(mapped, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(mapped, timeoutMs),
       withSignal: (signal) => withSignalOp(mapped, signal),
       withRelease: (release) => withCleanupNullaryOp(mapped, release),
@@ -214,7 +214,7 @@ export function tapNullaryOp<T, E, R>(
       return source.value;
     },
     {
-      withRetry: (policy?) => tapNullaryOp(op.withRetry(policy), observe),
+      withRetry: (policy) => tapNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
       withSignal: (signal) => tapNullaryOp(op.withSignal(signal), observe),
       withRelease: (release) => withCleanupNullaryOp(tapNullaryOp(op, observe), release),
@@ -250,7 +250,7 @@ export function tapErrNullaryOp<T, E, R>(
       return yield* source;
     },
     {
-      withRetry: (policy?) => tapErrNullaryOp(op.withRetry(policy), observe),
+      withRetry: (policy) => tapErrNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs) =>
         tapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
           TimeoutError.is(error) ? undefined : observe(error),
@@ -285,7 +285,7 @@ export function mapErrNullaryOp<T, E, E2>(
       return yield* Result.err(mapped);
     },
     {
-      withRetry: (policy?) => mapErrNullaryOp(op.withRetry(policy), transform),
+      withRetry: (policy) => mapErrNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs) =>
         mapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
           TimeoutError.is(error) ? error : transform(error),
@@ -330,7 +330,7 @@ export function recoverNullaryOp<T, E, R>(
       return recoveredResult.value;
     },
     {
-      withRetry: (policy?) => recoverNullaryOp(op.withRetry(policy), predicate, handler),
+      withRetry: (policy) => recoverNullaryOp(op.withRetry(policy), predicate, handler),
       withTimeout: (timeoutMs) =>
         recoverNullaryOp(
           op.withTimeout(timeoutMs),
