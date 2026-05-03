@@ -24,7 +24,7 @@ export interface RetryPolicy {
 }
 
 /**
- * Creates a retry delay function with exponential growth and optional jitter.
+ * Creates a retry delay function with exponential growth and optional jitter
  */
 export interface BackoffOptions {
   /** Initial delay in milliseconds. */
@@ -118,8 +118,8 @@ const withRetryNullaryOp = <T, E>(
   op: Op<T, E, []>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
 ): Op<T, E, []> => {
-  // Retries only re-run the same op; the exposed typed error channel remains `E`.
-  // Internally we include `UnhandledException` for runtime safety in `drive`.
+  // Retries only re-run the same op; the exposed typed error channel remains `E`
+  // Internally we include `UnhandledException` for runtime safety in `drive`
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     let attempt = 1;
 
@@ -162,7 +162,7 @@ const withTimeoutNullaryOp = <T, E>(
 ): Op<T, E | TimeoutError, []> => {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
   // `drive` can still surface `UnhandledException` internally; we intentionally expose only
-  // the public contract of `E | TimeoutError` for fluent API stability.
+  // the public contract of `E | TimeoutError` for fluent API stability
   return makePolicyNullaryOp<T, E | UnhandledException | TimeoutError>(function* () {
     const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
       raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
@@ -175,7 +175,7 @@ const withTimeoutNullaryOp = <T, E>(
 };
 
 const withSignalNullaryOp = <T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> => {
-  // Same contract as source op: binding a signal does not widen the typed error channel.
+  // Same contract as source op: binding a signal does not widen the typed error channel
   return makePolicyNullaryOp<T, E | UnhandledException>(function* () {
     const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
       runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
@@ -214,10 +214,10 @@ const runWithBoundSignal = <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T, E>> => {
   // Listener lifecycle contract:
-  // - The composed controller mirrors both bound and outer cancellation.
+  // - The composed controller mirrors both bound and outer cancellation
   // - We eagerly check `aborted` before registering listeners so pre-aborted signals
-  //   cannot miss propagation.
-  // - Cleanup stays in Promise.finally so listeners are removed on success, error, or abort.
+  //   cannot miss propagation
+  // - Cleanup stays in Promise.finally so listeners are removed on success, error, or abort
   const controller = new AbortController();
   const forwardBoundAbort = () => controller.abort(boundSignal.reason);
   const forwardOuterAbort = () => controller.abort(outerSignal.reason);
@@ -240,10 +240,10 @@ const raceTimeout = <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | TimeoutError>> => {
   // Listener lifecycle contract:
-  // - The timeout path and outer signal both cancel the same controller.
+  // - The timeout path and outer signal both cancel the same controller
   // - Timeout resolves with TimeoutError while also aborting the work branch so branch-local
-  //   cleanup runs through normal cancellation flow.
-  // - Promise.finally clears timer + listener in every settle path to avoid timer/listener leaks.
+  //   cleanup runs through normal cancellation flow
+  // - Promise.finally clears timer + listener in every settle path to avoid timer/listener leaks
   const controller = new AbortController();
   const cascade = () => controller.abort(outerSignal.reason);
   if (outerSignal.aborted) cascade();

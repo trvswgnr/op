@@ -6,7 +6,7 @@ import { TaggedError, UnhandledException } from "better-result";
 export { TaggedError, UnhandledException };
 
 /**
- * Built-in typed error emitted when an operation exceeds a timeout budget.
+ * Built-in typed error emitted when an operation exceeds a timeout budget
  */
 export class TimeoutError extends TaggedError("TimeoutError")<{
   message: string;
@@ -18,7 +18,7 @@ export class TimeoutError extends TaggedError("TimeoutError")<{
 }
 
 /**
- * A typed aggregate error used by combinators that need to preserve multiple failures.
+ * A typed aggregate error used by combinators that need to preserve multiple failures
  */
 export class ErrorGroup<E> extends Tagged("ErrorGroup", AggregateError) {
   override readonly errors: E[];

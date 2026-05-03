@@ -11,8 +11,8 @@ const logger = console;
 const SMOKE_TIMEOUT_MS_ENV = "OP_SMOKE_TIMEOUT_MS";
 
 /**
- * Controls whether examples/node_modules and examples/package-lock.json are deleted before install.
- * Leaving this unset keeps lockfile-driven installs reproducible.
+ * Controls whether examples/node_modules and examples/package-lock.json are deleted before install
+ * Leaving this unset keeps lockfile-driven installs reproducible
  */
 const SMOKE_RESET_EXAMPLES_ENV = "OP_SMOKE_RESET_EXAMPLES";
 
@@ -97,7 +97,7 @@ function collectRuntimeEntryLeaves(value: unknown, target: Set<string>): void {
   }
   if (typeof value !== "object" || value === null) return;
 
-  // types entries are non-runtime metadata and should not satisfy runtime artifact checks.
+  // types entries are non-runtime metadata and should not satisfy runtime artifact checks
   const typeField = readOwnObjectField(value, "types");
   const defaultField = readOwnObjectField(value, "default");
   const importField = readOwnObjectField(value, "import");
@@ -479,7 +479,7 @@ const installFromPack = Op(function* (repoRoot: string) {
   yield* execOp("npm", ["run", "build"], repoRoot);
 
   // --ignore-scripts: we just built above, and letting `prepare` run tsdown
-  // again would pollute stdout (including ANSI escapes) and corrupt --json.
+  // again would pollute stdout (including ANSI escapes) and corrupt --json
   const packOutput = yield* execOp("npm", ["pack", "--json", "--ignore-scripts"], repoRoot, true);
   const filename = parseNpmPackFilenameFromOutput(packOutput);
 

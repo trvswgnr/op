@@ -1,7 +1,7 @@
 import { assert, describe, expect, test, vi } from "vitest";
 import { Op, TaggedError, UnhandledException } from "./index.js";
 
-// Scope: integration tests for fluent operator behavior.
+// Scope: integration tests for fluent operator behavior
 describe("operator combinators", () => {
   describe("op.map", () => {
     test("map transforms success values and preserves arity", async () => {

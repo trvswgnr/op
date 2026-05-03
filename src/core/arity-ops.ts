@@ -52,7 +52,7 @@ export const makeFluentArityOp = <T, E, A extends readonly unknown[]>(
     _tag: "Op" as const,
     // TS cannot represent a callable value that is also this exact fluent object shape
     // without losing the tuple-arg generic `A`; we cast once at construction to preserve
-    // the runtime-correct shape that `drive` and all fluent helpers rely on.
+    // the runtime-correct shape that `drive` and all fluent helpers rely on
   }) as unknown as Op<T, E, A>;
   return self;
 };
@@ -67,7 +67,7 @@ const liftArityOp = <TIn, EIn, A extends readonly unknown[], TOut, EOut>(
 ): Op<TOut, EOut, A> => {
   if (isNullaryOp(op)) {
     // TS cannot refine generic `A` to `[]` from this runtime check, even though nullary
-    // ops are guaranteed to satisfy that branch. We cast to preserve the caller's `A`.
+    // ops are guaranteed to satisfy that branch. We cast to preserve the caller's `A`
     return mapNullary(op) as unknown as Op<TOut, EOut, A>;
   }
 

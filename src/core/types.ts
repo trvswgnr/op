@@ -6,7 +6,7 @@ import { Tagged } from "../tagged.js";
 
 /**
  * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
- * for this settle (including {@link UnhandledException} on the error channel when relevant).
+ * for this settle (including {@link UnhandledException} on the error channel when relevant)
  */
 export interface ExitContext<T, E> {
   readonly signal: AbortSignal;

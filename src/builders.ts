@@ -18,7 +18,7 @@ const isAwaited = <T>(value: T | Promise<T>): value is Awaited<T> => {
 };
 
 /**
- * Lifts a value into an operation that always completes successfully.
+ * Lifts a value into an operation that always completes successfully
  */
 export const succeed = <T>(value: T | Promise<T>): Op<Awaited<T>, never, []> => {
   if (!isAwaited(value)) {
@@ -41,7 +41,7 @@ export const succeed = <T>(value: T | Promise<T>): Op<Awaited<T>, never, []> => 
 };
 
 /**
- * Lifts a value into an operation that always fails.
+ * Lifts a value into an operation that always fails
  */
 export const fail = <E>(value: E): Op<never, E, []> => {
   const op: Op<never, E, []> = makeNullaryOp(
@@ -60,9 +60,9 @@ export const fail = <E>(value: E): Op<never, E, []> => {
 };
 
 /**
- * Registers deferred cleanup for the current op run. Use as `yield* Op.defer((ctx) => ...)`.
+ * Registers deferred cleanup for the current op run. Use as `yield* Op.defer((ctx) => ...)`
  * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
- * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**.
+ * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**
  */
 export const defer = (finalize: AnyExitFn): Op<void, never, []> => {
   const op: Op<void, never, []> = makeNullaryOp(
@@ -83,7 +83,7 @@ export const defer = (finalize: AnyExitFn): Op<void, never, []> => {
 };
 
 /**
- * Suspends until a promise settles, then continues with its value or a mapped failure.
+ * Suspends until a promise settles, then continues with its value or a mapped failure
  */
 export const _try = <T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
@@ -135,7 +135,7 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
 };
 
 /**
- * Turns a generator function into an {@link Op}.
+ * Turns a generator function into an {@link Op}
  */
 export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
   f: (...args: A) => Generator<Y, T, unknown>,
@@ -151,7 +151,7 @@ export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly 
     return bound;
   };
 
-  // we are intentionally always returning the arity wrapper shape, including for `A = []` generators.
+  // we are intentionally always returning the arity wrapper shape, including for `A = []` generators
   // this keeps arity/nullary classification deterministic via explicit op kind metadata
   // instead of runtime function reflection or shape guessing in correctness paths
   return makeArityOp<T, InferErr<Y>, A>((...args) => makeBoundOp(...args) as never);

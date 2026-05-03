@@ -2,7 +2,7 @@ import { assert, describe, expect, test, vi } from "vitest";
 import { Op, TimeoutError, UnhandledException, type ExitContext } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
 
-// Scope: integration behavior for cleanup/finalization and lifecycle hooks.
+// Scope: integration behavior for cleanup/finalization and lifecycle hooks
 describe("op.withRelease", () => {
   test("runs registered cleanup after a successful run", async () => {
     const events: string[] = [];

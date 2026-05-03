@@ -52,15 +52,15 @@ export const Op = Object.assign(fromGenFn, {
 
 /**
  * Operation: a generator-based program with success type `T`, error type `E`, and parameter tuple `A`
- * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters.
+ * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters
  *
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
  * `withRetry(policy)`, `withTimeout(ms)`, `withSignal(signal)`, `withRelease(release)`,
- * `.on("exit", finalize)`, and `Op.defer(finalize)` inside generators (finalizers receive {@link ExitContext} with the same `result` as `.run()`).
+ * `.on("exit", finalize)`, and `Op.defer(finalize)` inside generators (finalizers receive {@link ExitContext} with the same `result` as `.run()`)
  *
- * @template T Value returned when the operation succeeds.
- * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws).
- * @template A Argument tuple for parameterized operations.
+ * @template T Value returned when the operation succeeds
+ * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws)
+ * @template A Argument tuple for parameterized operations
  */
 export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
 

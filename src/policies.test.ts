@@ -478,7 +478,7 @@ describe("AbortSignal", () => {
       const result = await runPromise;
       assert(result.isErr() === true, "result should be Err");
       expect(result.error).toBeInstanceOf(TimeoutError);
-      // Only one attempt ran before the timeout aborted the delay and halted the loop.
+      // Only one attempt ran before the timeout aborted the delay and halted the loop
       expect(attempts).toBe(1);
     } finally {
       vi.useRealTimers();

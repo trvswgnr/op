@@ -8,7 +8,7 @@ import {
   trackAbortListeners,
 } from "./test-utils.js";
 
-// Scope: integration behavior for Op combinators and combinator-policy interplay.
+// Scope: integration behavior for Op combinators and combinator-policy interplay
 describe("Op.all", () => {
   test("tuple of successes in input order", async () => {
     const r = await Op.all([Op.of(1), Op.of("two"), Op.of(true)]).run();

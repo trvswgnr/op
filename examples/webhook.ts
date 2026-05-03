@@ -216,7 +216,7 @@ export const createApp = (deps: AppDeps) => {
       });
     }
 
-    // Unbounded fan-out is right when every child should start immediately and fail-fast together.
+    // Unbounded fan-out is right when every child should start immediately and fail-fast together
     const [reservation, payment] = yield* Op.all([
       reserveInventory(payload),
       authorizePayment(payload),
@@ -249,7 +249,7 @@ export const createApp = (deps: AppDeps) => {
       .withRetry(retryTransient)
       .withTimeout(300);
 
-    // Bounded fan-out is useful for best-effort side effects that may share provider limits.
+    // Bounded fan-out is useful for best-effort side effects that may share provider limits
     const [receiptResult, analyticsResult] = yield* Op.allSettled(
       [
         Op.try(
