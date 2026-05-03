@@ -10,7 +10,7 @@ import {
 } from "./core/types.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { err, ExtractErr, ok, type Result } from "./result.js";
+import { err, InferErr, ok, type Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
 const isAwaited = <T>(value: T | Promise<T>): value is Awaited<T> => {
@@ -139,7 +139,7 @@ const makeArityOp = <T, E, A extends readonly unknown[]>(
  */
 export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly unknown[]>(
   f: (...args: A) => Generator<Y, T, unknown>,
-): Op<T, ExtractErr<Y>, A> => {
+): Op<T, InferErr<Y>, A> => {
   const makeBoundOp = (...args: A) => {
     const bound: Op<unknown, unknown, []> = makeNullaryOp(() => f(...args), {
       withRetry: (policy?: RetryPolicy) => withRetryOp(bound, policy),
@@ -154,5 +154,5 @@ export const fromGenFn = <Y extends Instruction<unknown>, T, A extends readonly 
   // we are intentionally always returning the arity wrapper shape, including for `A = []` generators.
   // this keeps arity/nullary classification deterministic via explicit op kind metadata
   // instead of runtime function reflection or shape guessing in correctness paths
-  return makeArityOp<T, ExtractErr<Y>, A>((...args) => makeBoundOp(...args) as never);
+  return makeArityOp<T, InferErr<Y>, A>((...args) => makeBoundOp(...args) as never);
 };
