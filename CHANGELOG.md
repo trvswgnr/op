@@ -34,8 +34,6 @@ breaking changes may occur between minor releases.
   assertions with property-based tests and adding randomized `Result` algebra
   coverage for `map` and `andThen` composition laws.
 
-### Removed
-
 ## [0.1.53] - 2026-05-02
 
 ### Changed
