@@ -7,7 +7,7 @@ breaking changes may occur between minor releases.
 
 ## [Unreleased]
 
-### Added
+### Changed
 
 - Clarified contributor testing governance with an explicit two-tier strategy in
   `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
