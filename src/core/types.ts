@@ -5,6 +5,12 @@ import type { RegisterExitFinalizerInstruction, SuspendInstruction } from "./ins
 import { Tagged } from "../tagged.js";
 import { NULLARY_OP_SYMBOL } from "./nullary-ops.js";
 
+export type TrackedErr<E, Excluded = never> = E extends UnhandledException
+  ? never
+  : E extends Excluded
+    ? never
+    : E;
+
 /**
  * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
  * for this settle (including {@link UnhandledException} on the error channel when relevant)
@@ -55,7 +61,7 @@ export interface WithMap<T, E, A extends readonly unknown[]> {
 }
 
 export interface WithMapErr<T, E, A extends readonly unknown[]> {
-  mapErr<E2>(transform: (error: E) => E2): Op<T, E2, A>;
+  mapErr<E2>(transform: (error: TrackedErr<E>) => E2): Op<T, E2, A>;
 }
 
 export interface WithFlatMap<T, E, A extends readonly unknown[]> {
@@ -69,7 +75,7 @@ export interface WithTap<T, E, A extends readonly unknown[]> {
 }
 
 export interface WithTapErr<T, E, A extends readonly unknown[]> {
-  tapErr<R>(observe: (error: E) => R): Op<T, E | InferNullaryOpErr<R>, A>;
+  tapErr<R>(observe: (error: TrackedErr<E>) => R): Op<T, TrackedErr<E> | InferNullaryOpErr<R>, A>;
 }
 
 export type RecoverValue<R> = R extends Op<infer T, unknown, []> ? T : Awaited<R>;
@@ -78,18 +84,18 @@ export type RecoverError<R> = R extends Op<unknown, infer E, []> ? E : never;
 export type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
 
 export interface WithRecover<T, E, A extends readonly unknown[]> {
-  recover<ECaught extends E, R>(
-    predicate: (error: E) => error is ECaught,
+  recover<ECaught extends TrackedErr<E>, R>(
+    predicate: (error: TrackedErr<E>) => error is ECaught,
     handler: (error: ECaught) => R,
-  ): Op<T | RecoverValue<R>, Exclude<E, ECaught> | RecoverError<R>, A>;
-  recover<ECaught extends E, R>(
-    predicate: WithPredicateMethod<ECaught>,
+  ): Op<T | RecoverValue<R>, TrackedErr<E, ECaught> | RecoverError<R>, A>;
+  recover<ECaught extends TrackedErr<E>, R>(
+    predicate: WithPredicateMethod<TrackedErr<ECaught>>,
     handler: (error: ECaught) => R,
-  ): Op<T | RecoverValue<R>, Exclude<E, ECaught> | RecoverError<R>, A>;
+  ): Op<T | RecoverValue<R>, TrackedErr<E, ECaught> | RecoverError<R>, A>;
   recover<R>(
-    predicate: (error: E) => boolean,
-    handler: (error: E) => R,
-  ): Op<T | RecoverValue<R>, E | RecoverError<R>, A>;
+    predicate: (error: TrackedErr<E>) => boolean,
+    handler: (error: TrackedErr<E>) => R,
+  ): Op<T | RecoverValue<R>, TrackedErr<E> | RecoverError<R>, A>;
 }
 
 export interface OpNullary<T, E>

@@ -1,7 +1,7 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { type Instruction, type Op } from "./core/types.js";
+import { TrackedErr, type Instruction, type Op } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { isNullaryOp, makeNullaryOp } from "./core/nullary-ops.js";
@@ -98,8 +98,8 @@ function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
 
 function makePolicyNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
-): Op<T, Exclude<E, UnhandledException>, []> {
-  const self: Op<T, Exclude<E, UnhandledException>, []> = makeNullaryOp(gen, {
+): Op<T, TrackedErr<E>, []> {
+  const self: Op<T, TrackedErr<E>, []> = makeNullaryOp(gen, {
     withRetry: (policy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),

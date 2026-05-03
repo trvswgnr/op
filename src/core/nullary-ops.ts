@@ -6,6 +6,7 @@ import type {
   ExitFn,
   Instruction,
   Op,
+  TrackedErr,
   OpHooks,
   OpLifecycleHook,
   ReleaseFn,
@@ -51,8 +52,8 @@ function dispatchLifecycleNullary<T, E>(
 export function makeNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
-): Op<T, Exclude<E, UnhandledException>, []> {
-  let self: Op<T, Exclude<E, UnhandledException>, []>;
+): Op<T, TrackedErr<E>, []> {
+  let self: Op<T, TrackedErr<E>, []>;
   const state = {
     [NULLARY_OP_SYMBOL]: true,
     [Symbol.iterator]: gen,
@@ -73,7 +74,7 @@ export function makeNullaryOp<T, E>(
     _tag: "Op" as const,
   };
   const callable = () => state;
-  self = Object.assign(callable, state) as Op<T, Exclude<E, UnhandledException>, []>;
+  self = Object.assign(callable, state) as Op<T, TrackedErr<E>, []>;
 
   return self;
 }

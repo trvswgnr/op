@@ -36,7 +36,7 @@ describe("type inference contracts", () => {
 
   test("policy chaining preserves arity and widens error channels", () => {
     const retryNullary = Op.try(() => Promise.resolve(1)).withRetry();
-    expectTypeOf(retryNullary).toEqualTypeOf<Op<number, UnhandledException, []>>();
+    expectTypeOf(retryNullary).toEqualTypeOf<Op<number, never, []>>();
     expectTypeOf(retryNullary.run()).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const retryMapped = Op.try(
@@ -103,6 +103,61 @@ describe("type inference contracts", () => {
       return 69;
     }).tapErr((error) => error.toUpperCase());
     expectTypeOf(tapErrOp).toEqualTypeOf<Op<number, "bad-input", ["bad" | "ok"]>>();
+  });
+
+  test("mapErr, tapErr, and recover callbacks exclude UnhandledException", () => {
+    class DomainError extends TaggedError("DomainError")() {}
+
+    const mapErrOp = Op.fail<DomainError | UnhandledException>(new DomainError()).mapErr(
+      (error) => {
+        expectTypeOf(error).toEqualTypeOf<DomainError>();
+        // @ts-expect-error - callback excludes UnhandledException
+        const _: UnhandledException = error;
+        return error;
+      },
+    );
+    expectTypeOf(mapErrOp).toEqualTypeOf<Op<never, DomainError, []>>();
+
+    const tapErrOp = Op.fail<DomainError | UnhandledException>(new DomainError()).tapErr(
+      (error) => {
+        expectTypeOf(error).toEqualTypeOf<DomainError>();
+        // @ts-expect-error - callback excludes UnhandledException
+        const _: UnhandledException = error;
+        return undefined;
+      },
+    );
+    expectTypeOf(tapErrOp).toEqualTypeOf<Op<never, DomainError, []>>();
+
+    const recoverOp = Op.fail<DomainError | UnhandledException>(new DomainError()).recover(
+      (error): error is DomainError => {
+        expectTypeOf(error).toEqualTypeOf<DomainError>();
+        // @ts-expect-error - callback predicate excludes UnhandledException
+        const _: UnhandledException = error;
+        return DomainError.is(error);
+      },
+      (error) => {
+        expectTypeOf(error).toEqualTypeOf<DomainError>();
+        // @ts-expect-error - callback handler excludes UnhandledException
+        const _: UnhandledException = error;
+        return "recovered" as const;
+      },
+    );
+    expectTypeOf(recoverOp).toEqualTypeOf<Op<"recovered", never, []>>();
+
+    // Op.try without onError should return Op<T, never, []>
+    const tryOp = Op.try(() => {
+      throw new DomainError();
+    }).recover(
+      (e) => {
+        expectTypeOf(e).toEqualTypeOf<never>();
+        return true;
+      },
+      (e) => {
+        expectTypeOf(e).toEqualTypeOf<never>();
+        return "recovered" as const;
+      },
+    );
+    expectTypeOf(tryOp).toEqualTypeOf<Op<"recovered", never, []>>();
   });
 
   test("recover narrows handled errors and preserves unhandled variants", () => {

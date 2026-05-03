@@ -1,6 +1,6 @@
 import { UnhandledException } from "./errors.js";
 import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { type AnyExitFn, type Instruction, type Op } from "./core/types.js";
+import { TrackedErr, type AnyExitFn, type Instruction, type Op } from "./core/types.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
@@ -83,8 +83,8 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
 export function _try<T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
   onError?: (e: unknown) => E,
-): Op<Awaited<T>, E, []> {
-  const op: Op<Awaited<T>, E, []> = makeNullaryOp(
+): Op<Awaited<T>, TrackedErr<E>, []> {
+  const op: Op<Awaited<T>, TrackedErr<E>, []> = makeNullaryOp(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         Promise.resolve()
