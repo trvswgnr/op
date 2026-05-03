@@ -327,6 +327,59 @@ describe("Op.any", () => {
     assert(ErrorGroup.is(r.error), "ErrorGroup");
     expect(r.error.errors).toEqual(["slow", "fast"]);
   });
+
+  test("waits for loser finalization before returning the winner", async () => {
+    const loserCleanupGate = deferredPromise<void>();
+    let loserSawAbort = false;
+    const loser = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              loserSawAbort = true;
+              loserCleanupGate.promise.then(() => resolve(-1));
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    const run = Op.any([loser, Op.of(7)]).run();
+    let settled = false;
+    void run.then(() => {
+      settled = true;
+    });
+
+    await vi.waitFor(() => expect(loserSawAbort).toBe(true));
+    expect(settled).toBe(false);
+
+    loserCleanupGate.resolve();
+    const r = await run;
+
+    assert(r.isOk(), "should be Ok");
+    expect(r.value).toBe(7);
+  });
+
+  test("winner success keeps precedence over loser abort-time failures", async () => {
+    const loser = Op.try(
+      (signal) =>
+        new Promise<number>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject("cleanup-failed" as const);
+            },
+            { once: true },
+          );
+        }),
+      (cause) => cause as "cleanup-failed",
+    );
+
+    const r = await Op.any([loser, Op.of(1)]).run();
+    assert(r.isOk(), "should be Ok");
+    expect(r.value).toBe(1);
+  });
 });
 
 describe("Op.race", () => {
@@ -379,6 +432,58 @@ describe("Op.race", () => {
     const combined = Op.race([Op.of(1), Op.fail("two" as const)]);
     const r = await combined.run();
     expect(r.isOk() || r.isErr()).toBe(true);
+  });
+
+  test("waits for loser finalization before returning winner result", async () => {
+    const loserCleanupGate = deferredPromise<void>();
+    let loserSawAbort = false;
+    const loser = Op.try(
+      (signal) =>
+        new Promise<number>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              loserSawAbort = true;
+              loserCleanupGate.promise.then(() => resolve(-1));
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    const run = Op.race([loser, Op.of(99)]).run();
+    let settled = false;
+    void run.then(() => {
+      settled = true;
+    });
+
+    await vi.waitFor(() => expect(loserSawAbort).toBe(true));
+    expect(settled).toBe(false);
+
+    loserCleanupGate.resolve();
+    const r = await run;
+    assert(r.isOk(), "should be Ok");
+    expect(r.value).toBe(99);
+  });
+
+  test("winner error keeps precedence over loser abort-time failures", async () => {
+    const loser = Op.try(
+      (signal) =>
+        new Promise<number>((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject("cleanup-failed" as const);
+            },
+            { once: true },
+          );
+        }),
+      (cause) => cause as "cleanup-failed",
+    );
+
+    const r = await Op.race([loser, Op.fail("quick" as const)]).run();
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBe("quick");
   });
 });
 

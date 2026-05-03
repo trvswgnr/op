@@ -273,31 +273,28 @@ const driveAny = <T, E>(
     );
   }
   const fan = fanOut(ops, outerSignal);
+  let winnerValue: T | undefined;
 
-  return new Promise<Result<T, ErrorGroup<E | UnhandledException>>>((resolve) => {
-    let winnerDecided = false;
-
-    const observed = fan.runs.map((p, i) =>
+  // Decision: any waits for aborted losers to settle so cleanup/finalizers finish
+  // deterministically before run() returns; winner success still takes precedence.
+  return Promise.all(
+    fan.runs.map((p, i) =>
       p.then((res) => {
-        if (!winnerDecided && res.isOk()) {
-          winnerDecided = true;
+        if (res.isOk() && winnerValue === undefined) {
+          winnerValue = res.value;
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
           });
-          fan.detach();
-          resolve(Result.ok(res.value));
         }
         return res;
       }),
-    );
-
-    Promise.all(observed).then((results) => {
-      if (winnerDecided) return;
-      fan.detach();
-      const errors: (E | UnhandledException)[] = [];
-      for (const r of results) if (r.isErr()) errors.push(r.error);
-      resolve(Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
-    });
+    ),
+  ).then((results) => {
+    fan.detach();
+    if (winnerValue !== undefined) return Result.ok(winnerValue);
+    const errors: (E | UnhandledException)[] = [];
+    for (const r of results) if (r.isErr()) errors.push(r.error);
+    return Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed"));
   });
 };
 
@@ -331,18 +328,27 @@ const driveRace = <T, E>(
   }
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
-  return new Promise((resolve) => {
-    let settled = false;
-    runs.forEach((p, i) => {
+  let winner: Result<T, E | UnhandledException> | undefined;
+
+  // Decision: race returns the first settler's outcome, but waits for aborted
+  // losers to settle so cleanup/finalizers complete before run() returns.
+  return Promise.all(
+    runs.map((p, i) =>
       p.then((res) => {
-        if (settled) return;
-        settled = true;
-        controllers.forEach((c, j) => {
-          if (j !== i) c.abort();
-        });
-        detach();
-        resolve(res);
-      });
-    });
+        if (winner === undefined) {
+          winner = res;
+          controllers.forEach((c, j) => {
+            if (j !== i) c.abort();
+          });
+        }
+        return res;
+      }),
+    ),
+  ).then(() => {
+    detach();
+    if (winner !== undefined) return winner;
+    return Result.err(
+      new UnhandledException({ cause: new Error("Op.race failed to produce a winner") }),
+    );
   });
 };

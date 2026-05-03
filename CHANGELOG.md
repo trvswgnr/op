@@ -18,6 +18,9 @@ breaking changes may occur between minor releases.
 
 ### Changed
 
+- Locked `Op.any`/`Op.race` loser semantics so aborted branches now finish
+  cleanup/finalizers before `run()` returns, while preserving first-settler
+  result precedence to keep outcome behavior stable.
 - Clarified contributor testing governance with an explicit two-tier strategy in
   `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
   no-duplication decision rule for placing assertions.
