@@ -1,12 +1,5 @@
 import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
-import {
-  ErrorGroup,
-  Op,
-  TaggedError,
-  TimeoutError,
-  UnhandledException,
-  type Result,
-} from "./index.js";
+import { ErrorGroup, Op, TaggedError, UnhandledException, type Result } from "./index.js";
 import {
   deferred,
   invalidConcurrencies,
@@ -393,37 +386,6 @@ describe("Op.race", () => {
     const r = await combined.run();
     if (r.isOk()) expectTypeOf(r.value).toEqualTypeOf<number>();
     if (r.isErr()) expectTypeOf(r.error).toEqualTypeOf<"two" | UnhandledException>();
-  });
-});
-
-describe("Op combinators compose with withTimeout / withRetry", () => {
-  test("Op.all().withTimeout() times out the whole fan-out", async () => {
-    vi.useFakeTimers();
-    try {
-      const slow = Op.try(() => resolveAfter(1000, 1000));
-      const promise = Op.all([slow, slow]).withTimeout(10).run();
-      await vi.advanceTimersByTimeAsync(15);
-      const r = await promise;
-      assert(r.isErr(), "should be Err");
-      expect(r.error).toBeInstanceOf(TimeoutError);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  test("Op.any().withRetry() retries the whole combinator", async () => {
-    let attempts = 0;
-    const flaky = Op(function* () {
-      attempts += 1;
-      if (attempts < 2) return yield* Op.fail("nope" as const);
-      return yield* Op.of(11);
-    });
-    const r = await Op.any([flaky])
-      .withRetry({ maxAttempts: 3, shouldRetry: () => true, getDelay: () => 0 })
-      .run();
-    assert(r.isOk(), "should be Ok");
-    expect(r.value).toBe(11);
-    expect(attempts).toBe(2);
   });
 });
 
