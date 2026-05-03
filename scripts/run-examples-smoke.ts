@@ -483,11 +483,6 @@ const installFromPack = Op(function* (repoRoot: string) {
   const packOutput = yield* execOp("npm", ["pack", "--json", "--ignore-scripts"], repoRoot, true);
   const filename = parseNpmPackFilenameFromOutput(packOutput);
 
-  if (!filename) {
-    logger.warn(`[smoke pack] unable to parse tarball filename from npm pack JSON: ${packOutput}`);
-    return;
-  }
-
   const preview =
     packOutput.length > PACK_OUTPUT_PREVIEW
       ? `${packOutput.slice(0, PACK_OUTPUT_PREVIEW)}...`

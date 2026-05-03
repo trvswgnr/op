@@ -66,7 +66,7 @@ Use this flow every time:
 npm run release:patch
 ```
 
-*note:* `release:minor` and `release:major` will be added when needed.
+_note:_ `release:minor` and `release:major` will be added when needed.
 
 If `Unreleased` is empty, the cut script writes a minimal
 "No user-facing changes" note for the new version.

@@ -17,6 +17,7 @@
 - Prefers file relocations to be done with move operations first (for example `mv`) followed by minimal targeted edits, not full-file rewrites.
 - Wants `npm run check` run after completing work, before considering anything "done".
 - Does not want GitHub issues moved to `Done` without explicit approval first.
+- For issue hierarchies, prefers real GitHub parent/sub-issue links over markdown-only checklists.
 - Wants issue-work flows to keep `CHANGELOG.md` `Unreleased` updated, but prefers to handle version/tag/publish release steps personally unless explicitly delegated.
 - Does not want `try/finally` patterns used in this codebase; prefers fluent/compositional alternatives.
 - Prefers hard-cutover transitions, not gradual deprecations and migrations (this project is in alpha, so intentional breaking changes are acceptable)
