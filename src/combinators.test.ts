@@ -1,7 +1,7 @@
 import { assert, describe, expect, test, vi } from "vitest";
 import { ErrorGroup, Op, TaggedError, UnhandledException } from "./index.js";
 import {
-  deferred,
+  deferredPromise,
   invalidConcurrencies,
   rejectAfter,
   resolveAfter,
@@ -93,10 +93,10 @@ describe("Op.all", () => {
   });
 
   test("limits active children while preserving input order", async () => {
-    const firstGate = deferred<number>();
-    const secondGate = deferred<number>();
-    const thirdGate = deferred<number>();
-    const fourthGate = deferred<number>();
+    const firstGate = deferredPromise<number>();
+    const secondGate = deferredPromise<number>();
+    const thirdGate = deferredPromise<number>();
+    const fourthGate = deferredPromise<number>();
     const gates = [firstGate, secondGate, thirdGate, fourthGate];
     const started: number[] = [];
     let active = 0;
@@ -436,7 +436,7 @@ describe("combinator abort listener cleanup", () => {
   test("bounded all cleans up outer abort listeners when aborted mid-flight after partial completion", async () => {
     const outer = new AbortController();
     const tracked = trackAbortListeners(outer.signal);
-    const secondGate = deferred<number>();
+    const secondGate = deferredPromise<number>();
     try {
       const run = Op.all(
         [

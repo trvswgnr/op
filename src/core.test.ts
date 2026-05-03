@@ -10,14 +10,13 @@ import {
 import { makeNullaryOp } from "./core/nullary-ops.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import type { Instruction, Op } from "./core/types.js";
-import { TimeoutError, UnhandledException } from "./errors.js";
+import { UnhandledException } from "./errors.js";
 import { err, ok } from "./result.js";
 
 const makeRuntimeOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
-  let op!: Op<T, E, []>;
-  op = makeNullaryOp(gen, {
+  const op: Op<T, E, []> = makeNullaryOp(gen, {
     withRetry: () => op,
-    withTimeout: (_timeoutMs: number) => op as unknown as Op<T, E | TimeoutError, []>,
+    withTimeout: (_timeoutMs: number) => op,
     withSignal: (_signal: AbortSignal) => op,
     withRelease: (_release) => op,
     registerExitFinalize: (_finalize) => op,

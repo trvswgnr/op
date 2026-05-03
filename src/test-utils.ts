@@ -4,7 +4,7 @@ export const resolveAfter = <T>(value: T, ms: number) =>
 export const rejectAfter = (reason: unknown, ms: number) =>
   new Promise<never>((_, reject) => setTimeout(() => reject(reason), ms));
 
-export const deferred = <T>() => {
+export const deferredPromise = <T>() => {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
     resolve = r;
