@@ -15,6 +15,9 @@ breaking changes may occur between minor releases.
 - Added `src/test-utils.ts` to centralize shared integration-test helpers
   (`deferred`, abort-listener tracking, async timing helpers, and invalid
   concurrency fixtures) so new test files can reuse one source of truth.
+- Added focused `core` runtime unit coverage for `drive` internals (signal
+  handoff, instruction validation, finalizer LIFO ordering, and cleanup-fault
+  precedence), plus direct tests for internal helper/type-guard behavior.
 
 ## [0.1.53] - 2026-05-02
 

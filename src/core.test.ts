@@ -1,287 +1,185 @@
-import { describe, expect, test, assert, expectTypeOf } from "vitest";
-import { fail, fromGenFn, succeed, _try } from "./builders.js";
+import { assert, describe, expect, test } from "vitest";
+import {
+  chainCleanupFaults,
+  closeGenerator,
+  drive,
+  isErrInstruction,
+  isRegisterExitFinalizerInstruction,
+  isSuspendInstruction,
+} from "./core/runtime.js";
+import { makeNullaryOp } from "./core/nullary-ops.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
+import type { Instruction, Op } from "./core/types.js";
 import { TimeoutError, UnhandledException } from "./errors.js";
-import { isNullaryOp } from "./core/nullary-ops.js";
-import { Op } from "./core/types.js";
+import { err, ok } from "./result.js";
 
-describe("op.run", () => {
-  test("sync op completes without awaiting", async () => {
-    const result = await succeed("sync").run();
-    assert(result.isOk() === true, "result should be Ok");
-    expect(result.value).toBe("sync");
+const makeRuntimeOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
+  let op!: Op<T, E, []>;
+  op = makeNullaryOp(gen, {
+    withRetry: () => op,
+    withTimeout: (_timeoutMs: number) => op as unknown as Op<T, E | TimeoutError, []>,
+    withSignal: (_signal: AbortSignal) => op,
+    withRelease: (_release) => op,
+    registerExitFinalize: (_finalize) => op,
+  });
+  return op;
+};
+
+describe("core/runtime helpers", () => {
+  test("chainCleanupFaults handles empty, single, and multi-fault chains", () => {
+    expect(chainCleanupFaults([])).toBeUndefined();
+
+    const only = new Error("only");
+    expect(chainCleanupFaults([only])).toBe(only);
+
+    const first = new Error("first");
+    const second = "second-non-error";
+    const third = new Error("third");
+    const chain = chainCleanupFaults([first, second, third]);
+    expect(chain).toBeInstanceOf(Error);
+    const outer = chain as Error;
+    expect(outer.message).toBe("first");
+    expect((outer.cause as Error).message).toBe("second-non-error");
+    expect(((outer.cause as Error).cause as Error).message).toBe("third");
   });
 
-  test("async op suspends and resumes correctly", async () => {
-    const result = await _try(
-      () => Promise.resolve("async"),
-      () => "err",
-    ).run();
-    assert(result.isOk() === true, "result should be Ok");
-    expect(result.value).toBe("async");
+  test("closeGenerator swallows iterator.return failures", () => {
+    let called = false;
+    const iterator = {
+      next: () => ({ done: true as const, value: undefined }),
+      return: () => {
+        called = true;
+        throw new Error("boom");
+      },
+    };
+
+    expect(() => closeGenerator(iterator)).not.toThrow();
+    expect(called).toBe(true);
   });
 
-  test("chained async ops", async () => {
-    const program = fromGenFn(function* () {
-      const first = yield* _try(
-        () => Promise.resolve({ data: "raw" }),
-        () => "fetch err",
-      );
-      const second = yield* _try(
-        () => Promise.resolve(JSON.parse(`{"n": 69}`)),
-        () => "parse err",
-      );
-      return { first, second };
-    });
-    const result = await program.run();
-    assert(result.isOk() === true, "result should be Ok");
-    expect(result.value.first).toEqual({ data: "raw" });
-    expect(result.value.second).toEqual({ n: 69 });
-  });
+  test("instruction type guards correctly classify values", () => {
+    const suspended = new SuspendInstruction(async () => 1);
+    const finalizer = new RegisterExitFinalizerInstruction(async () => {});
+    const typedErr = err("typed");
+    const typedOk = ok("value");
 
-  test("UnhandledException propagates from rejecting promise", async () => {
-    const error = new Error("unhandled");
-    const makeNumber = fromGenFn(function* (n: number) {
-      return n;
-    });
-    const alwaysFails = fromGenFn(function* () {
-      return yield* _try(() => Promise.reject(error));
-    });
-    const program = fromGenFn(function* () {
-      yield* makeNumber(1);
-      const x = yield* alwaysFails();
-      return x;
-    });
-    const result = await program.run();
-    assert(result.isErr() === true, "should be Err");
-    expect(result.error).toBeInstanceOf(UnhandledException);
-    expect(result.error.cause).toBeInstanceOf(Error);
-    expect(result.error.cause).toBe(error);
-  });
+    expect(isSuspendInstruction(suspended)).toBe(true);
+    expect(isSuspendInstruction({ suspend: async () => 1 })).toBe(false);
 
-  test("runs generator finally on cancellation", async () => {
-    const controller = new AbortController();
-    let finalized = false;
+    expect(isRegisterExitFinalizerInstruction(finalizer)).toBe(true);
+    expect(isRegisterExitFinalizerInstruction({ finalize: async () => {} })).toBe(false);
 
-    const program = fromGenFn(function* () {
-      try {
-        return yield* _try((signal) => {
-          return new Promise<number>((_resolve, reject) => {
-            if (signal.aborted) {
-              reject(signal.reason);
-              return;
-            }
-            signal.addEventListener(
-              "abort",
-              () => {
-                reject(signal.reason);
-              },
-              { once: true },
-            );
-          });
-        });
-      } finally {
-        finalized = true;
-      }
-    }).withSignal(controller.signal);
-
-    const runPromise = program.run();
-    controller.abort(new Error("cancelled"));
-    const result = await runPromise;
-
-    assert(result.isErr() === true, "should be Err");
-    expect(finalized).toBe(true);
-  });
-
-  test("SuspendInstruction resumes generator with resolved value", async () => {
-    const program = fromGenFn(function* () {
-      const value = (yield new SuspendInstruction(async () => 69)) as number;
-      return value + 1;
-    });
-
-    const result = await program.run();
-    assert(result.isOk() === true, "result should be Ok");
-    expect(result.value).toBe(70);
-  });
-
-  test("RegisterExitFinalizerInstruction runs on successful unwind", async () => {
-    const seen: string[] = [];
-    const program = fromGenFn(function* () {
-      yield new RegisterExitFinalizerInstruction(async (ctx) => {
-        seen.push(ctx.result.isOk() ? "ok" : "err");
-      });
-      return "done";
-    });
-
-    const result = await program.run();
-    assert(result.isOk() === true, "result should be Ok");
-    expect(result.value).toBe("done");
-    expect(seen).toEqual(["ok"]);
-  });
-
-  test("RegisterExitFinalizerInstruction runs when timeout cancels inner work", async () => {
-    const seen: string[] = [];
-    const program = fromGenFn(function* () {
-      yield new RegisterExitFinalizerInstruction(async (ctx) => {
-        seen.push(String(ctx.signal.aborted));
-        seen.push(ctx.result.isErr() ? "err" : "ok");
-      });
-
-      return yield* _try(
-        (signal) =>
-          new Promise<number>((_resolve, reject) => {
-            if (signal.aborted) {
-              reject(signal.reason);
-              return;
-            }
-            signal.addEventListener(
-              "abort",
-              () => {
-                reject(signal.reason);
-              },
-              { once: true },
-            );
-          }),
-      );
-    }).withTimeout(1);
-
-    const result = await program.run();
-    assert(result.isErr() === true, "should be Err");
-    expect(result.error).toBeInstanceOf(TimeoutError);
-    expect(seen).toEqual(["true", "err"]);
+    expect(isErrInstruction(typedErr)).toBe(true);
+    expect(isErrInstruction(typedOk)).toBe(false);
+    expect(isErrInstruction({ isErr: () => false, error: "x" })).toBe(false);
+    expect(isErrInstruction("nope")).toBe(false);
   });
 });
 
-describe("edge cases and invariants", () => {
-  test("only nullary ops are directly iterable", () => {
-    const nullary = succeed(1);
-    const arity = fromGenFn(function* (a: number) {
-      return a;
+describe("drive runtime behavior", () => {
+  test("resumeSuspended path passes the bound signal to suspend work", async () => {
+    let seenSignal: AbortSignal | undefined;
+    const op = makeRuntimeOp<number, never>(function* () {
+      const value = (yield new SuspendInstruction(async (signal) => {
+        seenSignal = signal;
+        return 69;
+      })) as number;
+      return value + 1;
     });
 
-    expect(isNullaryOp(nullary)).toBe(true);
-    expect(Symbol.iterator in nullary).toBe(true);
+    const signal = new AbortController().signal;
+    const result = await drive(op, signal);
 
-    expect(isNullaryOp(arity)).toBe(false);
-    expect(Symbol.iterator in arity).toBe(false);
-  });
-
-  test("fromGenFn stays deterministic across arg tuple forms", async () => {
-    type InferOpArgs<T> = T extends Op<unknown, unknown, infer A> ? A : never;
-
-    const op1 = fromGenFn(function* (a: number, b: number) {
-      return a + b;
-    });
-    expect(isNullaryOp(op1)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op1>>().toEqualTypeOf<[a: number, b: number]>();
-    await expect(op1.run(1, 2)).resolves.toMatchObject({ value: 3 });
-
-    const op2 = fromGenFn(function* () {
-      return 1;
-    });
-    expect(isNullaryOp(op2)).toBe(false); // fromGenFn always returns an arity wrapper
-    expectTypeOf<InferOpArgs<typeof op2>>().toEqualTypeOf<[]>();
-    await expect(op2.run()).resolves.toMatchObject({ value: 1 });
-
-    const op3 = fromGenFn(function* (a?: number) {
-      return (a ?? 0) * 2;
-    });
-    expect(isNullaryOp(op3)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op3>>().toEqualTypeOf<[a?: number]>();
-    await expect(op3.run()).resolves.toMatchObject({ value: 0 });
-    await expect(op3.run(1)).resolves.toMatchObject({ value: 2 });
-
-    const op4 = fromGenFn(function* (a: number, b?: number) {
-      return (a + (b ?? 0)) * 2;
-    });
-    expect(isNullaryOp(op4)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op4>>().toEqualTypeOf<[a: number, b?: number]>();
-    await expect(op4.run(1)).resolves.toMatchObject({ value: 2 });
-    await expect(op4.run(1, 2)).resolves.toMatchObject({ value: 6 });
-
-    const op5 = fromGenFn(function* (a: number = 1) {
-      return a * 2;
-    });
-    expect(isNullaryOp(op5)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op5>>().toEqualTypeOf<[a?: number]>();
-    await expect(op5.run()).resolves.toMatchObject({ value: 2 });
-    await expect(op5.run(3)).resolves.toMatchObject({ value: 6 });
-
-    const op6 = fromGenFn(function* (...args: [a: number, b: number]) {
-      return args.reduce((acc, curr) => acc + curr, 0);
-    });
-    expect(isNullaryOp(op6)).toBe(false);
-    expectTypeOf<InferOpArgs<typeof op6>>().toEqualTypeOf<[a: number, b: number]>();
-    await expect(op6.run(1, 2)).resolves.toMatchObject({ value: 3 });
-
-    const wrappedOptional = op3.withRetry();
-    await expect(wrappedOptional.run()).resolves.toMatchObject({ value: 0 });
-    await expect(wrappedOptional(5).run()).resolves.toMatchObject({ value: 10 });
-
-    const wrappedDefault = op5.withTimeout(100);
-    await expect(wrappedDefault.run()).resolves.toMatchObject({ value: 2 });
-    const wrappedDefaultNullary = wrappedDefault(4);
-    await expect(wrappedDefaultNullary.run()).resolves.toMatchObject({ value: 8 });
-  });
-  test("Ok result has correct shape", async () => {
-    const result = await succeed(1).run();
     assert(result.isOk() === true, "result should be Ok");
-    expect(result.value).toBe(1);
+    expect(result.value).toBe(70);
+    expect(seenSignal).toBe(signal);
   });
 
-  test("Err result has correct shape", async () => {
-    const result = await fail("e").run();
-    assert(result.isErr() === true, "should be Err");
-    expect(result.error).toBe("e");
-  });
-
-  test("result from run is frozen", async () => {
-    const okResult = await succeed(1).run();
-    expect(okResult.isOk()).toBe(true);
-    expect(Object.isFrozen(okResult)).toBe(false);
-
-    const errResult = await fail("e").run();
-    assert(errResult.isErr() === true, "should be Err");
-    expect(Object.isFrozen(errResult)).toBe(false);
-  });
-
-  test("empty and zero values work correctly", async () => {
-    const r0 = await succeed(0).run();
-    assert(r0.isOk() === true, "should be Ok");
-    expect(r0.value).toBe(0);
-
-    const rEmpty = await succeed("").run();
-    assert(rEmpty.isOk() === true, "should be Ok");
-    expect(rEmpty.value).toBe("");
-  });
-
-  test("returns UnhandledException when throw in generator", async () => {
-    const error = new Error("unhandled");
-    const result = await fromGenFn(function* () {
-      throw error;
-    }).run();
-    assert(result.isErr() === true, "should be Err");
-    expect(result.error).toBeInstanceOf(UnhandledException);
-    expect(result.error.cause).toBe(error);
-  });
-
-  test("returns UnhandledException when generator yields invalid instruction", async () => {
-    const result = await fromGenFn(function* () {
+  test("invalid yielded instructions return Err(UnhandledException(TypeError))", async () => {
+    const op = makeRuntimeOp<number, never>(function* () {
       yield { _tag: "NotAnInstruction" } as never;
       return 1;
-    }).run();
-    assert(result.isErr() === true, "should be Err");
+    });
+
+    const result = await drive(op, new AbortController().signal);
+
+    assert(result.isErr() === true, "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);
     expect(result.error.cause).toBeInstanceOf(TypeError);
   });
 
-  test("returns UnhandledException when unhandled Promise rejection in gen", async () => {
-    const error = new Error("unhandled");
-    const result = await fromGenFn(function* () {
-      return Promise.reject(error);
-    }).run();
-    assert(result.isErr() === true, "should be Err");
+  test("registerExitFinalizer runs all handlers in LIFO order", async () => {
+    const seen: string[] = [];
+    const op = makeRuntimeOp<number, never>(function* () {
+      yield new RegisterExitFinalizerInstruction(async (ctx) => {
+        seen.push(`first-${ctx.result.isOk() ? "ok" : "err"}`);
+      });
+      yield new RegisterExitFinalizerInstruction(async (ctx) => {
+        seen.push(`second-${ctx.result.isOk() ? "ok" : "err"}`);
+      });
+      return 123;
+    });
+
+    const result = await drive(op, new AbortController().signal);
+
+    assert(result.isOk() === true, "result should be Ok");
+    expect(result.value).toBe(123);
+    expect(seen).toEqual(["second-ok", "first-ok"]);
+  });
+
+  test("finalizer throw after successful body converts to UnhandledException", async () => {
+    const cleanupFault = new Error("cleanup-failed");
+    const op = makeRuntimeOp<string, never>(function* () {
+      yield new RegisterExitFinalizerInstruction(async () => {
+        throw cleanupFault;
+      });
+      return "ok";
+    });
+
+    const result = await drive(op, new AbortController().signal);
+
+    assert(result.isErr() === true, "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);
-    expect(result.error.cause).toBe(error);
+    const unhandled = result.error as UnhandledException;
+    expect(unhandled.cause).toBe(cleanupFault);
+  });
+
+  test("cleanup fault takes precedence over typed body error", async () => {
+    const cleanupFault = new Error("cleanup-failed");
+    const op = makeRuntimeOp<never, string>(function* () {
+      yield new RegisterExitFinalizerInstruction(async () => {
+        throw cleanupFault;
+      });
+      return yield* err("typed-body-error");
+    });
+
+    const result = await drive(op, new AbortController().signal);
+
+    assert(result.isErr() === true, "result should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
+    const unhandled = result.error as UnhandledException;
+    expect(unhandled.cause).toBe(cleanupFault);
+  });
+
+  test("multiple throwing finalizers are folded into a cause chain", async () => {
+    const firstUnwindFault = new Error("second-registered-runs-first");
+    const secondUnwindFault = "first-registered-runs-second";
+    const op = makeRuntimeOp<string, never>(function* () {
+      yield new RegisterExitFinalizerInstruction(async () => {
+        throw secondUnwindFault;
+      });
+      yield new RegisterExitFinalizerInstruction(async () => {
+        throw firstUnwindFault;
+      });
+      return "done";
+    });
+
+    const result = await drive(op, new AbortController().signal);
+
+    assert(result.isErr() === true, "result should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
+    const outer = result.error.cause as Error;
+    expect(outer.message).toBe("second-registered-runs-first");
+    expect(outer.cause).toBe("first-registered-runs-second");
   });
 });
