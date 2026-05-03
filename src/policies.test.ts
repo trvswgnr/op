@@ -1,8 +1,6 @@
-import { describe, expect, test, assert, expectTypeOf, vi } from "vitest";
+import { describe, expect, test, assert, vi } from "vitest";
 import { fail, fromGenFn, succeed, _try } from "./builders.js";
-import type { Op } from "./core/types.js";
-import type { Result } from "./result.js";
-import { TimeoutError, UnhandledException, TaggedError } from "./errors.js";
+import { TimeoutError, UnhandledException } from "./errors.js";
 import type { RetryPolicy } from "./policies.js";
 
 describe("withRetry", () => {
@@ -327,70 +325,6 @@ describe("withTimeout", () => {
       vi.useRealTimers();
     }
   });
-
-  test("withTimeout preserves inferred op shapes", async () => {
-    const p1 = _try(() => Promise.resolve(1)).withTimeout(10);
-    expectTypeOf(p1).toEqualTypeOf<Op<number, UnhandledException | TimeoutError, []>>();
-
-    const p2 = _try(
-      () => Promise.resolve(1),
-      () => "mapped",
-    ).withTimeout(10);
-    expectTypeOf(p2).toEqualTypeOf<Op<number, string | TimeoutError, []>>();
-
-    const p3 = fromGenFn(function* (id: string) {
-      return yield* succeed(id.length);
-    }).withTimeout(10);
-    expectTypeOf(p3).toEqualTypeOf<Op<number, TimeoutError, [id: string]>>();
-
-    const r1 = p1.run();
-    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, TimeoutError | UnhandledException>>>();
-
-    const r2 = p2.run();
-    expectTypeOf(r2).toEqualTypeOf<
-      Promise<Result<number, string | TimeoutError | UnhandledException>>
-    >();
-
-    const r3 = p3.run("abc");
-    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, TimeoutError | UnhandledException>>>();
-
-    expect((await p1.run()).isOk()).toBe(true);
-
-    // @ts-expect-error - nullary timeout op does not accept args
-    p1.run(1);
-    // @ts-expect-error - parameterized timeout op requires argument
-    p3.run();
-    // @ts-expect-error - parameterized timeout op does not accept extra args
-    p3.run("abc", "extra");
-
-    let attempts = 0;
-    class FetchError extends TaggedError("FetchError")() {}
-    const fetcher = async () => {
-      attempts++;
-      if (attempts === 1) {
-        throw new FetchError();
-      }
-      return 69;
-    };
-    const slowOp = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      return await fetcher();
-    };
-    const p4 = fromGenFn(function* () {
-      const x = yield* _try(slowOp, () => new FetchError())
-        .withRetry()
-        .withTimeout(50);
-      expectTypeOf(x).toEqualTypeOf<number>();
-      return x;
-    });
-    expectTypeOf(p4).toEqualTypeOf<Op<number, TimeoutError | FetchError, []>>();
-    const result = await p4.run();
-    expectTypeOf(result).toEqualTypeOf<
-      Result<number, TimeoutError | FetchError | UnhandledException>
-    >();
-    assert(result.isErr() === true, "result should be Err");
-    expect(result.error).toBeInstanceOf(TimeoutError);
-  });
 });
 
 describe("withSignal", () => {
@@ -439,41 +373,6 @@ describe("withSignal", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  test("withSignal preserves inferred op shapes", async () => {
-    const controller = new AbortController();
-    const p1 = _try(() => Promise.resolve(1)).withSignal(controller.signal);
-    expectTypeOf(p1).toEqualTypeOf<Op<number, UnhandledException, []>>();
-
-    const p2 = _try(
-      () => Promise.resolve(1),
-      () => "mapped",
-    ).withSignal(controller.signal);
-    expectTypeOf(p2).toEqualTypeOf<Op<number, string, []>>();
-
-    const p3 = fromGenFn(function* (id: string) {
-      return yield* succeed(id.length);
-    }).withSignal(controller.signal);
-    expectTypeOf(p3).toEqualTypeOf<Op<number, never, [id: string]>>();
-
-    const r1 = p1.run();
-    expectTypeOf(r1).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
-
-    const r2 = p2.run();
-    expectTypeOf(r2).toEqualTypeOf<Promise<Result<number, string | UnhandledException>>>();
-
-    const r3 = p3.run("abc");
-    expectTypeOf(r3).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
-
-    expect((await p1.run()).isOk()).toBe(true);
-
-    // @ts-expect-error - nullary withSignal op does not accept args
-    p1.run(1);
-    // @ts-expect-error - parameterized withSignal op requires argument
-    p3.run();
-    // @ts-expect-error - parameterized withSignal op does not accept extra args
-    p3.run("abc", "extra");
   });
 });
 

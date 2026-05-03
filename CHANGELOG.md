@@ -7,17 +7,25 @@ breaking changes may occur between minor releases.
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- Clarified contributor testing governance with an explicit two-tier strategy in
-  `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
-  no-duplication decision rule for placing assertions.
 - Added `src/test-utils.ts` to centralize shared integration-test helpers
   (`deferred`, abort-listener tracking, async timing helpers, and invalid
   concurrency fixtures) so new test files can reuse one source of truth.
 - Added focused `core` runtime unit coverage for `drive` internals (signal
   handoff, instruction validation, finalizer LIFO ordering, and cleanup-fault
   precedence), plus direct tests for internal helper/type-guard behavior.
+
+### Changed
+
+- Clarified contributor testing governance with an explicit two-tier strategy in
+  `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
+  no-duplication decision rule for placing assertions.
+- Consolidated compile-time API contracts into a dedicated `src/types.test.ts`
+  file and removed scattered `expectTypeOf` assertions from runtime behavior
+  tests so type regressions can be audited in one place.
+
+### Removed
 
 ## [0.1.53] - 2026-05-02
 

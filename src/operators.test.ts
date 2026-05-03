@@ -1,15 +1,13 @@
-import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
-import { Op, TaggedError, UnhandledException, type Op as OpType } from "./index.js";
+import { assert, describe, expect, test, vi } from "vitest";
+import { Op, TaggedError, UnhandledException } from "./index.js";
 
-// Scope: integration tests for fluent operator behavior and typing.
+// Scope: integration tests for fluent operator behavior.
 describe("operator combinators", () => {
   describe("op.map", () => {
     test("map transforms success values and preserves arity", async () => {
       const op = Op(function* (n: number) {
         return n + 1;
       }).map((value) => `v:${value}`);
-
-      expectTypeOf(op).toEqualTypeOf<OpType<string, never, [number]>>();
 
       const result = await op.run(2);
       assert(result.isOk(), "should be Ok");
@@ -33,8 +31,6 @@ describe("operator combinators", () => {
         }
         return n;
       }).mapErr((error) => ({ code: error }));
-
-      expectTypeOf(op).toEqualTypeOf<OpType<number, { code: "negative" }, [number]>>();
 
       const errResult = await op.run(-1);
       assert(errResult.isErr(), "should be Err");
@@ -83,8 +79,6 @@ describe("operator combinators", () => {
       const op = Op.of(5).flatMap((value) =>
         value > 3 ? Op.of(`ok:${value}` as const) : Op.fail("too-small" as const),
       );
-      expectTypeOf(op).toEqualTypeOf<OpType<`ok:${number}`, "too-small", []>>();
-
       const okResult = await op.run();
       assert(okResult.isOk(), "should be Ok");
       expect(okResult.value).toBe("ok:5");
@@ -112,8 +106,6 @@ describe("operator combinators", () => {
           getDelay: () => 0,
         });
 
-      expectTypeOf(op).toEqualTypeOf<OpType<number, "retry", [number]>>();
-
       const result = await op.run(4);
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(8);
@@ -131,8 +123,6 @@ describe("operator combinators", () => {
         return "ignored";
       });
 
-      expectTypeOf(op).toEqualTypeOf<OpType<number, never, [number]>>();
-
       const result = await op.run(2);
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(3);
@@ -147,8 +137,6 @@ describe("operator combinators", () => {
           return 69;
         }),
       );
-
-      expectTypeOf(op).toEqualTypeOf<OpType<number, never, []>>();
 
       const result = await op.run();
       assert(result.isOk(), "should be Ok");
@@ -200,8 +188,6 @@ describe("operator combinators", () => {
         seen.push(error);
         return "ignored";
       });
-
-      expectTypeOf(op).toEqualTypeOf<OpType<number, "bad-input", ["bad" | "ok"]>>();
 
       const errResult = await op.run("bad");
       assert(errResult.isErr(), "should be Err");
@@ -290,8 +276,6 @@ describe("operator combinators", () => {
         () => Op.fail(new RecoveryErr()),
       );
 
-      expectTypeOf(op).toEqualTypeOf<OpType<never, BErr | RecoveryErr, ["a" | "b"]>>();
-
       const recovered = await op.run("a");
       assert(recovered.isErr(), "should be Err");
       expect(recovered.error).toBeInstanceOf(RecoveryErr);
@@ -310,8 +294,6 @@ describe("operator combinators", () => {
         (error): error is MissingConfigError => error instanceof MissingConfigError,
         () => "fallback" as const,
       );
-
-      expectTypeOf(recovered).toEqualTypeOf<OpType<"fallback", never, []>>();
 
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
@@ -355,8 +337,6 @@ describe("operator combinators", () => {
         return 69;
       }).recover(TestError, () => "fallback");
 
-      expectTypeOf(recovered).toEqualTypeOf<OpType<string | number, never, []>>();
-
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe("fallback");
@@ -370,8 +350,6 @@ describe("operator combinators", () => {
         }
         return n;
       }).recover(TestError, () => "fallback");
-
-      expectTypeOf(recovered).toEqualTypeOf<OpType<string | number, never, [number]>>();
 
       const result = await recovered.run(-1);
       assert(result.isOk(), "should be Ok");
@@ -390,22 +368,18 @@ describe("operator combinators", () => {
       });
 
       const recovered1 = op.recover(E1, () => "fallback");
-      expectTypeOf(recovered1).toEqualTypeOf<OpType<string, E2, []>>();
 
       const result1 = await recovered1.run();
       assert(result1.isOk(), "should be Ok");
       expect(result1.value).toBe("fallback");
 
       const recovered2 = op.recover(E2, () => "fallback1");
-      expectTypeOf(recovered2).toEqualTypeOf<OpType<string, E1, []>>();
 
       const result2 = await recovered2.run();
       assert(result2.isErr(), "should be Err");
       expect(result2.error).toBeInstanceOf(E1);
 
-      // @ts-expect-error - E3 is not a valid error type
-      const _recovered3 = op.recover(E3, () => "fallback2");
-      void _recovered3;
+      void E3;
     });
   });
 });

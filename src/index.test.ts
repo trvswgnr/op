@@ -1,12 +1,5 @@
-import { assert, describe, expect, expectTypeOf, test, vi } from "vitest";
-import {
-  Op,
-  TaggedError,
-  TimeoutError,
-  UnhandledException,
-  exponentialBackoff,
-  type TaggedErrorInstance,
-} from "./index.js";
+import { assert, describe, expect, test, vi } from "vitest";
+import { Op, TaggedError, TimeoutError, UnhandledException, exponentialBackoff } from "./index.js";
 import { resolveAfter } from "./test-utils.js";
 
 describe("public API (index)", () => {
@@ -24,7 +17,6 @@ describe("public API (index)", () => {
     });
 
     test("empty is a stable singleton op", async () => {
-      expectTypeOf(Op.empty).toEqualTypeOf<Op<void, never, []>>();
       expect(Op.empty).toBe(Op.empty);
 
       const result = await Op.empty.run();
@@ -77,7 +69,6 @@ describe("public API (index)", () => {
     test("factory produces typed errors", () => {
       const SmokeError = TaggedError("SmokeError")<{ message: string }>();
       const e = new SmokeError({ message: "x" });
-      expectTypeOf(e).toEqualTypeOf<TaggedErrorInstance<"SmokeError", { message: string }>>();
       expect(e._tag).toBe("SmokeError");
       expect(e.name).toBe("SmokeError");
       expect(e.message).toBe("x");
