@@ -24,6 +24,9 @@ breaking changes may occur between minor releases.
 - Consolidated compile-time API contracts into a dedicated `src/types.test.ts`
   file and removed scattered `expectTypeOf` assertions from runtime behavior
   tests so type regressions can be audited in one place.
+- Strengthened algebraic correctness checks by replacing fixed-case monad law
+  assertions with property-based tests and adding randomized `Result` algebra
+  coverage for `map` and `andThen` composition laws.
 
 ### Removed
 

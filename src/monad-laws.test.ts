@@ -1,7 +1,7 @@
+import * as fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { Op, type Op as OpType } from "./index.js";
+import { Op, Result, type Op as OpType, type Result as ResultType } from "./index.js";
 
-// Scope: integration checks for monad law behavior.
 function bind<A, E1, B, E2>(
   m: OpType<A, E1, []>,
   f: (a: A) => OpType<B, E2, []>,
@@ -12,74 +12,108 @@ function bind<A, E1, B, E2>(
   });
 }
 
-async function expectSameResult<T, E>(a: OpType<T, E, []>, b: OpType<T, E, []>) {
-  const left = await Op.run(a);
-  const right = await Op.run(b);
-
-  expect(left.isOk()).toBe(right.isOk());
-  if (left.isOk() && right.isOk()) {
-    expect(left.value).toEqual(right.value);
-    return;
-  }
-  if (left.isErr() && right.isErr()) {
-    expect(left.error).toEqual(right.error);
-  }
+function serializeResult<T, E>(result: ResultType<T, E>) {
+  return Result.serialize(result);
 }
 
-describe("Op monad laws (via bind / run)", () => {
+async function expectSameOpResult<T, E>(a: OpType<T, E, []>, b: OpType<T, E, []>) {
+  const left = await Op.run(a);
+  const right = await Op.run(b);
+  expect(serializeResult(left)).toEqual(serializeResult(right));
+}
+
+function expectSameResult<T, E>(left: ResultType<T, E>, right: ResultType<T, E>) {
+  expect(serializeResult(left)).toEqual(serializeResult(right));
+}
+
+const opFnArb: fc.Arbitrary<(value: number) => OpType<number, string, []>> = fc.constantFrom(
+  (value) => Op.of(value + 1),
+  (value) => Op.of(value * 2),
+  (value) => (value % 2 === 0 ? Op.of(value / 2) : Op.fail("odd")),
+  (value) => Op.fail(`e:${Math.abs(value % 5)}`),
+);
+
+const opArb: fc.Arbitrary<OpType<number, string, []>> = fc.oneof(
+  fc.integer().map((value) => Op.of(value)),
+  fc.string().map((error) => Op.fail(error)),
+);
+
+const resultArb: fc.Arbitrary<ResultType<number, string>> = fc.oneof(
+  fc.integer().map((value) => Result.ok<number, string>(value)),
+  fc.string().map((error) => Result.err<number, string>(error)),
+);
+
+describe("Op monad laws (property-based)", () => {
   test("left identity", async () => {
-    const a = 7;
-    const f = (x: number) => Op.of(x * 2);
-    await expectSameResult(bind(Op.of(a), f), f(a));
-  });
-
-  test("left identity (failure in f)", async () => {
-    const f = (_x: number) => Op.fail("boom" as const);
-    await expectSameResult(bind(Op.of(1), f), f(1));
-  });
-
-  test("right identity (pure)", async () => {
-    const m = Op.of(69);
-    await expectSameResult(bind(m, Op.of), m);
-  });
-
-  test("right identity (fail)", async () => {
-    const m = Op.fail("e");
-    await expectSameResult(bind(m, Op.of), m);
-  });
-
-  test("right identity (suspend)", async () => {
-    const m = Op.try(() => Promise.resolve(9));
-    await expectSameResult(bind(m, Op.of), m);
-  });
-
-  test("associativity (success path)", async () => {
-    const m = Op.of(1);
-    const f = (x: number) => Op.of(x + 1);
-    const g = (y: number) => Op.of(y * 2);
-    await expectSameResult(
-      bind(bind(m, f), g),
-      bind(m, (x) => bind(f(x), g)),
+    await fc.assert(
+      fc.asyncProperty(fc.integer(), opFnArb, async (value, f) => {
+        await expectSameOpResult(bind(Op.of(value), f), f(value));
+      }),
     );
   });
 
-  test("associativity (failure in f)", async () => {
-    const m = Op.of(1);
-    const f = (_x: number) => Op.fail("mid");
-    const g = (_y: number) => Op.of(999);
-    await expectSameResult(
-      bind(bind(m, f), g),
-      bind(m, (x) => bind(f(x), g)),
+  test("right identity", async () => {
+    await fc.assert(
+      fc.asyncProperty(opArb, async (op) => {
+        await expectSameOpResult(bind(op, Op.of), op);
+      }),
     );
   });
 
-  test("associativity (failure in m)", async () => {
-    const m = Op.fail("start");
-    const f = (_x: number) => Op.of(1);
-    const g = (_y: number) => Op.of(2);
-    await expectSameResult(
-      bind(bind(m, f), g),
-      bind(m, (x) => bind(f(x), g)),
+  test("associativity", async () => {
+    await fc.assert(
+      fc.asyncProperty(opArb, opFnArb, opFnArb, async (op, f, g) => {
+        await expectSameOpResult(
+          bind(bind(op, f), g),
+          bind(op, (value) => bind(f(value), g)),
+        );
+      }),
+    );
+  });
+});
+
+describe("Result algebra laws (property-based)", () => {
+  test("map identity", () => {
+    fc.assert(
+      fc.property(resultArb, (result) => {
+        expectSameResult(
+          Result.map(result, (value) => value),
+          result,
+        );
+      }),
+    );
+  });
+
+  test("map composition", () => {
+    const valueFnArb = fc.constantFrom<(value: number) => number>(
+      (value) => value + 1,
+      (value) => value * 2,
+      (value) => value - 3,
+    );
+
+    fc.assert(
+      fc.property(resultArb, valueFnArb, valueFnArb, (result, f, g) => {
+        const left = Result.map(Result.map(result, f), g);
+        const right = Result.map(result, (value) => g(f(value)));
+        expectSameResult(left, right);
+      }),
+    );
+  });
+
+  test("andThen associativity", () => {
+    const resultFnArb = fc.constantFrom<(value: number) => ResultType<number, string>>(
+      (value) => Result.ok(value + 1),
+      (value) => Result.ok(value * 2),
+      (value) => (value % 2 === 0 ? Result.ok(value / 2) : Result.err("odd")),
+      (value) => Result.err(`e:${Math.abs(value % 7)}`),
+    );
+
+    fc.assert(
+      fc.property(resultArb, resultFnArb, resultFnArb, (result, f, g) => {
+        const left = Result.andThen(Result.andThen(result, f), g);
+        const right = Result.andThen(result, (value) => Result.andThen(f(value), g));
+        expectSameResult(left, right);
+      }),
     );
   });
 });
