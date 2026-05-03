@@ -1,44 +1,34 @@
 import * as fc from "fast-check";
 import { describe, expect, test } from "vitest";
-import { Op, Result, type Op as OpType, type Result as ResultType } from "./index.js";
+import { Op, Result } from "./index.js";
 
-function bind<A, E1, B, E2>(
-  m: OpType<A, E1, []>,
-  f: (a: A) => OpType<B, E2, []>,
-): OpType<B, E1 | E2, []> {
-  return Op(function* () {
-    const x = yield* m();
-    return yield* f(x)();
-  });
+function bind<A, E1, B, E2>(m: Op<A, E1, []>, f: (a: A) => Op<B, E2, []>): Op<B, E1 | E2, []> {
+  return m.flatMap(f);
 }
 
-function serializeResult<T, E>(result: ResultType<T, E>) {
-  return Result.serialize(result);
-}
-
-async function expectSameOpResult<T, E>(a: OpType<T, E, []>, b: OpType<T, E, []>) {
+async function expectSameOpResult<T, E>(a: Op<T, E, []>, b: Op<T, E, []>) {
   const left = await Op.run(a);
   const right = await Op.run(b);
-  expect(serializeResult(left)).toEqual(serializeResult(right));
+  expect(Result.serialize(left)).toEqual(Result.serialize(right));
 }
 
-function expectSameResult<T, E>(left: ResultType<T, E>, right: ResultType<T, E>) {
-  expect(serializeResult(left)).toEqual(serializeResult(right));
+function expectSameResult<T, E>(left: Result<T, E>, right: Result<T, E>) {
+  expect(Result.serialize(left)).toEqual(Result.serialize(right));
 }
 
-const opFnArb: fc.Arbitrary<(value: number) => OpType<number, string, []>> = fc.constantFrom(
+const opFnArb: fc.Arbitrary<(value: number) => Op<number, string, []>> = fc.constantFrom(
   (value) => Op.of(value + 1),
   (value) => Op.of(value * 2),
   (value) => (value % 2 === 0 ? Op.of(value / 2) : Op.fail("odd")),
   (value) => Op.fail(`e:${Math.abs(value % 5)}`),
 );
 
-const opArb: fc.Arbitrary<OpType<number, string, []>> = fc.oneof(
+const opArb: fc.Arbitrary<Op<number, string, []>> = fc.oneof(
   fc.integer().map((value) => Op.of(value)),
   fc.string().map((error) => Op.fail(error)),
 );
 
-const resultArb: fc.Arbitrary<ResultType<number, string>> = fc.oneof(
+const resultArb: fc.Arbitrary<Result<number, string>> = fc.oneof(
   fc.integer().map((value) => Result.ok<number, string>(value)),
   fc.string().map((error) => Result.err<number, string>(error)),
 );
@@ -101,7 +91,7 @@ describe("Result algebra laws (property-based)", () => {
   });
 
   test("andThen associativity", () => {
-    const resultFnArb = fc.constantFrom<(value: number) => ResultType<number, string>>(
+    const resultFnArb = fc.constantFrom<(value: number) => Result<number, string>>(
       (value) => Result.ok(value + 1),
       (value) => Result.ok(value * 2),
       (value) => (value % 2 === 0 ? Result.ok(value / 2) : Result.err("odd")),

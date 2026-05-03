@@ -6,7 +6,6 @@ import {
   TimeoutError,
   UnhandledException,
   type ExitContext,
-  type Op as OpType,
   type Result,
   type TaggedErrorInstance,
 } from "./index.js";
@@ -14,17 +13,17 @@ import {
 describe("type inference contracts", () => {
   test("builders infer Op shape and run() output", () => {
     const p1 = Op.of(1);
-    expectTypeOf(p1).toEqualTypeOf<OpType<number, never, []>>();
+    expectTypeOf(p1).toEqualTypeOf<Op<number, never, []>>();
     expectTypeOf(p1.run()).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const p2 = Op(function* (a: number) {
       return a + 1;
     });
-    expectTypeOf(p2).toEqualTypeOf<OpType<number, never, [a: number]>>();
+    expectTypeOf(p2).toEqualTypeOf<Op<number, never, [a: number]>>();
     expectTypeOf(p2.run(1)).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const p3 = Op.fail("error");
-    expectTypeOf(p3).toEqualTypeOf<OpType<never, string, []>>();
+    expectTypeOf(p3).toEqualTypeOf<Op<never, string, []>>();
     expectTypeOf(p3.run()).toEqualTypeOf<Promise<Result<never, string | UnhandledException>>>();
 
     // @ts-expect-error - nullary run does not accept arguments
@@ -37,14 +36,14 @@ describe("type inference contracts", () => {
 
   test("policy chaining preserves arity and widens error channels", () => {
     const retryNullary = Op.try(() => Promise.resolve(1)).withRetry();
-    expectTypeOf(retryNullary).toEqualTypeOf<OpType<number, UnhandledException, []>>();
+    expectTypeOf(retryNullary).toEqualTypeOf<Op<number, UnhandledException, []>>();
     expectTypeOf(retryNullary.run()).toEqualTypeOf<Promise<Result<number, UnhandledException>>>();
 
     const retryMapped = Op.try(
       () => Promise.resolve(1),
       () => "mapped",
     ).withRetry();
-    expectTypeOf(retryMapped).toEqualTypeOf<OpType<number, string, []>>();
+    expectTypeOf(retryMapped).toEqualTypeOf<Op<number, string, []>>();
     expectTypeOf(retryMapped.run()).toEqualTypeOf<
       Promise<Result<number, string | UnhandledException>>
     >();
@@ -52,7 +51,7 @@ describe("type inference contracts", () => {
     const timeout = Op(function* (id: string) {
       return id.length;
     }).withTimeout(10);
-    expectTypeOf(timeout).toEqualTypeOf<OpType<number, TimeoutError, [id: string]>>();
+    expectTypeOf(timeout).toEqualTypeOf<Op<number, TimeoutError, [id: string]>>();
     expectTypeOf(timeout.run("abc")).toEqualTypeOf<
       Promise<Result<number, TimeoutError | UnhandledException>>
     >();
@@ -60,7 +59,7 @@ describe("type inference contracts", () => {
     const withSignal = Op(function* (id: string) {
       return id.length;
     }).withSignal(new AbortController().signal);
-    expectTypeOf(withSignal).toEqualTypeOf<OpType<number, never, [id: string]>>();
+    expectTypeOf(withSignal).toEqualTypeOf<Op<number, never, [id: string]>>();
     expectTypeOf(withSignal.run("abc")).toEqualTypeOf<
       Promise<Result<number, UnhandledException>>
     >();
@@ -77,7 +76,7 @@ describe("type inference contracts", () => {
     const mapOp = Op(function* (n: number) {
       return n + 1;
     }).map((value) => `v:${value}`);
-    expectTypeOf(mapOp).toEqualTypeOf<OpType<string, never, [number]>>();
+    expectTypeOf(mapOp).toEqualTypeOf<Op<string, never, [number]>>();
 
     const mapErrOp = Op(function* (n: number) {
       if (n < 0) {
@@ -85,17 +84,17 @@ describe("type inference contracts", () => {
       }
       return n;
     }).mapErr((error) => ({ code: error }));
-    expectTypeOf(mapErrOp).toEqualTypeOf<OpType<number, { code: "negative" }, [number]>>();
+    expectTypeOf(mapErrOp).toEqualTypeOf<Op<number, { code: "negative" }, [number]>>();
 
     const flatMapOp = Op.of(5).flatMap((value) =>
       value > 3 ? Op.of(`ok:${value}` as const) : Op.fail("too-small" as const),
     );
-    expectTypeOf(flatMapOp).toEqualTypeOf<OpType<`ok:${number}`, "too-small", []>>();
+    expectTypeOf(flatMapOp).toEqualTypeOf<Op<`ok:${number}`, "too-small", []>>();
 
     const tapOp = Op(function* (n: number) {
       return n + 1;
     }).tap((value) => value.toString());
-    expectTypeOf(tapOp).toEqualTypeOf<OpType<number, never, [number]>>();
+    expectTypeOf(tapOp).toEqualTypeOf<Op<number, never, [number]>>();
 
     const tapErrOp = Op(function* (kind: "bad" | "ok") {
       if (kind === "bad") {
@@ -103,7 +102,7 @@ describe("type inference contracts", () => {
       }
       return 69;
     }).tapErr((error) => error.toUpperCase());
-    expectTypeOf(tapErrOp).toEqualTypeOf<OpType<number, "bad-input", ["bad" | "ok"]>>();
+    expectTypeOf(tapErrOp).toEqualTypeOf<Op<number, "bad-input", ["bad" | "ok"]>>();
   });
 
   test("recover narrows handled errors and preserves unhandled variants", () => {
@@ -121,7 +120,7 @@ describe("type inference contracts", () => {
       (error): error is AErr => error instanceof AErr,
       () => Op.fail(new RecoveryErr()),
     );
-    expectTypeOf(op).toEqualTypeOf<OpType<never, BErr | RecoveryErr, ["a" | "b"]>>();
+    expectTypeOf(op).toEqualTypeOf<Op<never, BErr | RecoveryErr, ["a" | "b"]>>();
 
     const base = Op(function* () {
       if (Infinity > 0) {
@@ -131,8 +130,8 @@ describe("type inference contracts", () => {
     });
     const recoveredA = base.recover(AErr, () => "fallback");
     const recoveredB = base.recover(BErr, () => "fallback");
-    expectTypeOf(recoveredA).toEqualTypeOf<OpType<string, BErr, []>>();
-    expectTypeOf(recoveredB).toEqualTypeOf<OpType<string, AErr, []>>();
+    expectTypeOf(recoveredA).toEqualTypeOf<Op<string, BErr, []>>();
+    expectTypeOf(recoveredB).toEqualTypeOf<Op<string, AErr, []>>();
 
     // @ts-expect-error - E3 is not a valid error type for this op
     base.recover(E3, () => "fallback");
@@ -159,12 +158,12 @@ describe("type inference contracts", () => {
 
     const settled = Op.settle(Op.fail(1));
     expectTypeOf(settled).toEqualTypeOf<
-      OpType<Result<never, number | UnhandledException>, never, []>
+      Op<Result<never, number | UnhandledException>, never, []>
     >();
 
     const anyOp = Op.any([Op.fail(1), Op.fail("two" as const)]);
     expectTypeOf(anyOp).toEqualTypeOf<
-      OpType<never, ErrorGroup<number | "two" | UnhandledException>, []>
+      Op<never, ErrorGroup<number | "two" | UnhandledException>, []>
     >();
 
     const race = Op.race([Op.of(1), Op.fail("two" as const)]);
@@ -174,7 +173,7 @@ describe("type inference contracts", () => {
 
   test("lifecycle helpers preserve op shape and expose exit context", () => {
     const withRelease = Op.of({ id: 1 }).withRelease((value) => value.id);
-    expectTypeOf(withRelease).toEqualTypeOf<OpType<{ id: number }, never, []>>();
+    expectTypeOf(withRelease).toEqualTypeOf<Op<{ id: number }, never, []>>();
 
     const onExit = Op(function* (name: string) {
       return name.length;
@@ -182,12 +181,12 @@ describe("type inference contracts", () => {
       expectTypeOf(ctx).toEqualTypeOf<ExitContext<number, never>>();
       expectTypeOf(ctx.result).toEqualTypeOf<Result<number, UnhandledException>>();
     });
-    expectTypeOf(onExit).toEqualTypeOf<OpType<number, never, [string]>>();
+    expectTypeOf(onExit).toEqualTypeOf<Op<number, never, [string]>>();
     expectTypeOf(onExit.run).parameter(0).toEqualTypeOf<string>();
   });
 
   test("public API typing contracts remain stable", () => {
-    expectTypeOf(Op.empty).toEqualTypeOf<OpType<void, never, []>>();
+    expectTypeOf(Op.empty).toEqualTypeOf<Op<void, never, []>>();
 
     const SmokeError = TaggedError("SmokeError")<{ message: string }>();
     const e = new SmokeError({ message: "x" });
