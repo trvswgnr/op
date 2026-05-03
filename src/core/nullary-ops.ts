@@ -8,7 +8,6 @@ import type {
   Op,
   OpHooks,
   OpLifecycleHook,
-  OpNullary,
   ReleaseFn,
   WithPredicateMethod,
 } from "./types.js";
@@ -21,39 +20,40 @@ type InferNullaryOpErr<R> = R extends Op<unknown, infer E, []> ? E : never;
 type RecoverValue<R> = R extends Op<infer T, unknown, []> ? T : Awaited<R>;
 type RecoverError<R> = R extends Op<unknown, infer E, []> ? E : never;
 
+export const NULLARY_OP_SYMBOL = Symbol("NullaryOp");
+
 export function isNullaryOp(value: unknown): value is Op<unknown, unknown, []> {
   return (
     typeof value === "function" &&
     Symbol.iterator in value &&
-    typeof value[Symbol.iterator] === "function"
+    typeof value[Symbol.iterator] === "function" &&
+    NULLARY_OP_SYMBOL in value
   );
 }
 
-const conditionalPredicate = <E>(
-  pred: ((error: E) => boolean) | WithPredicateMethod<E>,
-  error: E,
-) => {
+function conditionalPredicate<E>(pred: ((error: E) => boolean) | WithPredicateMethod<E>, error: E) {
   return "is" in pred ? pred.is(error) : pred(error);
-};
+}
 
-const dispatchLifecycleNullary = <T, E>(
+function dispatchLifecycleNullary<T, E>(
   hooks: OpHooks<T, E>,
   event: OpLifecycleHook,
   finalize: ExitFn<T, E>,
-): Op<T, E, []> => {
+): Op<T, E, []> {
   if (event !== "exit") {
     const _: never = event;
     return _;
   }
   return hooks.registerExitFinalize(finalize);
-};
+}
 
-export const makeNullaryOp = <T, E>(
+export function makeNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
-): Op<T, E, []> => {
-  let self: Op<T, E, []>;
+): Op<T, Exclude<E, UnhandledException>, []> {
+  let self: Op<T, Exclude<E, UnhandledException>, []>;
   const state = {
+    [NULLARY_OP_SYMBOL]: true,
     [Symbol.iterator]: gen,
     run: () => runOp(self),
     withRetry: hooks.withRetry,
@@ -71,13 +71,13 @@ export const makeNullaryOp = <T, E>(
       recoverOp(self, predicate, handler),
     _tag: "Op" as const,
   };
-  const callable = (() => state) as () => OpNullary<T, E>;
-  self = Object.assign(callable, state) as Op<T, E, []>;
+  const callable = () => state;
+  self = Object.assign(callable, state) as Op<T, Exclude<E, UnhandledException>, []>;
   return self;
-};
+}
 
-const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> => {
-  return makeNullaryOp<T, E | UnhandledException>(
+function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> {
+  return makeNullaryOp(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
@@ -85,7 +85,7 @@ const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op
       if (result.isErr()) {
         return yield* Result.err(result.error);
       }
-      yield new RegisterExitFinalizerInstruction((_ctx: ExitContext<unknown, unknown>) =>
+      yield new RegisterExitFinalizerInstruction(() =>
         Promise.resolve(release(result.value)).then(() => {}),
       );
       return result.value;
@@ -99,21 +99,19 @@ const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op
       registerExitFinalize: (finalize: ExitFn<T, E>) =>
         onExitNullaryOp(withCleanupNullaryOp(op, release), finalize),
     },
-  ) as Op<T, E, []>;
-};
+  );
+}
 
-const onExitNullaryOp = <T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> => {
-  return makeNullaryOp<T, E | UnhandledException>(
+function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> {
+  return makeNullaryOp(
     function* () {
-      yield new RegisterExitFinalizerInstruction((ctx: ExitContext<unknown, unknown>) =>
-        Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => undefined),
+      yield new RegisterExitFinalizerInstruction((ctx) =>
+        Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => {}),
       );
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (result.isErr()) {
-        return yield* Result.err(result.error);
-      }
+      if (result.isErr()) return yield* Result.err(result.error);
       return result.value;
     },
     {
@@ -126,21 +124,19 @@ const onExitNullaryOp = <T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, 
       registerExitFinalize: (nextFinalize: ExitFn<T, E>) =>
         onExitNullaryOp(onExitNullaryOp(op, finalize), nextFinalize),
     },
-  ) as Op<T, E, []>;
-};
+  );
+}
 
-const mapNullaryOp = <T, E, U>(
+function mapNullaryOp<T, E, U>(
   op: Op<T, E, []>,
   transform: (value: T) => U,
-): Op<Awaited<U>, E, []> => {
-  return makeNullaryOp<Awaited<U>, E | UnhandledException>(
+): Op<Awaited<U>, E, []> {
+  return makeNullaryOp(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (result.isErr()) {
-        return yield* Result.err(result.error);
-      }
+      if (result.isErr()) return yield* result;
       const mapped = (yield new SuspendInstruction(() =>
         Promise.resolve(transform(result.value)),
       )) as Awaited<U>;
@@ -155,28 +151,24 @@ const mapNullaryOp = <T, E, U>(
       registerExitFinalize: (finalize: ExitFn<Awaited<U>, E>) =>
         onExitNullaryOp(mapNullaryOp(op, transform), finalize),
     },
-  ) as Op<Awaited<U>, E, []>;
-};
+  );
+}
 
-const flatMapNullaryOp = <T, E, U, E2>(
+function flatMapNullaryOp<T, E, U, E2>(
   op: Op<T, E, []>,
   bind: (value: T) => Op<U, E2, []>,
-): Op<U, E | E2, []> => {
+): Op<U, E | E2, []> {
   const mapped: Op<U, E | E2, []> = makeNullaryOp<U, E | E2 | UnhandledException>(
     function* () {
       const first = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (first.isErr()) {
-        return yield* Result.err(first.error);
-      }
+      if (first.isErr()) return yield* Result.err(first.error);
 
       const second = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(bind(first.value), signal),
       )) as Result<U, E2 | UnhandledException>;
-      if (second.isErr()) {
-        return yield* Result.err(second.error);
-      }
+      if (second.isErr()) return yield* Result.err(second.error);
       return second.value;
     },
     {
@@ -186,35 +178,31 @@ const flatMapNullaryOp = <T, E, U, E2>(
       withRelease: (release: ReleaseFn<U>) => withCleanupNullaryOp(mapped, release),
       registerExitFinalize: (finalize: ExitFn<U, E | E2>) => onExitNullaryOp(mapped, finalize),
     },
-  ) as Op<U, E | E2, []>;
+  );
   return mapped;
-};
+}
 
-const tapNullaryOp = <T, E, R>(
+function tapNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   observe: (value: T) => R,
-): Op<T, E | InferNullaryOpErr<R>, []> => {
+): Op<T, E | InferNullaryOpErr<R>, []> {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
-      if (source.isErr()) {
-        return yield* Result.err(source.error);
-      }
+
+      if (source.isErr()) return yield* source;
 
       const observed = yield new SuspendInstruction(() => Promise.resolve(observe(source.value)));
 
-      if (!isNullaryOp(observed)) {
-        return source.value;
-      }
+      if (!isNullaryOp(observed)) return source.value;
 
       const observedResult = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(observed, signal),
       )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
-      if (observedResult.isErr()) {
-        return yield* Result.err(observedResult.error);
-      }
+
+      if (observedResult.isErr()) return yield* Result.err(observedResult.error);
       return source.value;
     },
     {
@@ -226,13 +214,13 @@ const tapNullaryOp = <T, E, R>(
       registerExitFinalize: (finalize: ExitFn<T, E | InferNullaryOpErr<R>>) =>
         onExitNullaryOp(tapNullaryOp(op, observe), finalize),
     },
-  ) as Op<T, E | InferNullaryOpErr<R>, []>;
-};
+  );
+}
 
-const tapErrNullaryOp = <T, E, R>(
+function tapErrNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   observe: (error: E) => R,
-): Op<T, E | InferNullaryOpErr<R>, []> => {
+): Op<T, E | InferNullaryOpErr<R>, []> {
   return makeNullaryOp<T, E | InferNullaryOpErr<R> | UnhandledException>(
     function* () {
       const source = (yield new SuspendInstruction((signal: AbortSignal) =>
@@ -277,12 +265,9 @@ const tapErrNullaryOp = <T, E, R>(
         onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
     },
   ) as Op<T, E | InferNullaryOpErr<R>, []>;
-};
+}
 
-const mapErrNullaryOp = <T, E, E2>(
-  op: Op<T, E, []>,
-  transform: (error: E) => E2,
-): Op<T, E2, []> => {
+function mapErrNullaryOp<T, E, E2>(op: Op<T, E, []>, transform: (error: E) => E2): Op<T, E2, []> {
   return makeNullaryOp<T, E2 | UnhandledException>(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
@@ -313,13 +298,13 @@ const mapErrNullaryOp = <T, E, E2>(
         onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
     },
   ) as Op<T, E2, []>;
-};
+}
 
-const recoverNullaryOp = <T, E, R>(
+function recoverNullaryOp<T, E, R>(
   op: Op<T, E, []>,
   predicate: ((error: E) => boolean) | WithPredicateMethod<E>,
   handler: (error: E) => R,
-): Op<T | RecoverValue<R>, E | RecoverError<R>, []> => {
+): Op<T | RecoverValue<R>, E | RecoverError<R>, []> {
   return makeNullaryOp<T | RecoverValue<R>, E | RecoverError<R> | UnhandledException>(
     function* () {
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
@@ -374,7 +359,7 @@ const recoverNullaryOp = <T, E, R>(
         onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
     },
   ) as Op<T | RecoverValue<R>, E | RecoverError<R>, []>;
-};
+}
 
 export {
   flatMapNullaryOp,

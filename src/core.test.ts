@@ -13,7 +13,7 @@ import type { Instruction, Op } from "./core/types.js";
 import { UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 
-const makeRuntimeOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
+function makeRuntimeOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const op: Op<T, E, []> = makeNullaryOp(gen, {
     withRetry: () => op,
     withTimeout: (_timeoutMs: number) => op,
@@ -22,7 +22,7 @@ const makeRuntimeOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): 
     registerExitFinalize: (_finalize) => op,
   });
   return op;
-};
+}
 
 describe("core/runtime helpers", () => {
   test("chainCleanupFaults handles empty, single, and multi-fault chains", () => {

@@ -11,31 +11,33 @@ type PackageJson = {
 const NO_ENTRIES_PLACEHOLDER = "- No entries yet.";
 const UNRELEASED_HEADING = "## [Unreleased]";
 
-const readUtf8 = async (path: string): Promise<string> =>
-  readFile(new URL(path, import.meta.url), "utf8");
+async function readUtf8(path: string): Promise<string> {
+  return readFile(new URL(path, import.meta.url), "utf8");
+}
 
-const writeUtf8 = async (path: string, content: string): Promise<void> =>
-  writeFile(new URL(path, import.meta.url), content, "utf8");
+async function writeUtf8(path: string, content: string): Promise<void> {
+  return writeFile(new URL(path, import.meta.url), content, "utf8");
+}
 
-const parseBumpKind = (): BumpKind => {
+function parseBumpKind(): BumpKind {
   const arg = process.argv[2];
   if (arg === "patch" || arg === "minor" || arg === "major") {
     return arg;
   }
 
   throw new Error("usage: node ./scripts/release-cut.ts <patch|minor|major>");
-};
+}
 
-const parseVersion = (value: string): [number, number, number] => {
+function parseVersion(value: string): [number, number, number] {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
   if (!match) {
     throw new Error(`unsupported version format: "${value}"`);
   }
 
   return [Number(match[1]), Number(match[2]), Number(match[3])];
-};
+}
 
-const bumpVersion = (current: string, kind: BumpKind): string => {
+function bumpVersion(current: string, kind: BumpKind): string {
   const [major, minor, patch] = parseVersion(current);
   if (kind === "major") {
     return `${major + 1}.0.0`;
@@ -46,9 +48,9 @@ const bumpVersion = (current: string, kind: BumpKind): string => {
   }
 
   return `${major}.${minor}.${patch + 1}`;
-};
+}
 
-const getCurrentVersion = async (): Promise<string> => {
+async function getCurrentVersion(): Promise<string> {
   const raw = await readUtf8("../package.json");
   const parsed = JSON.parse(raw) as PackageJson;
   if (typeof parsed.version !== "string" || parsed.version.length === 0) {
@@ -56,11 +58,13 @@ const getCurrentVersion = async (): Promise<string> => {
   }
 
   return parsed.version;
-};
+}
 
-const getReleaseDate = (): string => new Date().toISOString().slice(0, 10);
+function getReleaseDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-const promoteUnreleased = (changelog: string, nextVersion: string, releaseDate: string): string => {
+function promoteUnreleased(changelog: string, nextVersion: string, releaseDate: string): string {
   const unreleasedStart = changelog.indexOf(UNRELEASED_HEADING);
   if (unreleasedStart === -1) {
     throw new Error('CHANGELOG.md is missing "## [Unreleased]"');
@@ -86,15 +90,15 @@ const promoteUnreleased = (changelog: string, nextVersion: string, releaseDate: 
   const newReleaseSection = `## [${nextVersion}] - ${releaseDate}\n\n${releaseBody}`;
 
   return `${preamble}\n\n${newUnreleased}\n\n${newReleaseSection}\n\n${releasedSections}\n`;
-};
+}
 
-const run = (command: string): void => {
+function run(command: string): void {
   execSync(command, {
     stdio: "inherit",
   });
-};
+}
 
-const main = async (): Promise<void> => {
+async function main(): Promise<void> {
   const bumpKind = parseBumpKind();
   const currentVersion = await getCurrentVersion();
   const nextVersion = bumpVersion(currentVersion, bumpKind);
@@ -113,7 +117,7 @@ const main = async (): Promise<void> => {
 
   process.stdout.write(`release cut complete: v${nextVersion}\n`);
   process.stdout.write("next step: npm run release:push\n");
-};
+}
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

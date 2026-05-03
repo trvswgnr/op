@@ -4,14 +4,14 @@ import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { onExitOp, withReleaseOp } from "./core/arity-ops.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { Ok, Result } from "./result.js";
+import { Err, Ok, Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
-type NullaryOp = Op<unknown, unknown, []>;
-type SuccessOf<O> = O extends Op<infer T, unknown, []> ? T : never;
-type ErrorOf<O> = O extends Op<unknown, infer E, []> ? E : never;
+type AnyNullaryOp = Op<unknown, unknown, []>;
+type InferOpOk<O> = O extends Op<infer T, unknown, []> ? T : never;
+type InferOpErr<O> = O extends Op<unknown, infer E, []> ? E : never;
 
-const makeCombinatorOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
+function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const self: Op<T, E, []> = makeNullaryOp(gen, {
     withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
@@ -20,7 +20,7 @@ const makeCombinatorOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>
     registerExitFinalize: (finalize: ExitFn<T, E>) => onExitOp(self, finalize),
   });
   return self;
-};
+}
 
 /**
  * Fan-out contract:
@@ -29,14 +29,14 @@ const makeCombinatorOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>
  *   synchronously cascade into children instead of missing the abort edge
  * - Callers must invoke `detach()` once the combinator settles to avoid retaining listeners
  */
-const fanOut = <T, E>(
+function fanOut<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): {
   runs: readonly Promise<Result<T, E | UnhandledException>>[];
   controllers: readonly AbortController[];
   detach: () => void;
-} => {
+} {
   const entries = ops.map((op) => ({ op, controller: new AbortController() }));
   const cascade = () => entries.forEach((e) => e.controller.abort(outerSignal.reason));
   if (outerSignal.aborted) cascade();
@@ -45,12 +45,12 @@ const fanOut = <T, E>(
   const controllers = entries.map((e) => e.controller);
   const runs = entries.map((e) => drive(e.op, e.controller.signal));
   return { runs, controllers, detach };
-};
+}
 
-const concurrencyLimit = (
+function concurrencyLimit(
   concurrency: number | undefined,
   size: number,
-): Result<number, UnhandledException> => {
+): Result<number, UnhandledException> {
   if (concurrency === undefined) return Result.ok(size);
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     return Result.err(
@@ -58,22 +58,23 @@ const concurrencyLimit = (
     );
   }
   return Result.ok(Math.min(concurrency, size));
-};
+}
 
-export const allOp = <const Ops extends readonly NullaryOp[]>(
+type AllOpOk<Ops extends readonly AnyNullaryOp[]> = { [K in keyof Ops]: InferOpOk<Ops[K]> };
+type AllOpErr<Ops extends readonly AnyNullaryOp[]> = InferOpErr<Ops[number]> | UnhandledException;
+export function allOp<const Ops extends readonly AnyNullaryOp[]>(
   ops: Ops,
   concurrency?: number,
-): Op<{ [K in keyof Ops]: SuccessOf<Ops[K]> }, ErrorOf<Ops[number]> | UnhandledException, []> => {
+): Op<AllOpOk<Ops>, AllOpErr<Ops>, []> {
   const snapshot = ops.slice();
-  type T = { [K in keyof Ops]: SuccessOf<Ops[K]> };
-  type E = ErrorOf<Ops[number]> | UnhandledException;
   return makeCombinatorOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal) =>
       driveAll(snapshot, outerSignal, concurrency),
-    )) as Result<T, E>;
-    return result.isErr() ? yield* Result.err(result.error) : result.value;
+    )) as Result<AllOpOk<Ops>, AllOpErr<Ops>>;
+    if (result.isErr()) return yield* Result.err(result.error);
+    return result.value;
   });
-};
+}
 
 /**
  * Drives the `Op.all` combinator
@@ -84,11 +85,11 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
  * - The driver still waits for active siblings to settle so loser cleanup/finalizers run
  *   before returning the first observed error
  */
-const driveAll = async <T, E>(
+async function driveAll<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
   concurrency: number | undefined,
-): Promise<Result<T[], E | UnhandledException>> => {
+): Promise<Result<T[], E | UnhandledException>> {
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return limit;
   if (ops.length === 0) return Result.ok([]);
@@ -99,7 +100,7 @@ const driveAll = async <T, E>(
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
   let nextIndex = 0;
-  let firstErr: (E | UnhandledException) | undefined;
+  let firstErr: Err<T[], E | UnhandledException> | undefined;
   const worker = async () => {
     while (firstErr === undefined) {
       const i = nextIndex;
@@ -113,7 +114,7 @@ const driveAll = async <T, E>(
       controllers.delete(controller);
       results[i] = res;
       if (res.isErr() && firstErr === undefined) {
-        firstErr = res.error;
+        firstErr = res;
         for (const c of controllers) c.abort();
       }
     }
@@ -121,9 +122,9 @@ const driveAll = async <T, E>(
   await Promise.all(Array.from({ length: limit.value }, () => worker())).finally(() =>
     outerSignal.removeEventListener("abort", cascade),
   );
-  if (firstErr !== undefined) return Result.err(firstErr);
-  return Result.ok(results.filter((r) => r !== undefined && r.isOk()).map((r) => r.value));
-};
+  if (firstErr !== undefined) return firstErr;
+  return Result.ok(results.filter((r) => r !== undefined && r.isOk()).map((x) => x.value));
+}
 
 /**
  * Concurrency contract (`Op.all`, unbounded mode):
@@ -132,16 +133,16 @@ const driveAll = async <T, E>(
  * - Return waits for every branch to settle, so aborted losers finish cleanup before the
  *   combinator resolves with either the first error or ordered successful values
  */
-const driveAllUnbounded = async <T, E>(
+async function driveAllUnbounded<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T[], E | UnhandledException>> => {
+): Promise<Result<T[], E | UnhandledException>> {
   const fan = fanOut(ops, outerSignal);
-  let firstErr: (E | UnhandledException) | undefined;
+  let firstErr: Err<Result<T, E | UnhandledException>[], E | UnhandledException> | undefined;
   const observed = fan.runs.map((p, i) =>
     p.then((res) => {
       if (res.isErr() && firstErr === undefined) {
-        firstErr = res.error;
+        firstErr = res;
         fan.controllers.forEach((c, j) => {
           if (j !== i) c.abort();
         });
@@ -151,39 +152,32 @@ const driveAllUnbounded = async <T, E>(
   );
   const results = await Promise.all(observed);
   fan.detach();
-  if (firstErr !== undefined) return Result.err(firstErr);
-  return Result.ok(results.filter((r) => r.isOk()).map((r) => r.value));
-};
+  if (firstErr !== undefined) return firstErr;
+  return Result.ok(results.filter(Result.isOk).map((x) => x.value));
+}
 
-export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
+type AllSettledOpOk<Ops extends readonly AnyNullaryOp[]> = {
+  [K in keyof Ops]: Result<InferOpOk<Ops[K]>, InferOpErr<Ops[K]> | UnhandledException>;
+};
+export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
   ops: Ops,
   concurrency?: number,
-): Op<
-  { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> },
-  UnhandledException,
-  []
-> => {
+): Op<AllSettledOpOk<Ops>, never, []> {
   const snapshot = ops.slice();
-  type T = { [K in keyof Ops]: Result<SuccessOf<Ops[K]>, ErrorOf<Ops[K]> | UnhandledException> };
   return makeCombinatorOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal) =>
       driveAllSettled(snapshot, outerSignal, concurrency),
-    )) as Result<T, UnhandledException>;
-    return result.isErr() ? yield* result : result.value;
+    )) as Result<AllSettledOpOk<Ops>, never>;
+    if (result.isErr()) return yield* result;
+    return result.value;
   });
-};
+}
 
-export const settleOp = <T, E>(
-  op: Op<T, E, []>,
-): Op<Result<T, E | UnhandledException>, never, []> => {
-  return makeCombinatorOp<Result<T, E | UnhandledException>, never>(function* () {
-    const value = (yield new SuspendInstruction((outerSignal) => drive(op, outerSignal))) as Result<
-      T,
-      E | UnhandledException
-    >;
-    return value;
+export function settleOp<T, E>(op: Op<T, E, []>): Op<Result<T, E>, never, []> {
+  return makeCombinatorOp(function* () {
+    return (yield new SuspendInstruction((outerSignal) => drive(op, outerSignal))) as Result<T, E>;
   });
-};
+}
 
 /**
  * Drives the `Op.allSettled` combinator
@@ -193,20 +187,20 @@ export const settleOp = <T, E>(
  * - Child failures never abort siblings; every child is allowed to finish
  * - Settle result preserves input order and includes each branch outcome
  */
-const driveAllSettled = async <T, E>(
+async function driveAllSettled<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
   concurrency: number | undefined,
-): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> => {
+): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> {
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return limit;
   if (ops.length === 0) return Result.ok([]);
   if (limit.value >= ops.length) return Result.ok(await driveAllSettledUnbounded(ops, outerSignal));
-  const results: Array<Result<T, E | UnhandledException> | undefined> = Array(ops.length);
   const controllers = new Set<AbortController>();
   const cascade = () => controllers.forEach((c) => c.abort(outerSignal.reason));
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
+  const results = Array<Result<T, E | UnhandledException> | undefined>(ops.length);
   let nextIndex = 0;
   const worker = async () => {
     while (true) {
@@ -225,31 +219,33 @@ const driveAllSettled = async <T, E>(
     outerSignal.removeEventListener("abort", cascade),
   );
   return Result.ok(results.filter((r) => r !== undefined));
-};
+}
 
-const driveAllSettledUnbounded = async <T, E>(
+async function driveAllSettledUnbounded<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, E | UnhandledException>[]> => {
+): Promise<Result<T, E | UnhandledException>[]> {
   const fan = fanOut(ops, outerSignal);
   const results = await Promise.all(fan.runs);
   fan.detach();
   return results;
-};
+}
 
-export const anyOp = <const Ops extends readonly NullaryOp[]>(
+type AnyOpOk<Ops extends readonly AnyNullaryOp[]> = InferOpOk<Ops[number]>;
+type AnyOpErr<Ops extends readonly AnyNullaryOp[]> = ErrorGroup<InferOpErr<Ops[number]>>;
+
+export function anyOp<const Ops extends readonly AnyNullaryOp[]>(
   ops: Ops,
-): Op<SuccessOf<Ops[number]>, ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>, []> => {
+): Op<AnyOpOk<Ops>, AnyOpErr<Ops>, []> {
   const snapshot = ops.slice();
-  type V = SuccessOf<Ops[number]>;
-  type E = ErrorGroup<ErrorOf<Ops[number]> | UnhandledException>;
-  return makeCombinatorOp<V, E>(function* (): Generator<Instruction<E>, V, unknown> {
+  return makeCombinatorOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal) =>
       driveAny(snapshot, outerSignal),
-    )) as Result<V, E>;
-    return result.isErr() ? yield* result : result.value;
+    )) as Result<AnyOpOk<Ops>, AnyOpErr<Ops>>;
+    if (result.isErr()) return yield* result;
+    return result.value;
   });
-};
+}
 
 /**
  * Drives the `Op.any` combinator
@@ -263,10 +259,10 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
  * `Op.any` waits for aborted losers to settle so cleanup/finalizers finish
  * deterministically before run() returns; winner success still takes precedence
  */
-const driveAny = async <T, E>(
+async function driveAny<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
+): Promise<Result<T, ErrorGroup<E | UnhandledException>>> {
   if (ops.length === 0) {
     return Promise.resolve(
       Result.err(new ErrorGroup([], "Op.any requires at least one operation")),
@@ -277,7 +273,7 @@ const driveAny = async <T, E>(
   const results = await Promise.all(
     fan.runs.map((p, i) =>
       p.then((res) => {
-        if (res.isOk() && !winner) {
+        if (res.isOk() && winner === undefined) {
           winner = res as Ok<T>;
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
@@ -288,30 +284,29 @@ const driveAny = async <T, E>(
     ),
   );
   fan.detach();
-  return (
-    winner ??
-    Result.err(
-      new ErrorGroup(
-        results.filter(Result.isError).map((r) => r.error),
-        "Op.any failed because all operations failed",
-      ),
-    )
+  if (winner !== undefined) return winner;
+  return Result.err(
+    new ErrorGroup(
+      results.filter(Result.isError).map((r) => r.error),
+      "Op.any failed because all operations failed",
+    ),
   );
-};
+}
 
-export const raceOp = <const Ops extends readonly NullaryOp[]>(
+type RaceOpOk<Ops extends readonly AnyNullaryOp[]> = InferOpOk<Ops[number]>;
+type RaceOpErr<Ops extends readonly AnyNullaryOp[]> = InferOpErr<Ops[number]>;
+export function raceOp<const Ops extends readonly AnyNullaryOp[]>(
   ops: Ops,
-): Op<SuccessOf<Ops[number]>, ErrorOf<Ops[number]> | UnhandledException, []> => {
+): Op<RaceOpOk<Ops>, RaceOpErr<Ops>, []> {
   const snapshot = ops.slice();
-  type T = SuccessOf<Ops[number]>;
-  type E = ErrorOf<Ops[number]> | UnhandledException;
   return makeCombinatorOp(function* () {
     const result = (yield new SuspendInstruction((outerSignal) =>
       driveRace(snapshot, outerSignal),
-    )) as Result<T, E>;
-    return result.isErr() ? yield* result : result.value;
+    )) as Result<RaceOpOk<Ops>, RaceOpErr<Ops>>;
+    if (result.isErr()) return yield* result;
+    return result.value;
   });
-};
+}
 
 /**
  * Drives the `Op.race` combinator
@@ -325,10 +320,10 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
  * `Op.race` returns the first settler's outcome, but waits for aborted
  * losers to settle so cleanup/finalizers complete before run() returns
  */
-const driveRace = async <T, E>(
+async function driveRace<T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
-): Promise<Result<T, E | UnhandledException>> => {
+): Promise<Result<T, E | UnhandledException>> {
   if (ops.length === 0) {
     return Promise.resolve(
       Result.err(
@@ -352,8 +347,8 @@ const driveRace = async <T, E>(
     ),
   );
   fan.detach();
-  return (
-    winner ??
-    Result.err(new UnhandledException({ cause: new Error("Op.race failed to produce a winner") }))
+  if (winner !== undefined) return winner;
+  return Result.err(
+    new UnhandledException({ cause: new Error("Op.race failed to produce a winner") }),
   );
-};
+}

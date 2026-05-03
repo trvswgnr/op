@@ -1,48 +1,42 @@
-import { TimeoutError, UnhandledException } from "../errors.js";
-import { Result } from "../result.js";
+import { UnhandledException } from "../errors.js";
+import { Err, Result } from "../result.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { type ExitContext, type Instruction, type Op } from "./types.js";
 
-function isSuspendInstruction(value: unknown): value is SuspendInstruction {
+export function isSuspendInstruction(value: unknown): value is SuspendInstruction {
   return value instanceof SuspendInstruction;
 }
 
-function isErrInstruction<E>(value: unknown): value is { isErr: () => boolean; error: E } {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("isErr" in value) ||
-    typeof value.isErr !== "function"
-  ) {
-    return false;
-  }
-  return value.isErr();
+export function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "isErr" in value &&
+    typeof value.isErr === "function" &&
+    value.isErr()
+  );
 }
 
-function isRegisterExitFinalizerInstruction(
+export function isRegisterExitFinalizerInstruction(
   value: unknown,
 ): value is RegisterExitFinalizerInstruction {
   return value instanceof RegisterExitFinalizerInstruction;
 }
 
-const closeGenerator = (iterator: Iterator<unknown, unknown, unknown>) => {
+export function closeGenerator(iterator: Iterator<unknown, unknown, unknown>) {
   try {
     // we intentionally ignore the return payload bc only generator finalization matters
     iterator.return?.(undefined);
   } catch {
     // ignore cleanup faults so the original result/error is preserved
   }
-};
+}
 
 /** Fold multiple teardown faults into a nested `Error.cause` chain (outer = first failure in LIFO unwind). */
-function chainCleanupFaults(faults: readonly unknown[]): unknown {
-  if (faults.length === 0) {
-    return undefined;
-  }
-  if (faults.length === 1) {
-    return faults[0];
-  }
-  let chain: unknown = faults[faults.length - 1];
+export function chainCleanupFaults(faults: readonly unknown[]): unknown {
+  if (faults.length === 0) return undefined;
+  if (faults.length === 1) return faults[0];
+  let chain = faults[faults.length - 1];
   for (let i = faults.length - 2; i >= 0; i--) {
     const f = faults[i];
     const msg = f instanceof Error ? f.message : String(f);
@@ -142,12 +136,3 @@ export async function drive<T, E>(
     return settleWithCleanup(Result.err(unhandled));
   }
 }
-
-export {
-  chainCleanupFaults,
-  closeGenerator,
-  isErrInstruction,
-  isRegisterExitFinalizerInstruction,
-  isSuspendInstruction,
-  TimeoutError,
-};

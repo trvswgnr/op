@@ -59,7 +59,7 @@ const retryTransient = {
 
 const BEST_EFFORT_SIDE_EFFECT_CONCURRENCY = 1;
 
-const formatWarning = (error: unknown): string => {
+function formatWarning(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   try {
@@ -67,7 +67,7 @@ const formatWarning = (error: unknown): string => {
   } catch {
     return String(error);
   }
-};
+}
 
 type NonEmptyArray<T> = [T, ...T[]];
 
@@ -107,7 +107,7 @@ export class ServiceCallError extends TaggedError("ServiceCallError")<{
   }
 }
 
-export const createApp = (deps: AppDeps) => {
+export function createApp(deps: AppDeps) {
   const parseWebhookPayload = Op(function* (raw: unknown) {
     const parsed = v.safeParse(WebhookPayload, raw);
     if (!parsed.success) {
@@ -278,4 +278,4 @@ export const createApp = (deps: AppDeps) => {
     authorizePayment,
     processOrderWebhook,
   };
-};
+}

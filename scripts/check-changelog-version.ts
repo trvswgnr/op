@@ -5,10 +5,11 @@ type PackageJson = {
   version?: unknown;
 };
 
-const readUtf8 = async (path: string): Promise<string> =>
-  readFile(new URL(path, import.meta.url), "utf8");
+async function readUtf8(path: string): Promise<string> {
+  return readFile(new URL(path, import.meta.url), "utf8");
+}
 
-const getVersion = async (): Promise<string> => {
+async function getVersion(): Promise<string> {
   const raw = await readUtf8("../package.json");
   const parsed = JSON.parse(raw) as PackageJson;
 
@@ -17,15 +18,15 @@ const getVersion = async (): Promise<string> => {
   }
 
   return parsed.version;
-};
+}
 
-const hasVersionHeading = (changelog: string, version: string): boolean => {
+function hasVersionHeading(changelog: string, version: string): boolean {
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const heading = new RegExp(`^## \\[${escaped}\\](?:\\s|$)`, "m");
   return heading.test(changelog);
-};
+}
 
-const main = async (): Promise<void> => {
+async function main(): Promise<void> {
   const version = await getVersion();
   const changelog = await readUtf8("../CHANGELOG.md");
 
@@ -37,7 +38,7 @@ const main = async (): Promise<void> => {
   }
 
   process.stdout.write(`changelog contains version heading for ${version}\n`);
-};
+}
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

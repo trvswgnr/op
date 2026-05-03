@@ -157,14 +157,10 @@ describe("type inference contracts", () => {
     >();
 
     const settled = Op.settle(Op.fail(1));
-    expectTypeOf(settled).toEqualTypeOf<
-      Op<Result<never, number | UnhandledException>, never, []>
-    >();
+    expectTypeOf(settled).toEqualTypeOf<Op<Result<never, number>, never, []>>();
 
     const anyOp = Op.any([Op.fail(1), Op.fail("two" as const)]);
-    expectTypeOf(anyOp).toEqualTypeOf<
-      Op<never, ErrorGroup<number | "two" | UnhandledException>, []>
-    >();
+    expectTypeOf(anyOp).toEqualTypeOf<Op<never, ErrorGroup<number | "two">, []>>();
 
     const race = Op.race([Op.of(1), Op.fail("two" as const)]);
     const raceRun = race.run();

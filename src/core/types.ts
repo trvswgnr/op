@@ -3,6 +3,7 @@ import type { Err, Result } from "../result.js";
 import type { RetryPolicy } from "../policies.js";
 import type { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { Tagged } from "../tagged.js";
+import { NULLARY_OP_SYMBOL } from "./nullary-ops.js";
 
 /**
  * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
@@ -108,6 +109,7 @@ export interface OpNullary<T, E>
   run(): Promise<Result<T, E | UnhandledException>>;
   readonly _tag: "Op";
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
+  [NULLARY_OP_SYMBOL]: true;
 }
 
 export interface OpArity<T, E, A extends readonly unknown[]>

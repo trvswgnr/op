@@ -162,6 +162,18 @@ describe("Op.all", () => {
     expect(slowObservedAbort).toBe(true);
     expect(queuedStarted).toBe(false);
   });
+
+  test("unbounded mode preserves undefined as first error", async () => {
+    const r = await Op.all([Op.fail(undefined), Op.of(1)]).run();
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBeUndefined();
+  });
+
+  test("bounded mode preserves undefined as first error", async () => {
+    const r = await Op.all([Op.fail(undefined), Op.of(1)], 1).run();
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBeUndefined();
+  });
 });
 
 describe("Op.allSettled", () => {

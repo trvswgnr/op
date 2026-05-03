@@ -83,10 +83,10 @@ class _PollPending<T> extends TaggedError("_PollPending")() {
   }
 }
 
-export function pollUntil<T, E>(
+export const pollUntil = <T, E>(
   op: Op<T, E, []>,
   opts: { until: (value: T) => boolean; intervalMs: number },
-): Op<T, E, []> {
+): Op<T, E, []> => {
   return op
     .flatMap((value) => (opts.until(value) ? Op.of(value) : Op.fail(new _PollPending(value))))
     .withRetry({
@@ -98,7 +98,7 @@ export function pollUntil<T, E>(
       (e) => _PollPending.is(e),
       (e) => Op.of(e.value),
     );
-}
+};
 
 export const exampleWithPoll = Op(function* () {
   const o = { count: 0 };

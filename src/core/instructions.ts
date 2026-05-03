@@ -1,19 +1,21 @@
 import type { ExitContext } from "./types.js";
 import { Tagged } from "../tagged.js";
 
+type SuspendFn = (signal: AbortSignal) => Promise<unknown>;
 export class SuspendInstruction extends Tagged("SuspendInstruction") {
-  readonly suspend: (signal: AbortSignal) => Promise<unknown>;
+  readonly suspend: SuspendFn;
 
-  constructor(suspend: (signal: AbortSignal) => Promise<unknown>) {
+  constructor(suspend: SuspendFn) {
     super();
     this.suspend = suspend;
   }
 }
 
+type FinalizeFn = (ctx: ExitContext<unknown, unknown>) => Promise<void>;
 export class RegisterExitFinalizerInstruction extends Tagged("RegisterExitFinalizerInstruction") {
-  readonly finalize: (ctx: ExitContext<unknown, unknown>) => Promise<void>;
+  readonly finalize: FinalizeFn;
 
-  constructor(finalize: (ctx: ExitContext<unknown, unknown>) => Promise<void>) {
+  constructor(finalize: FinalizeFn) {
     super();
     this.finalize = finalize;
   }

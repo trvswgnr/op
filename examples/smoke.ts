@@ -30,37 +30,40 @@ const assert: Assert = (condition, message) => {
   if (!condition) throw new AssertionError(message);
 };
 
-const isNamedUser = (value: unknown): value is { name: string } => {
+function isNamedUser(value: unknown): value is { name: string } {
   return (
     typeof value === "object" && value !== null && "name" in value && typeof value.name === "string"
   );
-};
+}
 
 class RetryableError extends Error {
   retryable = true;
 }
 
-const neverSettlesUntilAborted = (signal: AbortSignal) =>
-  new Promise((_, reject) => {
+function neverSettlesUntilAborted(signal: AbortSignal) {
+  return new Promise((_, reject) => {
     if (signal.aborted) return reject(new RetryableError("aborted"));
     signal.addEventListener("abort", () => reject(new RetryableError("aborted")), { once: true });
   });
+}
 
-const createDeps = (overrides = {}) => ({
-  isDuplicateEvent: async () => false,
-  reserveInventory: async () => ({ reservationId: "res-1", reserved: true }),
-  authorizePayment: async () => ({ approved: true, authorizationId: "auth-1" }),
-  riskPrimary: async () => 0.12,
-  riskSecondary: async () => 0.11,
-  loadFraudPolicyFromCache: async () => "policy-cache-v1",
-  loadFraudPolicyFromConfig: async () => "policy-config-v1",
-  persistOrder: async () => undefined,
-  markEventProcessed: async () => undefined,
-  sendReceipt: async () => undefined,
-  publishAnalytics: async () => undefined,
-  nowIso: () => "2026-01-01T00:00:00.000Z",
-  ...overrides,
-});
+function createDeps(overrides = {}) {
+  return {
+    isDuplicateEvent: async () => false,
+    reserveInventory: async () => ({ reservationId: "res-1", reserved: true }),
+    authorizePayment: async () => ({ approved: true, authorizationId: "auth-1" }),
+    riskPrimary: async () => 0.12,
+    riskSecondary: async () => 0.11,
+    loadFraudPolicyFromCache: async () => "policy-cache-v1",
+    loadFraudPolicyFromConfig: async () => "policy-config-v1",
+    persistOrder: async () => undefined,
+    markEventProcessed: async () => undefined,
+    sendReceipt: async () => undefined,
+    publishAnalytics: async () => undefined,
+    nowIso: () => "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 const webhookPayload = {
   eventId: "evt-123",
@@ -71,7 +74,7 @@ const webhookPayload = {
   itemSkus: ["SKU-1", "SKU-2"],
 };
 
-const runCoreApiSmoke = async () => {
+async function runCoreApiSmoke() {
   class TooSmallError extends TaggedError("TooSmallError")<{ message: string }>() {}
 
   const localDivide = Op(function* (a: number, b: number) {
@@ -127,9 +130,9 @@ const runCoreApiSmoke = async () => {
     unexpectedResult.isErr() && unexpectedResult.error instanceof UnhandledException,
     "unexpected error smoke failed",
   );
-};
+}
 
-const runSimpleExampleSmoke = async () => {
+async function runSimpleExampleSmoke() {
   const divideOk = await divide.run(10, 2);
   assert(divideOk.isOk() && divideOk.value === 5, "divide success check failed");
 
@@ -202,9 +205,9 @@ const runSimpleExampleSmoke = async () => {
   const pollResult = await exampleWithPoll.run();
   assert(pollResult.isOk(), "pollResult should be Ok");
   assert(pollResult.value.count === 10, `expected 10, got ${pollResult.value.count}`);
-};
+}
 
-const runWebhookExampleSmoke = async () => {
+async function runWebhookExampleSmoke() {
   let analyticsPublished = false;
   const appWithWarning = createApp(
     createDeps({
@@ -337,7 +340,7 @@ const runWebhookExampleSmoke = async () => {
     "inventory abort error type check failed",
   );
   assert(inventoryAborted, "inventory abort propagation check failed");
-};
+}
 
 await runCoreApiSmoke();
 await runSimpleExampleSmoke();

@@ -192,17 +192,11 @@ If `f` returns a nullary `Op`, that op is sequenced and its result is discarded.
 if the returned op fails, that failure propagates.
 
 ```ts
-const parseBody = (response: Response) =>
-  Op.try(
-    () => response.json() as Promise<{ id: string }>,
-    (cause) => new Error(`parse failed: ${String(cause)}`),
-  );
-
 const withLog = Op.try(() => fetch("https://example.com/user/69"))
   .tap((response) => {
     console.log("status", response.status);
   })
-  .flatMap(parseBody);
+  .map((response) => response.status);
 ```
 
 ### `.tapErr(f)`
@@ -216,8 +210,8 @@ if the returned op fails, that failure propagates. `UnhandledException` bypasses
 
 ```ts
 const withErrorMetric = Op.try(
-  () => fetch("https://example.com/user/69").then((r) => r.json()),
-  (cause) => new Error(`request failed: ${String(cause)}`),
+  () => fetch("https://example.com/user/69")),
+  (cause) => new FetchError({ cause }),
 ).tapErr((error) => {
   console.error("user lookup failed", error.message);
 });

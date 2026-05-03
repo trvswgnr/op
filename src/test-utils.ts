@@ -1,18 +1,20 @@
-export const resolveAfter = <T>(value: T, ms: number) =>
-  new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+export function resolveAfter<T>(value: T, ms: number) {
+  return new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
+}
 
-export const rejectAfter = (reason: unknown, ms: number) =>
-  new Promise<never>((_, reject) => setTimeout(() => reject(reason), ms));
+export function rejectAfter(reason: unknown, ms: number) {
+  return new Promise<never>((_, reject) => setTimeout(() => reject(reason), ms));
+}
 
-export const deferredPromise = <T>() => {
+export function deferredPromise<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
     resolve = r;
   });
   return { promise, resolve };
-};
+}
 
-export const trackAbortListeners = (signal: AbortSignal) => {
+export function trackAbortListeners(signal: AbortSignal) {
   type AbortListener = Parameters<AbortSignal["addEventListener"]>[1];
   type Registration = { listener: AbortListener; once: boolean };
 
@@ -61,6 +63,6 @@ export const trackAbortListeners = (signal: AbortSignal) => {
       originalRemove("abort", clearOnceRegistrations);
     },
   };
-};
+}
 
 export const invalidConcurrencies = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY];
