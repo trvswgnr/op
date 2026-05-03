@@ -12,6 +12,9 @@ breaking changes may occur between minor releases.
 - Clarified contributor testing governance with an explicit two-tier strategy in
   `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
   no-duplication decision rule for placing assertions.
+- Added `src/test-utils.ts` to centralize shared integration-test helpers
+  (`deferred`, abort-listener tracking, async timing helpers, and invalid
+  concurrency fixtures) so new test files can reuse one source of truth.
 
 ## [0.1.53] - 2026-05-02
 
