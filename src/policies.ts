@@ -1,5 +1,5 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
-import { err, type Result } from "./result.js";
+import { Result } from "./result.js";
 import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
 import {
   type ExitFn,
@@ -138,7 +138,7 @@ const withRetryNullaryOp = <T, E>(
       const canRetry =
         !attemptStep.aborted && attempt < policy.maxAttempts && policy.shouldRetry(retryCause);
       if (!canRetry) {
-        return yield* err(cause);
+        return yield* Result.err(cause);
       }
 
       const delayMs = Math.max(0, policy.getDelay(attempt, cause));
@@ -147,7 +147,7 @@ const withRetryNullaryOp = <T, E>(
           abortableDelay(delayMs, signal).then(() => signal.aborted),
         );
         if (delayAborted) {
-          return yield* err(cause);
+          return yield* Result.err(cause);
         }
       }
 
@@ -168,7 +168,7 @@ const withTimeoutNullaryOp = <T, E>(
       raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
     )) as Result<T, E | UnhandledException | TimeoutError>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   }) as Op<T, E | TimeoutError, []>;
@@ -181,7 +181,7 @@ const withSignalNullaryOp = <T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T,
       runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
     )) as Result<T, E | UnhandledException>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   }) as Op<T, E, []>;
@@ -244,7 +244,7 @@ const raceTimeout = <T, E>(
     timeoutId = setTimeout(() => {
       const e = new TimeoutError({ timeoutMs });
       controller.abort(e);
-      resolve(err(e));
+      resolve(Result.err(e));
     }, timeoutMs);
   });
 

@@ -1,5 +1,5 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
-import { err, ok, type Result } from "../result.js";
+import { Result } from "../result.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { type ExitContext, type Instruction, type Op } from "./types.js";
 
@@ -103,7 +103,7 @@ export async function drive<T, E>(
     const exitCtx: ExitContext<T, E> = { signal, result };
     const cleanupFault = await runFinalizersSafely(exitCtx);
     if (cleanupFault !== undefined) {
-      return err(new UnhandledException({ cause: cleanupFault }));
+      return Result.err(new UnhandledException({ cause: cleanupFault }));
     }
     return result;
   };
@@ -124,22 +124,22 @@ export async function drive<T, E>(
           continue;
         }
         if (isErrInstruction<E>(instr)) {
-          return settleWithCleanup(err(instr.error), iter);
+          return settleWithCleanup(Result.err(instr.error), iter);
         }
         const invalidErr = new UnhandledException({
           cause: new TypeError("Op generator yielded an invalid instruction"),
         });
-        return settleWithCleanup(err(invalidErr), iter);
+        return settleWithCleanup(Result.err(invalidErr), iter);
       } catch (cause) {
         const unhandled = new UnhandledException({ cause });
-        return settleWithCleanup(err(unhandled), iter);
+        return settleWithCleanup(Result.err(unhandled), iter);
       }
     }
     const value = await step.value;
-    return settleWithCleanup(ok(value));
+    return settleWithCleanup(Result.ok(value));
   } catch (cause) {
     const unhandled = new UnhandledException({ cause });
-    return settleWithCleanup(err(unhandled));
+    return settleWithCleanup(Result.err(unhandled));
   }
 }
 

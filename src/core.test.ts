@@ -11,7 +11,7 @@ import { makeNullaryOp } from "./core/nullary-ops.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import type { Instruction, Op } from "./core/types.js";
 import { UnhandledException } from "./errors.js";
-import { err, ok } from "./result.js";
+import { Result } from "./result.js";
 
 const makeRuntimeOp = <T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> => {
   const op: Op<T, E, []> = makeNullaryOp(gen, {
@@ -59,8 +59,8 @@ describe("core/runtime helpers", () => {
   test("instruction type guards correctly classify values", () => {
     const suspended = new SuspendInstruction(async () => 1);
     const finalizer = new RegisterExitFinalizerInstruction(async () => {});
-    const typedErr = err("typed");
-    const typedOk = ok("value");
+    const typedErr = Result.err("typed");
+    const typedOk = Result.ok("value");
 
     expect(isSuspendInstruction(suspended)).toBe(true);
     expect(isSuspendInstruction({ suspend: async () => 1 })).toBe(false);
@@ -149,7 +149,7 @@ describe("drive runtime behavior", () => {
       yield new RegisterExitFinalizerInstruction(async () => {
         throw cleanupFault;
       });
-      return yield* err("typed-body-error");
+      return yield* Result.err("typed-body-error");
     });
 
     const result = await drive(op, new AbortController().signal);

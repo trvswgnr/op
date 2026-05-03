@@ -1,5 +1,5 @@
 import type { Err } from "./result.js";
-import { err } from "./result.js";
+import { Result } from "./result.js";
 import { Tagged } from "./tagged.js";
 import { TaggedError, UnhandledException } from "better-result";
 
@@ -29,7 +29,7 @@ export class ErrorGroup<E> extends Tagged("ErrorGroup", AggregateError) {
   }
 
   *[Symbol.iterator](): Generator<Err<never, this>, never, unknown> {
-    return yield* err(this);
+    return yield* Result.err(this);
   }
 
   static is(value: unknown): value is ErrorGroup<unknown> {

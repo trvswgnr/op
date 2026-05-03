@@ -1,5 +1,5 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
-import { err, type Result } from "../result.js";
+import { Result } from "../result.js";
 import { withRetryOp, withSignalOp, withTimeoutOp, type RetryPolicy } from "../policies.js";
 import type {
   ExitContext,
@@ -83,7 +83,7 @@ const withCleanupNullaryOp = <T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        return yield* err(result.error);
+        return yield* Result.err(result.error);
       }
       yield new RegisterExitFinalizerInstruction((_ctx: ExitContext<unknown, unknown>) =>
         Promise.resolve(release(result.value)).then(() => {}),
@@ -112,7 +112,7 @@ const onExitNullaryOp = <T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, 
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        return yield* err(result.error);
+        return yield* Result.err(result.error);
       }
       return result.value;
     },
@@ -139,7 +139,7 @@ const mapNullaryOp = <T, E, U>(
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
-        return yield* err(result.error);
+        return yield* Result.err(result.error);
       }
       const mapped = (yield new SuspendInstruction(() =>
         Promise.resolve(transform(result.value)),
@@ -168,14 +168,14 @@ const flatMapNullaryOp = <T, E, U, E2>(
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
       if (first.isErr()) {
-        return yield* err(first.error);
+        return yield* Result.err(first.error);
       }
 
       const second = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(bind(first.value), signal),
       )) as Result<U, E2 | UnhandledException>;
       if (second.isErr()) {
-        return yield* err(second.error);
+        return yield* Result.err(second.error);
       }
       return second.value;
     },
@@ -200,7 +200,7 @@ const tapNullaryOp = <T, E, R>(
         drive(op, signal),
       )) as Result<T, E | UnhandledException>;
       if (source.isErr()) {
-        return yield* err(source.error);
+        return yield* Result.err(source.error);
       }
 
       const observed = yield new SuspendInstruction(() => Promise.resolve(observe(source.value)));
@@ -213,7 +213,7 @@ const tapNullaryOp = <T, E, R>(
         drive(observed, signal),
       )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
-        return yield* err(observedResult.error);
+        return yield* Result.err(observedResult.error);
       }
       return source.value;
     },
@@ -243,24 +243,24 @@ const tapErrNullaryOp = <T, E, R>(
       }
 
       if (source.error instanceof UnhandledException) {
-        return yield* err(source.error);
+        return yield* Result.err(source.error);
       }
 
       const observed = yield new SuspendInstruction(() =>
         Promise.resolve(observe(source.error as E)),
       );
       if (!isNullaryOp(observed)) {
-        return yield* err(source.error);
+        return yield* Result.err(source.error);
       }
 
       const observedResult = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(observed, signal),
       )) as Result<unknown, InferNullaryOpErr<R> | UnhandledException>;
       if (observedResult.isErr()) {
-        return yield* err(observedResult.error);
+        return yield* Result.err(observedResult.error);
       }
 
-      return yield* err(source.error);
+      return yield* Result.err(source.error);
     },
     {
       withRetry: (policy?: RetryPolicy) => tapErrNullaryOp(op.withRetry(policy), observe),
@@ -290,13 +290,13 @@ const mapErrNullaryOp = <T, E, E2>(
       )) as Result<T, E | UnhandledException>;
       if (result.isErr()) {
         if (result.error instanceof UnhandledException) {
-          return yield* err(result.error);
+          return yield* Result.err(result.error);
         }
 
         const mapped = (yield new SuspendInstruction(() =>
           Promise.resolve(transform(result.error as E)),
         )) as E2;
-        return yield* err(mapped);
+        return yield* Result.err(mapped);
       }
       return result.value;
     },
@@ -331,13 +331,13 @@ const recoverNullaryOp = <T, E, R>(
       }
 
       if (result.error instanceof UnhandledException) {
-        return yield* err(result.error);
+        return yield* Result.err(result.error);
       }
 
       const error = result.error;
 
       if (!conditionalPredicate(predicate, error)) {
-        return yield* err(error);
+        return yield* Result.err(error);
       }
 
       const recovered = yield new SuspendInstruction(() => Promise.resolve(handler(error)));
@@ -351,7 +351,7 @@ const recoverNullaryOp = <T, E, R>(
       )) as Result<RecoverValue<R>, RecoverError<R> | UnhandledException>;
 
       if (recoveredResult.isErr()) {
-        return yield* err(recoveredResult.error);
+        return yield* Result.err(recoveredResult.error);
       }
 
       return recoveredResult.value;

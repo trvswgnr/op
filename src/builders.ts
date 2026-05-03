@@ -10,7 +10,7 @@ import {
 } from "./core/types.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { err, InferErr, ok, type Result } from "./result.js";
+import { Result, type InferErr } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
 const isAwaited = <T>(value: T | Promise<T>): value is Awaited<T> => {
@@ -46,7 +46,7 @@ export const succeed = <T>(value: T | Promise<T>): Op<Awaited<T>, never, []> => 
 export const fail = <E>(value: E): Op<never, E, []> => {
   const op: Op<never, E, []> = makeNullaryOp(
     function* () {
-      return yield* err(value);
+      return yield* Result.err(value);
     },
     {
       withRetry: (policy?: RetryPolicy) => withRetryOp(op, policy),
@@ -95,8 +95,8 @@ export const _try = <T, E = UnhandledException>(
         Promise.resolve()
           .then(() => f(signal))
           .then(
-            (a) => ok(a),
-            (cause) => err(onError ? onError(cause) : new UnhandledException({ cause })),
+            (a) => Result.ok(a),
+            (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
           ),
       )) as Result<T, E>;
       if (result.isErr()) {

@@ -4,7 +4,7 @@ import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { onExitOp, withReleaseOp } from "./core/arity-ops.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
-import { err, ok, type Result } from "./result.js";
+import { Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 
 type NullaryOp = Op<unknown, unknown, []>;
@@ -46,13 +46,13 @@ const concurrencyLimit = (
   concurrency: number | undefined,
   size: number,
 ): Result<number, UnhandledException> => {
-  if (concurrency === undefined) return ok(size);
+  if (concurrency === undefined) return Result.ok(size);
   if (!Number.isInteger(concurrency) || concurrency < 1) {
-    return err(
+    return Result.err(
       new UnhandledException({ cause: new RangeError("concurrency must be a positive integer") }),
     );
   }
-  return ok(Math.min(concurrency, size));
+  return Result.ok(Math.min(concurrency, size));
 };
 
 export const allOp = <const Ops extends readonly NullaryOp[]>(
@@ -65,7 +65,7 @@ export const allOp = <const Ops extends readonly NullaryOp[]>(
       driveAll(snapshot, outerSignal, concurrency),
     )) as Result<never, never>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   });
@@ -77,9 +77,9 @@ const driveAll = async <T, E>(
   concurrency: number | undefined,
 ): Promise<Result<T[], E | UnhandledException>> => {
   const limit = concurrencyLimit(concurrency, ops.length);
-  if (limit.isErr()) return err(limit.error);
+  if (limit.isErr()) return Result.err(limit.error);
 
-  if (ops.length === 0) return ok([]);
+  if (ops.length === 0) return Result.ok([]);
   if (limit.value >= ops.length) return driveAllUnbounded(ops, outerSignal);
 
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
@@ -120,10 +120,10 @@ const driveAll = async <T, E>(
     outerSignal.removeEventListener("abort", cascade);
   }
 
-  if (firstErr !== undefined) return err(firstErr);
+  if (firstErr !== undefined) return Result.err(firstErr);
   const values: T[] = [];
   for (const r of results) if (r?.isOk()) values.push(r.value);
-  return ok(values);
+  return Result.ok(values);
 };
 
 const driveAllUnbounded = async <T, E>(
@@ -149,10 +149,10 @@ const driveAllUnbounded = async <T, E>(
   const results = await Promise.all(observed);
   detach();
 
-  if (firstErr !== undefined) return err(firstErr);
+  if (firstErr !== undefined) return Result.err(firstErr);
   const values: T[] = [];
   for (const r of results) if (r.isOk()) values.push(r.value);
-  return ok(values);
+  return Result.ok(values);
 };
 
 export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
@@ -174,7 +174,7 @@ export const allSettledOp = <const Ops extends readonly NullaryOp[]>(
       driveAllSettled(snapshot, outerSignal, concurrency),
     )) as Result<V, UnhandledException>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   });
@@ -198,10 +198,10 @@ const driveAllSettled = async <T, E>(
   concurrency: number | undefined,
 ): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> => {
   const limit = concurrencyLimit(concurrency, ops.length);
-  if (limit.isErr()) return err(limit.error);
+  if (limit.isErr()) return Result.err(limit.error);
 
-  if (ops.length === 0) return ok([]);
-  if (limit.value >= ops.length) return ok(await driveAllSettledUnbounded(ops, outerSignal));
+  if (ops.length === 0) return Result.ok([]);
+  if (limit.value >= ops.length) return Result.ok(await driveAllSettledUnbounded(ops, outerSignal));
 
   const results: (Result<T, E | UnhandledException> | undefined)[] = new Array(ops.length);
   const controllers = new Set<AbortController>();
@@ -233,7 +233,7 @@ const driveAllSettled = async <T, E>(
     outerSignal.removeEventListener("abort", cascade);
   }
 
-  return ok(results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined));
+  return Result.ok(results.filter((r): r is Result<T, E | UnhandledException> => r !== undefined));
 };
 
 const driveAllSettledUnbounded = async <T, E>(
@@ -257,7 +257,7 @@ export const anyOp = <const Ops extends readonly NullaryOp[]>(
       driveAny(snapshot, outerSignal),
     )) as Result<V, E>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   });
@@ -268,7 +268,9 @@ const driveAny = <T, E>(
   outerSignal: AbortSignal,
 ): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
   if (ops.length === 0) {
-    return Promise.resolve(err(new ErrorGroup([], "Op.any requires at least one operation")));
+    return Promise.resolve(
+      Result.err(new ErrorGroup([], "Op.any requires at least one operation")),
+    );
   }
   const fan = fanOut(ops, outerSignal);
 
@@ -283,7 +285,7 @@ const driveAny = <T, E>(
             if (j !== i) c.abort();
           });
           fan.detach();
-          resolve(ok(res.value));
+          resolve(Result.ok(res.value));
         }
         return res;
       }),
@@ -294,7 +296,7 @@ const driveAny = <T, E>(
       fan.detach();
       const errors: (E | UnhandledException)[] = [];
       for (const r of results) if (r.isErr()) errors.push(r.error);
-      resolve(err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
+      resolve(Result.err(new ErrorGroup(errors, "Op.any failed because all operations failed")));
     });
   });
 };
@@ -310,7 +312,7 @@ export const raceOp = <const Ops extends readonly NullaryOp[]>(
       driveRace(snapshot, outerSignal),
     )) as Result<V, E>;
     if (result.isErr()) {
-      return yield* err(result.error);
+      return yield* Result.err(result.error);
     }
     return result.value;
   });
@@ -322,7 +324,9 @@ const driveRace = <T, E>(
 ): Promise<Result<T, E | UnhandledException>> => {
   if (ops.length === 0) {
     return Promise.resolve(
-      err(new UnhandledException({ cause: new Error("Op.race requires at least one operation") })),
+      Result.err(
+        new UnhandledException({ cause: new Error("Op.race requires at least one operation") }),
+      ),
     );
   }
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
