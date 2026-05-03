@@ -213,6 +213,11 @@ const runWithBoundSignal = <T, E>(
   boundSignal: AbortSignal,
   outerSignal: AbortSignal,
 ): Promise<Result<T, E>> => {
+  // Listener lifecycle contract:
+  // - The composed controller mirrors both bound and outer cancellation.
+  // - We eagerly check `aborted` before registering listeners so pre-aborted signals
+  //   cannot miss propagation.
+  // - Cleanup stays in Promise.finally so listeners are removed on success, error, or abort.
   const controller = new AbortController();
   const forwardBoundAbort = () => controller.abort(boundSignal.reason);
   const forwardOuterAbort = () => controller.abort(outerSignal.reason);
@@ -234,6 +239,11 @@ const raceTimeout = <T, E>(
   timeoutMs: number,
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | TimeoutError>> => {
+  // Listener lifecycle contract:
+  // - The timeout path and outer signal both cancel the same controller.
+  // - Timeout resolves with TimeoutError while also aborting the work branch so branch-local
+  //   cleanup runs through normal cancellation flow.
+  // - Promise.finally clears timer + listener in every settle path to avoid timer/listener leaks.
   const controller = new AbortController();
   const cascade = () => controller.abort(outerSignal.reason);
   if (outerSignal.aborted) cascade();

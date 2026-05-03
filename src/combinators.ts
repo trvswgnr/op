@@ -30,6 +30,11 @@ const fanOut = <T, E>(
   controllers: readonly AbortController[];
   detach: () => void;
 } => {
+  // Fan-out contract:
+  // - Every child gets its own AbortController so winner/loser cancellation can be isolated.
+  // - We check `outerSignal.aborted` before adding a listener so already-cancelled parents
+  //   synchronously cascade into children instead of missing the abort edge.
+  // - Callers must invoke `detach()` once the combinator settles to avoid retaining listeners.
   const entries = ops.map((op) => ({ op, controller: new AbortController() }));
   const cascade = () => {
     for (const e of entries) e.controller.abort(outerSignal.reason);
@@ -76,6 +81,11 @@ const driveAll = async <T, E>(
   outerSignal: AbortSignal,
   concurrency: number | undefined,
 ): Promise<Result<T[], E | UnhandledException>> => {
+  // Concurrency contract (`Op.all`, bounded mode):
+  // - Up to `concurrency` children run at once.
+  // - First failure aborts in-flight siblings and prevents launching queued work.
+  // - The driver still waits for active siblings to settle so loser cleanup/finalizers run
+  //   before returning the first observed error.
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return Result.err(limit.error);
 
@@ -130,6 +140,11 @@ const driveAllUnbounded = async <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T[], E | UnhandledException>> => {
+  // Concurrency contract (`Op.all`, unbounded mode):
+  // - All children start immediately.
+  // - First failure aborts all other children.
+  // - Return waits for every branch to settle, so aborted losers finish cleanup before the
+  //   combinator resolves with either the first error or ordered successful values.
   const { runs, controllers, detach } = fanOut(ops, outerSignal);
 
   let firstErr: (E | UnhandledException) | undefined;
@@ -197,6 +212,10 @@ const driveAllSettled = async <T, E>(
   outerSignal: AbortSignal,
   concurrency: number | undefined,
 ): Promise<Result<Result<T, E | UnhandledException>[], UnhandledException>> => {
+  // Concurrency contract (`Op.allSettled`, bounded mode):
+  // - Up to `concurrency` children run at once.
+  // - Child failures never abort siblings; every child is allowed to finish.
+  // - Settle result preserves input order and includes each branch outcome.
   const limit = concurrencyLimit(concurrency, ops.length);
   if (limit.isErr()) return Result.err(limit.error);
 
@@ -267,6 +286,11 @@ const driveAny = <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, ErrorGroup<E | UnhandledException>>> => {
+  // Concurrency contract (`Op.any`):
+  // - All children run concurrently.
+  // - First successful child becomes the winner and aborts remaining siblings.
+  // - The combinator still waits for aborted losers to settle so cleanup/finalizers complete.
+  // - If no success exists, returns ErrorGroup with errors in input order.
   if (ops.length === 0) {
     return Promise.resolve(
       Result.err(new ErrorGroup([], "Op.any requires at least one operation")),
@@ -319,6 +343,11 @@ const driveRace = <T, E>(
   ops: readonly Op<T, E, []>[],
   outerSignal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> => {
+  // Concurrency contract (`Op.race`):
+  // - All children run concurrently.
+  // - First settler (Ok or Err) wins and aborts the rest.
+  // - The combinator waits for aborted losers to settle so cleanup/finalizers complete
+  //   before returning the winner's outcome.
   if (ops.length === 0) {
     return Promise.resolve(
       Result.err(
