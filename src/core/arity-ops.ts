@@ -1,8 +1,10 @@
 import { TimeoutError } from "../errors.js";
 import type { RetryPolicy } from "../policies.js";
 import type {
+  EnterFn,
   ExitFn,
   InferNullaryOpErr,
+  LifecycleFn,
   Op,
   OpArity,
   OpLifecycleHook,
@@ -16,6 +18,7 @@ import {
   isNullaryOp,
   mapErrNullaryOp,
   mapNullaryOp,
+  onEnterNullaryOp,
   onExitNullaryOp,
   recoverNullaryOp,
   tapErrNullaryOp,
@@ -28,7 +31,7 @@ export interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, A>;
   withSignal: (signal: AbortSignal) => Op<T, E, A>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, A>;
-  on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) => Op<T, E, A>;
+  on: (event: OpLifecycleHook, handler: LifecycleFn<T, E>) => Op<T, E, A>;
 }
 
 export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
@@ -96,16 +99,38 @@ export function onExitOp<T, E, A extends readonly unknown[]>(
   );
 }
 
+export function onEnterOp<T, E, A extends readonly unknown[]>(
+  op: Op<T, E, A>,
+  initialize: EnterFn,
+): Op<T, E, A> {
+  return liftArityOp(
+    op,
+    (resolved) => onEnterNullaryOp(resolved, initialize),
+    (source, self) => ({
+      withRetry: (policy) => onEnterOp(source.withRetry(policy), initialize),
+      withTimeout: (timeoutMs) => onEnterOp(source.withTimeout(timeoutMs), initialize),
+      withSignal: (signal) => onEnterOp(source.withSignal(signal), initialize),
+      withRelease: (release) => withReleaseOp(self, release),
+      on: (event, handler) => onOp(self, event, handler),
+    }),
+  );
+}
+
 export function onOp<T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   event: OpLifecycleHook,
-  finalize: ExitFn<T, E>,
+  handler: LifecycleFn<T, E>,
 ): Op<T, E, A> {
-  if (event !== "exit") {
-    event satisfies never;
-    return op;
+  if (event === "enter") {
+    return onEnterOp(op, handler as EnterFn);
   }
-  return onExitOp(op, finalize);
+
+  if (event === "exit") {
+    return onExitOp(op, handler as ExitFn<T, E>);
+  }
+
+  event satisfies never;
+  return op;
 }
 
 export function withReleaseOp<T, E, A extends readonly unknown[]>(

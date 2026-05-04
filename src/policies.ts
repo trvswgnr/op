@@ -104,6 +104,7 @@ function makePolicyNullaryOp<T, E>(
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),
     withRelease: (release) => withReleaseOp(self, release),
+    registerEnterInitialize: (initialize) => onOp(self, "enter", initialize),
     registerExitFinalize: (finalize) => onExitOp(self, finalize),
   });
 

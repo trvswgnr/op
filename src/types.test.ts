@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, test } from "vitest";
-import { ErrorGroup, Op, TimeoutError, type ExitContext } from "./index.js";
+import { ErrorGroup, Op, TimeoutError, type EnterContext, type ExitContext } from "./index.js";
 import { TaggedError, UnhandledException, type TaggedErrorInstance } from "./errors.js";
 import { Result } from "./result.js";
 
@@ -215,9 +215,18 @@ describe("type inference contracts", () => {
     expectTypeOf(raceRun).toEqualTypeOf<Promise<Result<number, "two" | UnhandledException>>>();
   });
 
-  test("lifecycle helpers preserve op shape and expose exit context", () => {
+  test("lifecycle helpers preserve op shape and expose hook contexts", () => {
     const withRelease = Op.of({ id: 1 }).withRelease((value) => value.id);
     expectTypeOf(withRelease).toEqualTypeOf<Op<{ id: number }, never, []>>();
+
+    const onEnter = Op(function* (name: string) {
+      return name.length;
+    }).on("enter", (ctx) => {
+      expectTypeOf(ctx).toEqualTypeOf<EnterContext>();
+      expectTypeOf(ctx.signal).toEqualTypeOf<AbortSignal>();
+    });
+    expectTypeOf(onEnter).toEqualTypeOf<Op<number, never, [string]>>();
+    expectTypeOf(onEnter.run).parameter(0).toEqualTypeOf<string>();
 
     const onExit = Op(function* (name: string) {
       return name.length;

@@ -20,7 +20,14 @@ export interface ExitContext<T, E> {
   readonly result: Result<T, E | UnhandledException>;
 }
 
+/** Passed to {@link EnterFn} when a run starts, before the wrapped operation body begins. */
+export interface EnterContext {
+  readonly signal: AbortSignal;
+}
+
+export type EnterFn = (ctx: EnterContext) => unknown;
 export type ExitFn<T = unknown, E = unknown> = (ctx: ExitContext<T, E>) => unknown;
+export type LifecycleFn<T = unknown, E = unknown> = EnterFn | ExitFn<T, E>;
 
 /** Widened hook for {@link builders.defer} where enclosing `Op` `T`/`E` are not inferred. */
 export type AnyExitFn = ExitFn<unknown, unknown>;
@@ -44,16 +51,23 @@ export interface WithSignal<T, E, A extends readonly unknown[]> {
 
 export type ReleaseFn<T> = (value: T) => unknown;
 
-/** Lifecycle channels exposed by {@link Op}. Today only `"exit"` is supported; more may be added later. */
-export type OpLifecycleHook = "exit";
+/** Lifecycle channels exposed by {@link Op}. */
+export type OpLifecycleHook = "enter" | "exit";
 
 export interface WithRelease<T, E, A extends readonly unknown[]> {
   withRelease(release: ReleaseFn<T>): Op<T, E, A>;
 }
 
 export interface WithLifecycleHooks<T, E, A extends readonly unknown[]> {
-  /** Registers a lifecycle handler. `"exit"` runs when the run unwinds (success, failure, cancel). Receives {@link ExitContext} with the same `result` `.run()` returns. Chaining stacks handlers in LIFO order with `Op.defer` / `.withRelease` on the same run. */
-  on(event: OpLifecycleHook, finalize: ExitFn<T, E>): Op<T, E, A>;
+  /**
+   * Registers a lifecycle handler.
+   *
+   * - `"enter"` runs when this op wrapper starts a run. Handlers stack by wrapper depth (last chained runs first).
+   * - `"exit"` runs when the run unwinds (success, failure, cancel), receiving the same {@link Result}
+   *   instance `.run()` returns for that settle.
+   */
+  on(event: "enter", initialize: EnterFn): Op<T, E, A>;
+  on(event: "exit", finalize: ExitFn<T, E>): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
@@ -145,6 +159,8 @@ export interface OpHooks<T, E> {
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, []>;
   withSignal: (signal: AbortSignal) => Op<T, E, []>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, []>;
+  /** Backs public `.on("enter", fn)` on ops built from these hooks. */
+  registerEnterInitialize: (initialize: EnterFn) => Op<T, E, []>;
   /** Backs public `.on("exit", fn)` on ops built from these hooks. */
   registerExitFinalize: (finalize: ExitFn<T, E>) => Op<T, E, []>;
 }

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `src/test-utils.ts` to centralize shared integration-test helpers
   (`deferred`, abort-listener tracking, async timing helpers, and invalid
   concurrency fixtures) so new test files can reuse one source of truth.
+- Added an `enter` lifecycle hook (`.on("enter", ...)`) so runs can attach
+  setup side effects at run start without threading setup through call sites,
+  with documented ordering/composition behavior and integration/type coverage.
 - Added focused `core` runtime unit coverage for `drive` internals (signal
   handoff, instruction validation, finalizer LIFO ordering, and cleanup-fault
   precedence), plus direct tests for internal helper/type-guard behavior.

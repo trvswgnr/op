@@ -19,6 +19,7 @@ function makeRuntimeOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): 
     withTimeout: (_timeoutMs: number) => op,
     withSignal: (_signal: AbortSignal) => op,
     withRelease: (_release) => op,
+    registerEnterInitialize: (_initialize) => op,
     registerExitFinalize: (_finalize) => op,
   });
   return op;

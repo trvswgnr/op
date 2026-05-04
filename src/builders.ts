@@ -27,6 +27,7 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
       withRelease: (release) => withReleaseOp(op, release),
+      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
       registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
@@ -47,6 +48,7 @@ export function fail<E>(value: E): Op<never, E, []> {
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
       withRelease: (release) => withReleaseOp(op, release),
+      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
       registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
@@ -71,6 +73,7 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
       withRelease: (release) => withReleaseOp(op, release),
+      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
       registerExitFinalize: (nextFinalize) => onExitOp(op, nextFinalize),
     },
   );
@@ -103,6 +106,7 @@ export function _try<T, E = UnhandledException>(
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
       withRelease: (release) => withReleaseOp(op, release),
+      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
       registerExitFinalize: (finalize) => onExitOp(op, finalize),
     },
   );
@@ -136,6 +140,7 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
       withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal) => withSignalOp(bound, signal),
       withRelease: (release) => withReleaseOp(bound, release),
+      registerEnterInitialize: (initialize) => onOp(bound, "enter", initialize),
       registerExitFinalize: (finalize) => onExitOp(bound, finalize),
     });
     return bound;

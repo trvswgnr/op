@@ -121,8 +121,8 @@ const risky = Op(function* () {
 
 `Op.defer` is only meaningful inside an `Op(function* () { ... })` body (compose with `yield*`).
 For releasing the **success value** of a single op, `.withRelease` on that op is often clearer.
-For unconditional finalization at op boundaries, `.on("exit", fn)` fits, with the same finalizer stack and the
-same rules when a cleanup callback throws.
+For lifecycle hooks at op boundaries, `.on("enter", fn)` runs setup when a wrapper starts and
+`.on("exit", fn)` runs teardown when the run unwinds.
 
 ### `Op.try(f, onError?)`
 
@@ -374,6 +374,25 @@ Registers unconditional finalization when the enclosing run settles (success or 
 ```ts
 const result = await doWork.on("exit", (ctx) => telemetry.record(ctx)).run();
 ```
+
+### `.on("enter", initialize)`
+
+Registers run-start initialization before the wrapped op body is driven. `initialize(ctx)`
+receives `EnterContext` with the run `signal`.
+
+```ts
+const result = await doWork
+  .on("enter", ({ signal }) => telemetry.startSpan({ aborted: signal.aborted }))
+  .on("exit", (ctx) => telemetry.finishSpan(ctx.result))
+  .run();
+```
+
+Ordering/composition rules:
+
+- Enter handlers run in wrapper order (last chained runs first).
+- Exit handlers keep the current unwind ordering.
+- Enter handlers run once per wrapper run; retry attempts happen inside that wrapper regardless
+  of whether `.withRetry(...)` is chained before or after `.on("enter", fn)`.
 
 ## Typed errors
 

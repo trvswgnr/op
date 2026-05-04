@@ -2,7 +2,7 @@ import { ErrorGroup, UnhandledException } from "./errors.js";
 import { type Instruction, type Op, type ExitFn, type ReleaseFn } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
-import { onExitOp, withReleaseOp } from "./core/arity-ops.js";
+import { onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
 import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
 import { Err, Ok, Result } from "./result.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
@@ -17,6 +17,7 @@ function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>
     withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
     withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
+    registerEnterInitialize: (initialize) => onOp(self, "enter", initialize),
     registerExitFinalize: (finalize: ExitFn<T, E>) => onExitOp(self, finalize),
   });
   return self;
