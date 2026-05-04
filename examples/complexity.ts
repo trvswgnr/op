@@ -22,9 +22,11 @@ import { TaggedError } from "better-result";
   }
 }
 
+/*
 // with Effect - error handling
-// const getTodo = (id: number): Effect.Effect<unknown, HttpClientError> =>
-//   httpClient.get(`/todos/${id}`).pipe(Effect.andThen((response) => response.json));
+const getTodo = (id: number): Effect.Effect<unknown, HttpClientError> =>
+  httpClient.get(`/todos/${id}`).pipe(Effect.andThen((response) => response.json));
+*/
 
 {
   // with Op - error handling
@@ -84,15 +86,17 @@ import { TaggedError } from "better-result";
   }
 }
 
+/*
 // with Effect - error handling + retry
-// const getTodo = (id: number): Effect.Effect<unknown, HttpClientError> =>
-//   httpClient.get(`/todos/${id}`).pipe(
-//     Effect.andThen((response) => response.json),
-//     Effect.retry({
-//       schedule: Schedule.exponential(1000),
-//       times: 3,
-//     }),
-//   );
+const getTodo = (id: number): Effect.Effect<unknown, HttpClientError> =>
+  httpClient.get(`/todos/${id}`).pipe(
+    Effect.andThen((response) => response.json),
+    Effect.retry({
+      schedule: Schedule.exponential(1000),
+      times: 3,
+    }),
+  );
+*/
 
 {
   // with Op - error handling + retry
@@ -181,16 +185,18 @@ import { TaggedError } from "better-result";
   }
 }
 
+/*
 // with Effect - error handling + retry + interruption
-// const getTodo = (id: number): Effect.Effect<unknown, HttpClientError | TimeoutException> =>
-//   httpClient.get(`/todos/${id}`).pipe(
-//     Effect.andThen((response) => response.json),
-//     Effect.timeout("1 second"),
-//     Effect.retry({
-//       schedule: Schedule.exponential(1000),
-//       times: 3,
-//     }),
-//   );
+const getTodo = (id: number): Effect.Effect<unknown, HttpClientError | TimeoutException> =>
+  httpClient.get(`/todos/${id}`).pipe(
+    Effect.andThen((response) => response.json),
+    Effect.timeout("1 second"),
+    Effect.retry({
+      schedule: Schedule.exponential(1000),
+      times: 3,
+    }),
+  );
+*/
 
 {
   // with Op - error handling + retry + interruption
@@ -212,7 +218,6 @@ import { TaggedError } from "better-result";
   });
 
   {
-    // simple, just
     const result = await getTodo
       .withTimeout(1000)
       .withRetry({
