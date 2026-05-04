@@ -27,9 +27,9 @@ operation model.
 
 `@prodkit/op` pairs naturally with `better-result` and declares it as a peer dependency.
 
-<sup><sub>If your package manager does not auto-install peers, install it explicitly:
+<sub>If your package manager does not auto-install peers, install it explicitly:
 `npm i better-result`.
-Import `Result`/`TaggedError`/`UnhandledException` directly from `better-result`.</sub></sup>
+Import `Result`/`TaggedError`/`UnhandledException` directly from `better-result`.</sub>
 
 ## Quick start
 
