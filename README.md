@@ -25,10 +25,16 @@ For Node consumers specifically, this package is tested on Node `24.14.0`.
 This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
 operation model.
 
+`@prodkit/op` pairs naturally with `better-result` and declares it as a peer dependency.
+<small>If your package manager does not auto-install peers, install it explicitly:
+`npm i better-result`.
+Import `Result`/`TaggedError`/`UnhandledException` directly from `better-result`.</small>
+
 ## Quick start
 
 ```ts
-import { Op, TaggedError } from "@prodkit/op";
+import { Op } from "@prodkit/op";
+import { TaggedError } from "better-result";
 
 class DivisionByZeroError extends TaggedError("DivisionByZeroError")() {}
 
@@ -323,7 +329,8 @@ Use `TaggedError("Name")` for discriminated domain errors that still behave like
 You can fail with one directly with `yield* new MyError()` inside an op.
 
 ```ts
-import { TaggedError, Op } from "@prodkit/op";
+import { Op } from "@prodkit/op";
+import { TaggedError } from "better-result";
 
 class ValidationError extends TaggedError("ValidationError")<{
   field: string;
