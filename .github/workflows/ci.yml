@@ -35,5 +35,8 @@ jobs:
       - name: Install scripts dependencies
         run: npm ci --prefix scripts
 
+      - name: Install benchmarks dependencies
+        run: npm ci --prefix benchmarks
+
       - name: Run project quality gate
         run: npm run check
