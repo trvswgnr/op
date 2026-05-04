@@ -1,10 +1,22 @@
 import { UnhandledException } from "./errors.js";
-import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { TrackedErr, type AnyExitFn, type Instruction, type Op } from "./core/types.js";
+import { makeFluentArityOp, onOp } from "./core/arity-ops.js";
+import {
+  TrackedErr,
+  type AnyExitFn,
+  type Instruction,
+  type Op,
+  type OpArity,
+} from "./core/types.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
-import { makeNullaryOp } from "./core/nullary-ops.js";
+import {
+  makeNullaryOp,
+  onEnterNullaryOp,
+  onExitNullaryOp,
+  withCleanupNullaryOp,
+} from "./core/nullary-ops.js";
+import { cast } from "./shared.js";
 
 function isAwaited<T>(value: T | Promise<T>): value is Awaited<T> {
   return !(value instanceof Promise);
@@ -26,9 +38,9 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withReleaseOp(op, release),
-      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
-      registerExitFinalize: (finalize) => onExitOp(op, finalize),
+      withRelease: (release) => withCleanupNullaryOp(op, release),
+      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
+      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
     },
   );
 
@@ -47,9 +59,9 @@ export function fail<E>(value: E): Op<never, E, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withReleaseOp(op, release),
-      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
-      registerExitFinalize: (finalize) => onExitOp(op, finalize),
+      withRelease: (release) => withCleanupNullaryOp(op, release),
+      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
+      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
     },
   );
 
@@ -72,9 +84,9 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withReleaseOp(op, release),
-      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
-      registerExitFinalize: (nextFinalize) => onExitOp(op, nextFinalize),
+      withRelease: (release) => withCleanupNullaryOp(op, release),
+      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
+      registerExitFinalize: (nextFinalize) => onExitNullaryOp(op, nextFinalize),
     },
   );
   return op;
@@ -89,14 +101,16 @@ export function _try<T, E = UnhandledException>(
 ): Op<Awaited<T>, TrackedErr<E>, []> {
   const op: Op<Awaited<T>, TrackedErr<E>, []> = makeNullaryOp(
     function* () {
-      const result = (yield new SuspendInstruction((signal: AbortSignal) =>
-        Promise.resolve()
-          .then(() => f(signal))
-          .then(
-            (a) => Result.ok(a),
-            (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
-          ),
-      )) as Result<T, E>;
+      const result: Result<T, E> = cast(
+        yield new SuspendInstruction((signal: AbortSignal) =>
+          Promise.resolve()
+            .then(() => f(signal))
+            .then(
+              (a) => Result.ok(a),
+              (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
+            ),
+        ),
+      );
 
       if (result.isErr()) return yield* result;
       return result.value as Awaited<T>;
@@ -105,9 +119,9 @@ export function _try<T, E = UnhandledException>(
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withReleaseOp(op, release),
-      registerEnterInitialize: (initialize) => onOp(op, "enter", initialize),
-      registerExitFinalize: (finalize) => onExitOp(op, finalize),
+      withRelease: (release) => withCleanupNullaryOp(op, release),
+      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
+      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
     },
   );
   return op;
@@ -115,12 +129,13 @@ export function _try<T, E = UnhandledException>(
 
 function makeArityOp<T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
-): Op<T, E, A> {
+): OpArity<T, E, A> {
   return makeFluentArityOp(invoke, (self) => ({
     withRetry: (policy) => makeArityOp((...args) => withRetryOp(invoke(...args), policy)),
     withTimeout: (timeoutMs) => makeArityOp((...args) => withTimeoutOp(invoke(...args), timeoutMs)),
     withSignal: (signal) => makeArityOp((...args) => withSignalOp(invoke(...args), signal)),
-    withRelease: (release) => makeArityOp((...args) => withReleaseOp(invoke(...args), release)),
+    withRelease: (release) =>
+      makeArityOp((...args) => withCleanupNullaryOp(invoke(...args), release)),
     on: (event, handler) => onOp(self, event, handler),
   }));
 }
@@ -134,16 +149,18 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   // we are intentionally always returning the arity wrapper shape, including for `A = []` generators
   // this keeps arity/nullary classification deterministic via explicit op kind metadata
   // instead of runtime function reflection or shape guessing in correctness paths
-  return makeArityOp((...args: A) => {
-    // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast.
-    const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(() => f(...args) as never, {
+  const op = makeArityOp((...args: A) => {
+    // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast
+    const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(() => cast<never>(f(...args)), {
       withRetry: (policy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal) => withSignalOp(bound, signal),
-      withRelease: (release) => withReleaseOp(bound, release),
-      registerEnterInitialize: (initialize) => onOp(bound, "enter", initialize),
-      registerExitFinalize: (finalize) => onExitOp(bound, finalize),
+      withRelease: (release) => withCleanupNullaryOp(bound, release),
+      registerEnterInitialize: (initialize) => onEnterNullaryOp(bound, initialize),
+      registerExitFinalize: (finalize) => onExitNullaryOp(bound, finalize),
     });
     return bound;
   });
+  // SAFETY: `makeArityOp` returns an OpArity<T, E, A>, so we need to cast it to an Op<T, E, A>
+  return cast(op);
 }

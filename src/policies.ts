@@ -1,10 +1,17 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
-import { makeFluentArityOp, onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { TrackedErr, type Instruction, type Op } from "./core/types.js";
+import { asArityOp, makeFluentArityOp, onOp, withReleaseOp } from "./core/arity-ops.js";
+import { TrackedErr, type Instruction, type Op, type OpArity } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
-import { isNullaryOp, makeNullaryOp } from "./core/nullary-ops.js";
+import {
+  isNullaryOp,
+  makeNullaryOp,
+  onEnterNullaryOp,
+  onExitNullaryOp,
+  withCleanupNullaryOp,
+} from "./core/nullary-ops.js";
+import { cast } from "./shared.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {
@@ -74,26 +81,42 @@ export const DEFAULT_RETRY_POLICY = Object.freeze({
   getDelay: exponentialBackoff.DEFAULT,
 }) satisfies RetryPolicy;
 
+function mapArityFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
+  source: OpArity<T, EIn, A>,
+  mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
+): OpArity<T, EOut, A> {
+  return makeFluentArityOp(
+    (...args: A) => mapNullary(source(...args)),
+    (self) => ({
+      withRetry: (policy) => mapArityFluentOp(asArityOp(source.withRetry(policy)), mapNullary),
+      withTimeout: (timeoutMs) =>
+        mapArityFluentOp(
+          asArityOp(
+            // SAFETY: `withTimeout` widens the source error to `EIn | TimeoutError`, but this
+            // mapper is polymorphic over the error channel and forwards whatever union it receives.
+            // The cast narrows only for TS so we can reuse the same fluent mapper pipeline.
+            cast(source.withTimeout(timeoutMs)),
+          ),
+          mapNullary,
+        ),
+      withSignal: (signal) => mapArityFluentOp(asArityOp(source.withSignal(signal)), mapNullary),
+      withRelease: (release) => withReleaseOp(self, release),
+      on: (event, finalize) => onOp(self, event, finalize),
+    }),
+  );
+}
+
 function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
   op: Op<T, EIn, A>,
   mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
 ): Op<T, EOut, A> {
   if (isNullaryOp(op)) {
-    // TS cannot express that `[] extends A` may collapse to the nullary branch here
+    // SAFETY: TS cannot express that `[] extends A` may collapse to the nullary branch here
     // Runtime behavior is correct: nullary input remains nullary after mapping
-    return mapNullary(op) as unknown as Op<T, EOut, A>;
+    return cast(mapNullary(op));
   }
 
-  return makeFluentArityOp(
-    (...args: A) => mapNullary(op(...args)),
-    (self) => ({
-      withRetry: (policy) => withRetryOp(self, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
-      withSignal: (signal) => withSignalOp(self, signal),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
+  return cast(mapArityFluentOp(op, mapNullary));
 }
 
 function makePolicyNullaryOp<T, E>(
@@ -103,9 +126,9 @@ function makePolicyNullaryOp<T, E>(
     withRetry: (policy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),
-    withRelease: (release) => withReleaseOp(self, release),
-    registerEnterInitialize: (initialize) => onOp(self, "enter", initialize),
-    registerExitFinalize: (finalize) => onExitOp(self, finalize),
+    withRelease: (release) => withCleanupNullaryOp(self, release),
+    registerEnterInitialize: (initialize) => onEnterNullaryOp(self, initialize),
+    registerExitFinalize: (finalize) => onExitNullaryOp(self, finalize),
   });
 
   return self;
@@ -149,9 +172,12 @@ function withRetryNullaryOp<T, E>(
     let attempt = 1;
 
     while (true) {
-      const attemptStep = (yield new SuspendInstruction((signal: AbortSignal) =>
-        drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
-      )) as { result: Result<T, E | UnhandledException>; aborted: boolean };
+      type AttemptStep = { result: Result<T, E | UnhandledException>; aborted: boolean };
+      const attemptStep: AttemptStep = cast(
+        yield new SuspendInstruction((signal: AbortSignal) =>
+          drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
+        ),
+      );
 
       const result = attemptStep.result;
 
@@ -167,8 +193,10 @@ function withRetryNullaryOp<T, E>(
 
       const delayMs = Math.max(0, policy.getDelay(attempt, error));
       if (delayMs > 0) {
-        const delayAborted = yield new SuspendInstruction((signal: AbortSignal) =>
-          abortableDelay(delayMs, signal).then(() => signal.aborted),
+        const delayAborted: boolean = cast(
+          yield new SuspendInstruction((signal: AbortSignal) =>
+            abortableDelay(delayMs, signal).then(() => signal.aborted),
+          ),
         );
 
         if (delayAborted) return yield* result;
@@ -192,9 +220,11 @@ function withTimeoutNullaryOp<T, E>(
   const clampedTimeoutMs = Math.max(0, timeoutMs);
 
   return makePolicyNullaryOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
-      raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
-    )) as Result<T, E | UnhandledException | TimeoutError>;
+    const result: Result<T, E | UnhandledException | TimeoutError> = cast(
+      yield new SuspendInstruction((outerSignal: AbortSignal) =>
+        raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
+      ),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;
@@ -208,9 +238,11 @@ function withTimeoutNullaryOp<T, E>(
  */
 function withSignalNullaryOp<T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> {
   return makePolicyNullaryOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal: AbortSignal) =>
-      runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-    )) as Result<T, E | UnhandledException>;
+    const result: Result<T, E | UnhandledException> = cast(
+      yield new SuspendInstruction((outerSignal: AbortSignal) =>
+        runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
+      ),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;

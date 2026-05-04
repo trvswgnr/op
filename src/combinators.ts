@@ -1,11 +1,16 @@
 import { ErrorGroup, UnhandledException } from "./errors.js";
-import { type Instruction, type Op, type ExitFn, type ReleaseFn } from "./core/types.js";
+import { type Instruction, type Op } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
-import { onExitOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { withRetryOp, withTimeoutOp, withSignalOp, type RetryPolicy } from "./policies.js";
+import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Err, Ok, Result } from "./result.js";
-import { makeNullaryOp } from "./core/nullary-ops.js";
+import {
+  makeNullaryOp,
+  onEnterNullaryOp,
+  onExitNullaryOp,
+  withCleanupNullaryOp,
+} from "./core/nullary-ops.js";
+import { cast } from "./shared.js";
 
 type AnyNullaryOp = Op<unknown, unknown, []>;
 type InferOpOk<O> = O extends Op<infer T, unknown, []> ? T : never;
@@ -13,12 +18,12 @@ type InferOpErr<O> = O extends Op<unknown, infer E, []> ? E : never;
 
 function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const self: Op<T, E, []> = makeNullaryOp(gen, {
-    withRetry: (policy?: RetryPolicy) => withRetryOp(self, policy),
-    withTimeout: (timeoutMs: number) => withTimeoutOp(self, timeoutMs),
-    withSignal: (signal: AbortSignal) => withSignalOp(self, signal),
-    withRelease: (release: ReleaseFn<T>) => withReleaseOp(self, release),
-    registerEnterInitialize: (initialize) => onOp(self, "enter", initialize),
-    registerExitFinalize: (finalize: ExitFn<T, E>) => onExitOp(self, finalize),
+    withRetry: (policy?) => withRetryOp(self, policy),
+    withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
+    withSignal: (signal) => withSignalOp(self, signal),
+    withRelease: (release) => withCleanupNullaryOp(self, release),
+    registerEnterInitialize: (initialize) => onEnterNullaryOp(self, initialize),
+    registerExitFinalize: (finalize) => onExitNullaryOp(self, finalize),
   });
   return self;
 }
@@ -73,9 +78,9 @@ export function allOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal) =>
-      driveAll(snapshot, outerSignal, concurrency),
-    )) as Result<AllOpOk<Ops>, AllOpErr<Ops>>;
+    const result: Result<AllOpOk<Ops>, AllOpErr<Ops>> = cast(
+      yield new SuspendInstruction((outerSignal) => driveAll(snapshot, outerSignal, concurrency)),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;
@@ -132,6 +137,7 @@ async function driveAll<T, E>(
       }
     }
   };
+
   const promises = Array(limit.value)
     .fill(undefined)
     .map(() => worker());
@@ -189,9 +195,11 @@ export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal) =>
-      driveAllSettled(snapshot, outerSignal, concurrency),
-    )) as Result<AllSettledOpOk<Ops>, never>;
+    const result: Result<AllSettledOpOk<Ops>, never> = cast(
+      yield new SuspendInstruction((outerSignal) =>
+        driveAllSettled(snapshot, outerSignal, concurrency),
+      ),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;
@@ -200,7 +208,7 @@ export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
 
 export function settleOp<T, E>(op: Op<T, E, []>): Op<Result<T, E>, never, []> {
   return makeCombinatorOp(function* () {
-    return (yield new SuspendInstruction((outerSignal) => drive(op, outerSignal))) as Result<T, E>;
+    return cast(yield new SuspendInstruction((outerSignal) => drive(op, outerSignal)));
   });
 }
 
@@ -280,9 +288,9 @@ export function anyOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal) =>
-      driveAny(snapshot, outerSignal),
-    )) as Result<AnyOpOk<Ops>, AnyOpErr<Ops>>;
+    const result: Result<AnyOpOk<Ops>, AnyOpErr<Ops>> = cast(
+      yield new SuspendInstruction((outerSignal) => driveAny(snapshot, outerSignal)),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;
@@ -317,7 +325,7 @@ async function driveAny<T, E>(
     fan.runs.map((p, i) =>
       p.then((res) => {
         if (res.isOk() && winner === undefined) {
-          winner = res as Ok<T>;
+          winner = cast(res); // SAFETY: we know res is Ok
           fan.controllers.forEach((c, j) => {
             if (j !== i) c.abort();
           });
@@ -342,9 +350,9 @@ export function raceOp<const Ops extends readonly AnyNullaryOp[]>(
 ): Op<RaceOpOk<Ops>, RaceOpErr<Ops>, []> {
   const snapshot = ops.slice();
   return makeCombinatorOp(function* () {
-    const result = (yield new SuspendInstruction((outerSignal) =>
-      driveRace(snapshot, outerSignal),
-    )) as Result<RaceOpOk<Ops>, RaceOpErr<Ops>>;
+    const result: Result<RaceOpOk<Ops>, RaceOpErr<Ops>> = cast(
+      yield new SuspendInstruction((outerSignal) => driveRace(snapshot, outerSignal)),
+    );
 
     if (result.isErr()) return yield* result;
     return result.value;

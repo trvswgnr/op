@@ -15,7 +15,6 @@ import type {
 import { drive } from "./runtime.js";
 import {
   flatMapNullaryOp,
-  isNullaryOp,
   mapErrNullaryOp,
   mapNullaryOp,
   onEnterNullaryOp,
@@ -25,34 +24,37 @@ import {
   tapNullaryOp,
   withCleanupNullaryOp,
 } from "./nullary-ops.js";
+import { cast } from "../shared.js";
 
 export interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
-  withRetry: (policy?: RetryPolicy) => Op<T, E, A>;
-  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, A>;
-  withSignal: (signal: AbortSignal) => Op<T, E, A>;
-  withRelease: (release: ReleaseFn<T>) => Op<T, E, A>;
-  on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, A>) => Op<T, E, A>;
+  withRetry: (policy?: RetryPolicy) => OpArity<T, E, A>;
+  withTimeout: (timeoutMs: number) => OpArity<T, E | TimeoutError, A>;
+  withSignal: (signal: AbortSignal) => OpArity<T, E, A>;
+  withRelease: (release: ReleaseFn<T>) => OpArity<T, E, A>;
+  on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, A>) => OpArity<T, E, A>;
 }
 
 /**
- * Casts an unknown value to a given type
+ * Casts an Op to an OpArity
  *
- * @warning This function is UNSAFE and should be used only be used when the
- * type is known to be correct. Every call site for this function should be
- * accompanied by a comment explaining why it is absolutely necessary.
+ * TypeScript cannot preserve the full callable+fluent intersection through some
+ * generic transforms (for example `Object.assign` + tuple-parameterized call signatures).
+ * This cast re-attaches the known arity shape after those transforms.
+ *
+ * @warning This function is UNSAFE and should be used only when the type is known to be correct
  */
-function __unsafe__cast<T>(value: unknown): T {
-  return value as T;
+export function asArityOp<T, E, A extends readonly unknown[]>(op: Op<T, E, A>): OpArity<T, E, A> {
+  return cast(op);
 }
 
 export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
-  makeHandlers: (self: Op<T, E, A>) => FluentArityHandlers<T, E, A>,
-): Op<T, E, A> {
-  // TS cannot represent a callable value that is also this exact fluent object shape
-  // without losing the tuple-arg generic `A`; we coerce once at construction to preserve
-  // the runtime-correct shape that `drive` and all fluent helpers rely on
-  const self: Op<T, E, A> = __unsafe__cast(
+  makeHandlers: (self: OpArity<T, E, A>) => FluentArityHandlers<T, E, A>,
+): OpArity<T, E, A> {
+  // SAFETY: `invoke` already has the runtime call signature `(...args: A) => Op<T, E, []>`.
+  // `Object.assign` only decorates that function object with fluent handlers, so this
+  // cast restores the intended callable+methods intersection that TS cannot infer.
+  const self: OpArity<T, E, A> = cast(
     Object.assign(invoke, {
       run: (...args: A) => drive(invoke(...args), new AbortController().signal),
       withRetry: (policy?: RetryPolicy) => makeHandlers(self).withRetry(policy),
@@ -75,21 +77,14 @@ export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
 }
 
 export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
-  op: Op<TIn, EIn, A>,
+  op: OpArity<TIn, EIn, A>,
   mapNullary: (resolved: Op<TIn, EIn, []>) => Op<TOut, EOut, []>,
   makeHandlers: (
     source: OpArity<TIn, EIn, A>,
-    self: Op<TOut, EOut, A>,
+    self: OpArity<TOut, EOut, A>,
   ) => FluentArityHandlers<TOut, EOut, A>,
-): Op<TOut, EOut, A> {
-  if (isNullaryOp(op)) {
-    // TS cannot refine generic `A` to `[]` from this runtime check, even though nullary
-    // ops are guaranteed to satisfy that branch. We cast to preserve the caller's `A`
-    return __unsafe__cast(mapNullary(__unsafe__cast(op)));
-  }
-
-  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
-  const source: OpArity<TIn, EIn, A> = __unsafe__cast(op);
+): OpArity<TOut, EOut, A> {
+  const source = op;
   return makeFluentArityOp(
     (...args) => mapNullary(source(...args)),
     (self) => makeHandlers(source, self),
@@ -97,17 +92,10 @@ export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
 }
 
 export function onExitOp<T, E, A extends readonly unknown[]>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   finalize: ExitFn<T, E, A>,
-): Op<T, E, A> {
-  if (isNullaryOp(op)) {
-    const source: Op<T, E, []> = __unsafe__cast(op);
-    // Nullary branch has no runtime args; adapt generic `A` to the concrete nullary tuple
-    return __unsafe__cast(onExitNullaryOp(source, __unsafe__cast(finalize)));
-  }
-
-  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
-  const source: OpArity<T, E, A> = __unsafe__cast(op);
+): OpArity<T, E, A> {
+  const source = op;
   return makeFluentArityOp(
     (...args) =>
       onExitNullaryOp(source(...args), (ctx) =>
@@ -118,9 +106,14 @@ export function onExitOp<T, E, A extends readonly unknown[]>(
         }),
       ),
     (self) => ({
-      withRetry: (policy) => onExitOp(source.withRetry(policy), finalize),
-      withTimeout: (timeoutMs) => onExitOp(source.withTimeout(timeoutMs), __unsafe__cast(finalize)),
-      withSignal: (signal) => onExitOp(source.withSignal(signal), finalize),
+      withRetry: (policy) => onExitOp(asArityOp(source.withRetry(policy)), finalize),
+      withTimeout: (timeoutMs) =>
+        onExitOp(
+          asArityOp(source.withTimeout(timeoutMs)),
+          // SAFETY: `withTimeout` widens the error type to `E | TimeoutError`, so we need to cast the finalize function
+          cast(finalize),
+        ),
+      withSignal: (signal) => onExitOp(asArityOp(source.withSignal(signal)), finalize),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, hookFinalize) => onOp(self, event, hookFinalize),
     }),
@@ -128,17 +121,10 @@ export function onExitOp<T, E, A extends readonly unknown[]>(
 }
 
 export function onEnterOp<T, E, A extends readonly unknown[]>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   initialize: EnterFn<A>,
-): Op<T, E, A> {
-  if (isNullaryOp(op)) {
-    // SAFETY: there are too many casts here and we should try to find the root cause
-    const source: Op<T, E, []> = __unsafe__cast(op);
-    return __unsafe__cast(onEnterNullaryOp(source, __unsafe__cast(initialize)));
-  }
-
-  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
-  const source: OpArity<T, E, A> = __unsafe__cast(op);
+): OpArity<T, E, A> {
+  const source = op;
   return makeFluentArityOp(
     (...args) =>
       onEnterNullaryOp(source(...args), ({ signal }) =>
@@ -148,9 +134,9 @@ export function onEnterOp<T, E, A extends readonly unknown[]>(
         }),
       ),
     (self) => ({
-      withRetry: (policy) => onEnterOp(source.withRetry(policy), initialize),
-      withTimeout: (timeoutMs) => onEnterOp(source.withTimeout(timeoutMs), initialize),
-      withSignal: (signal) => onEnterOp(source.withSignal(signal), initialize),
+      withRetry: (policy) => onEnterOp(asArityOp(source.withRetry(policy)), initialize),
+      withTimeout: (timeoutMs) => onEnterOp(asArityOp(source.withTimeout(timeoutMs)), initialize),
+      withSignal: (signal) => onEnterOp(asArityOp(source.withSignal(signal)), initialize),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, handler) => onOp(self, event, handler),
     }),
@@ -158,18 +144,18 @@ export function onEnterOp<T, E, A extends readonly unknown[]>(
 }
 
 export function onOp<T, E, A extends readonly unknown[]>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   event: OpLifecycleHook,
   handler: LifecycleFn<T, E, A>,
-): Op<T, E, A> {
+): OpArity<T, E, A> {
   if (event === "enter") {
     // Discriminant narrows runtime event, but TS cannot narrow unioned function type parameterized by `A`.
-    return onEnterOp(op, handler as EnterFn<A>);
+    return onEnterOp(op, cast(handler));
   }
 
   if (event === "exit") {
     // Discriminant narrows runtime event, but TS cannot narrow unioned function type parameterized by `A`.
-    return onExitOp(op, handler as ExitFn<T, E, A>);
+    return onExitOp(op, cast(handler));
   }
 
   event satisfies never;
@@ -177,16 +163,16 @@ export function onOp<T, E, A extends readonly unknown[]>(
 }
 
 export function withReleaseOp<T, E, A extends readonly unknown[]>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   release: ReleaseFn<T>,
-): Op<T, E, A> {
+): OpArity<T, E, A> {
   return liftArityOp(
     op,
     (resolved) => withCleanupNullaryOp(resolved, release),
     (source, self) => ({
-      withRetry: (policy) => withReleaseOp(source.withRetry(policy), release),
-      withTimeout: (timeoutMs) => withReleaseOp(source.withTimeout(timeoutMs), release),
-      withSignal: (signal) => withReleaseOp(source.withSignal(signal), release),
+      withRetry: (policy) => withReleaseOp(asArityOp(source.withRetry(policy)), release),
+      withTimeout: (timeoutMs) => withReleaseOp(asArityOp(source.withTimeout(timeoutMs)), release),
+      withSignal: (signal) => withReleaseOp(asArityOp(source.withSignal(signal)), release),
       withRelease: (nextRelease) => withReleaseOp(self, nextRelease),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -194,16 +180,16 @@ export function withReleaseOp<T, E, A extends readonly unknown[]>(
 }
 
 export function mapOp<T, E, A extends readonly unknown[], U>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   transform: (value: T) => U,
-): Op<Awaited<U>, E, A> {
+): OpArity<Awaited<U>, E, A> {
   return liftArityOp(
     op,
     (resolved) => mapNullaryOp(resolved, transform),
     (source, self) => ({
-      withRetry: (policy) => mapOp(source.withRetry(policy), transform),
-      withTimeout: (timeoutMs) => mapOp(source.withTimeout(timeoutMs), transform),
-      withSignal: (signal) => mapOp(source.withSignal(signal), transform),
+      withRetry: (policy) => mapOp(asArityOp(source.withRetry(policy)), transform),
+      withTimeout: (timeoutMs) => mapOp(asArityOp(source.withTimeout(timeoutMs)), transform),
+      withSignal: (signal) => mapOp(asArityOp(source.withSignal(signal)), transform),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -211,19 +197,19 @@ export function mapOp<T, E, A extends readonly unknown[], U>(
 }
 
 export function mapErrOp<T, E, A extends readonly unknown[], E2>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   transform: (error: E) => E2,
-): Op<T, E2, A> {
+): OpArity<T, E2, A> {
   return liftArityOp(
     op,
     (resolved) => mapErrNullaryOp(resolved, transform),
     (source, self) => ({
-      withRetry: (policy) => mapErrOp(source.withRetry(policy), transform),
+      withRetry: (policy) => mapErrOp(asArityOp(source.withRetry(policy)), transform),
       withTimeout: (timeoutMs) =>
-        mapErrOp(source.withTimeout(timeoutMs), (error) =>
+        mapErrOp(asArityOp(source.withTimeout(timeoutMs)), (error) =>
           error instanceof TimeoutError ? error : transform(error),
         ),
-      withSignal: (signal) => mapErrOp(source.withSignal(signal), transform),
+      withSignal: (signal) => mapErrOp(asArityOp(source.withSignal(signal)), transform),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -231,16 +217,16 @@ export function mapErrOp<T, E, A extends readonly unknown[], E2>(
 }
 
 export function flatMapOp<T, E, A extends readonly unknown[], U, E2>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   bind: (value: T) => Op<U, E2, []>,
-): Op<U, E | E2, A> {
+): OpArity<U, E | E2, A> {
   return liftArityOp(
     op,
     (resolved) => flatMapNullaryOp(resolved, bind),
     (source, self) => ({
-      withRetry: (policy) => flatMapOp(source.withRetry(policy), bind),
-      withTimeout: (timeoutMs) => flatMapOp(source.withTimeout(timeoutMs), bind),
-      withSignal: (signal) => flatMapOp(source.withSignal(signal), bind),
+      withRetry: (policy) => flatMapOp(asArityOp(source.withRetry(policy)), bind),
+      withTimeout: (timeoutMs) => flatMapOp(asArityOp(source.withTimeout(timeoutMs)), bind),
+      withSignal: (signal) => flatMapOp(asArityOp(source.withSignal(signal)), bind),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -248,16 +234,16 @@ export function flatMapOp<T, E, A extends readonly unknown[], U, E2>(
 }
 
 export function tapOp<T, E, A extends readonly unknown[], R>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   observe: (value: T) => R,
-): Op<T, E | InferNullaryOpErr<R>, A> {
+): OpArity<T, E | InferNullaryOpErr<R>, A> {
   return liftArityOp(
     op,
     (resolved) => tapNullaryOp(resolved, observe),
     (source, self) => ({
-      withRetry: (policy) => tapOp(source.withRetry(policy), observe),
-      withTimeout: (timeoutMs) => tapOp(source.withTimeout(timeoutMs), observe),
-      withSignal: (signal) => tapOp(source.withSignal(signal), observe),
+      withRetry: (policy) => tapOp(asArityOp(source.withRetry(policy)), observe),
+      withTimeout: (timeoutMs) => tapOp(asArityOp(source.withTimeout(timeoutMs)), observe),
+      withSignal: (signal) => tapOp(asArityOp(source.withSignal(signal)), observe),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -265,19 +251,19 @@ export function tapOp<T, E, A extends readonly unknown[], R>(
 }
 
 export function tapErrOp<T, E, A extends readonly unknown[], R>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   observe: (error: E) => R,
-): Op<T, E | InferNullaryOpErr<R>, A> {
+): OpArity<T, E | InferNullaryOpErr<R>, A> {
   return liftArityOp(
     op,
     (resolved) => tapErrNullaryOp(resolved, observe),
     (source, self) => ({
-      withRetry: (policy) => tapErrOp(source.withRetry(policy), observe),
+      withRetry: (policy) => tapErrOp(asArityOp(source.withRetry(policy)), observe),
       withTimeout: (timeoutMs) =>
-        tapErrOp(source.withTimeout(timeoutMs), (error) =>
+        tapErrOp(asArityOp(source.withTimeout(timeoutMs)), (error) =>
           TimeoutError.is(error) ? undefined : observe(error),
         ),
-      withSignal: (signal) => tapErrOp(source.withSignal(signal), observe),
+      withSignal: (signal) => tapErrOp(asArityOp(source.withSignal(signal)), observe),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
@@ -285,22 +271,24 @@ export function tapErrOp<T, E, A extends readonly unknown[], R>(
 }
 
 export function recoverOp<T, E, A extends readonly unknown[], R>(
-  op: Op<T, E, A>,
+  op: OpArity<T, E, A>,
   predicate: (error: E) => boolean,
   handler: (error: E) => R,
-): Op<T | RecoverValue<R>, E | RecoverError<R>, A> {
+): OpArity<T | RecoverValue<R>, E | RecoverError<R>, A> {
   return liftArityOp(
     op,
     (resolved) => recoverNullaryOp(resolved, predicate, handler),
     (source, self) => ({
-      withRetry: (policy) => recoverOp(source.withRetry(policy), predicate, handler),
+      withRetry: (policy) => recoverOp(asArityOp(source.withRetry(policy)), predicate, handler),
       withTimeout: (timeoutMs) =>
         recoverOp(
-          source.withTimeout(timeoutMs),
+          // SAFETY: `withTimeout` widens the error type to `E | TimeoutError`, so we need to cast the source op
+          // to the narrower error type `E` to match the handler type
+          cast(source.withTimeout(timeoutMs)),
           (error) => !TimeoutError.is(error) && predicate(error),
-          handler as (error: E | TimeoutError) => R,
+          handler,
         ),
-      withSignal: (signal) => recoverOp(source.withSignal(signal), predicate, handler),
+      withSignal: (signal) => recoverOp(asArityOp(source.withSignal(signal)), predicate, handler),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
