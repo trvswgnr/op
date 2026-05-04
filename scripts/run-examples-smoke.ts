@@ -5,8 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Op } from "@prodkit/op";
 import { TaggedError, matchError } from "better-result";
+import { createLogger } from "./utils.ts";
 
-const logger = console;
+const logger = createLogger(import.meta.url);
 
 /** Overrides {@link DEFAULT_SMOKE_TIMEOUT_MS}; must be a positive integer if set (milliseconds). */
 const SMOKE_TIMEOUT_MS_ENV = "OP_SMOKE_TIMEOUT_MS";
@@ -304,18 +305,15 @@ function normalizeExecCause(cause: unknown): {
   return { message: String(cause) };
 }
 
-function resolveSmokeTimeoutMs(raw: string | undefined): number {
-  if (raw === undefined || raw === "") return DEFAULT_SMOKE_TIMEOUT_MS;
+function parseSmokeTimeoutMs(raw: string | number | undefined, fallback: number): number {
+  if (raw === undefined || raw === "") return fallback;
   const parsedTimeoutMs = Number(raw);
   if (
     !Number.isFinite(parsedTimeoutMs) ||
     parsedTimeoutMs <= 0 ||
     !Number.isInteger(parsedTimeoutMs)
   ) {
-    logger.warn(
-      `${SMOKE_TIMEOUT_MS_ENV}="${raw}" ignored; using default ${DEFAULT_SMOKE_TIMEOUT_MS}ms`,
-    );
-    return DEFAULT_SMOKE_TIMEOUT_MS;
+    throw new Error(`Invalid timeout value: ${raw}`);
   }
   return parsedTimeoutMs;
 }
@@ -471,7 +469,7 @@ const installAndSmoke = Op(function* (
 });
 
 async function cleanupPackOutput(tarballPath: string) {
-  logger.info(`[smoke pack] cleaning up tarball: ${tarballPath}`);
+  logger.info(`pack - cleaning up tarball: ${tarballPath}`);
   await rm(tarballPath, { force: true });
 }
 
@@ -510,7 +508,7 @@ const installFromPack = Op(function* (repoRoot: string) {
 
 const installFromGithub = Op(function* (repoRoot: string, examplesDir: string) {
   const commitSha = yield* resolveUpstreamMainCommitSha(repoRoot);
-  logger.info(`[smoke github] resolved ${UPSTREAM_MAIN_REF} to ${commitSha}`);
+  logger.info(`github - resolved ${UPSTREAM_MAIN_REF} to ${commitSha}`);
   yield* installAndSmoke(
     examplesDir,
     `@prodkit/op@https://codeload.github.com/trvswgnr/op/tar.gz/${commitSha}`,
@@ -543,7 +541,7 @@ const smoke = Op(function* (rawMode: string | undefined) {
     yield* resetExamplesInstall(examplesDir);
   } else {
     logger.info(
-      `[smoke setup] preserving examples lockfile. Set ${SMOKE_RESET_EXAMPLES_ENV}=1 to force cleanup.`,
+      `setup - preserving examples lockfile. Set ${SMOKE_RESET_EXAMPLES_ENV}=1 to force cleanup.`,
     );
   }
 
@@ -582,14 +580,15 @@ async function main() {
   }
 
   process.on("exit", (code) => {
-    logger.warn(`[smoke] Process exiting with code ${code}`);
+    const method = code === 0 ? "info" : "warn";
+    logger[method](`Process exiting with code ${code}`);
     for (const [sig, handler] of handlers) {
       process.off(sig, handler);
     }
   });
 
   const smokeResult = await smoke
-    .withTimeout(resolveSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV]))
+    .withTimeout(parseSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV], DEFAULT_SMOKE_TIMEOUT_MS))
     .withSignal(controller.signal)
     .run(process.argv[2]);
 
@@ -598,12 +597,10 @@ async function main() {
     err: (error) => {
       matchError(error, {
         SmokeAbortedError: () => {
-          logger.warn("[smoke] Operation aborted");
+          logger.warn("Operation aborted");
         },
         SmokeExecError: (e) => {
-          logger.error(
-            `[smoke exec] ${formatSmokeExecInvocation(e.command, e.args)} (cwd: ${e.cwd})`,
-          );
+          logger.error(`exec - ${formatSmokeExecInvocation(e.command, e.args)} (cwd: ${e.cwd})`);
           logger.error(
             {
               message: e.cause.message,
@@ -615,16 +612,16 @@ async function main() {
             "Command failed",
           );
         },
-        SmokeRepoRootError: (e) => logger.error(`[smoke] ${e.message}`),
-        SmokePackOutputError: (e) => logger.error(`[smoke] ${e.message}`),
-        SmokeMissingDistError: (e) => logger.error(`[smoke] ${e.message}`),
-        SmokeSetupError: (e) => logger.error(`[smoke] ${e.message}`),
-        SmokeGithubRefResolveError: (e) => logger.error(`[smoke] ${e.message}`),
-        InvalidModeError: (e) => logger.error(`[smoke] ${e.message}`),
-        TimeoutError: (e) => logger.error(`[smoke] ${e.message}`),
+        SmokeRepoRootError: (e) => logger.error(`${e.message}`),
+        SmokePackOutputError: (e) => logger.error(`${e.message}`),
+        SmokeMissingDistError: (e) => logger.error(`${e.message}`),
+        SmokeSetupError: (e) => logger.error(`${e.message}`),
+        SmokeGithubRefResolveError: (e) => logger.error(`${e.message}`),
+        InvalidModeError: (e) => logger.error(`${e.message}`),
+        TimeoutError: (e) => logger.error(`${e.message}`),
         UnhandledException: (e) => logger.error(e),
       });
-      process.exit(process.exitCode);
+      process.exit(process.exitCode || 1);
     },
   });
 }
