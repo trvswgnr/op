@@ -222,8 +222,9 @@ describe("type inference contracts", () => {
     const onEnter = Op(function* (name: string) {
       return name.length;
     }).on("enter", (ctx) => {
-      expectTypeOf(ctx).toEqualTypeOf<EnterContext>();
+      expectTypeOf(ctx).toEqualTypeOf<EnterContext<[string]>>();
       expectTypeOf(ctx.signal).toEqualTypeOf<AbortSignal>();
+      expectTypeOf(ctx.args).toEqualTypeOf<[string]>();
     });
     expectTypeOf(onEnter).toEqualTypeOf<Op<number, never, [string]>>();
     expectTypeOf(onEnter.run).parameter(0).toEqualTypeOf<string>();
@@ -231,8 +232,9 @@ describe("type inference contracts", () => {
     const onExit = Op(function* (name: string) {
       return name.length;
     }).on("exit", (ctx) => {
-      expectTypeOf(ctx).toEqualTypeOf<ExitContext<number, never>>();
+      expectTypeOf(ctx).toEqualTypeOf<ExitContext<number, never, [string]>>();
       expectTypeOf(ctx.result).toEqualTypeOf<Result<number, UnhandledException>>();
+      expectTypeOf(ctx.args).toEqualTypeOf<[string]>();
     });
     expectTypeOf(onExit).toEqualTypeOf<Op<number, never, [string]>>();
     expectTypeOf(onExit.run).parameter(0).toEqualTypeOf<string>();

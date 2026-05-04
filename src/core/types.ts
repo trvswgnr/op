@@ -12,25 +12,34 @@ export type TrackedErr<E, Excluded = never> = E extends UnhandledException
     : E;
 
 /**
- * Passed to {@link ExitFn} when the run unwinds. `result` is the same {@link Result} instance `.run()` returns
- * for this settle (including {@link UnhandledException} on the error channel when relevant)
+ * Passed to {@link ExitFn} when the run unwinds.
+ *
+ * - `args` are the runtime inputs for this run
+ * - `result` is the same {@link Result} instance `.run()` returns for this settle
+ *   (including {@link UnhandledException} on the error channel when relevant)
  */
-export interface ExitContext<T, E> {
+export interface ExitContext<T, E, A extends readonly unknown[] = []> {
   readonly signal: AbortSignal;
+  readonly args: A;
   readonly result: Result<T, E | UnhandledException>;
 }
 
 /** Passed to {@link EnterFn} when a run starts, before the wrapped operation body begins. */
-export interface EnterContext {
+export interface EnterContext<A extends readonly unknown[] = []> {
   readonly signal: AbortSignal;
+  readonly args: A;
 }
 
-export type EnterFn = (ctx: EnterContext) => unknown;
-export type ExitFn<T = unknown, E = unknown> = (ctx: ExitContext<T, E>) => unknown;
-export type LifecycleFn<T = unknown, E = unknown> = EnterFn | ExitFn<T, E>;
+export type EnterFn<A extends readonly unknown[] = []> = (ctx: EnterContext<A>) => unknown;
+export type ExitFn<T = unknown, E = unknown, A extends readonly unknown[] = []> = (
+  ctx: ExitContext<T, E, A>,
+) => unknown;
+export type LifecycleFn<T = unknown, E = unknown, A extends readonly unknown[] = []> =
+  | EnterFn<A>
+  | ExitFn<T, E, A>;
 
 /** Widened hook for {@link builders.defer} where enclosing `Op` `T`/`E` are not inferred. */
-export type AnyExitFn = ExitFn<unknown, unknown>;
+export type AnyExitFn = ExitFn<unknown, unknown, readonly unknown[]>;
 
 export type Instruction<E> =
   | Err<unknown, E>
@@ -66,8 +75,8 @@ export interface WithLifecycleHooks<T, E, A extends readonly unknown[]> {
    * - `"exit"` runs when the run unwinds (success, failure, cancel), receiving the same {@link Result}
    *   instance `.run()` returns for that settle.
    */
-  on(event: "enter", initialize: EnterFn): Op<T, E, A>;
-  on(event: "exit", finalize: ExitFn<T, E>): Op<T, E, A>;
+  on(event: "enter", initialize: EnterFn<A>): Op<T, E, A>;
+  on(event: "exit", finalize: ExitFn<T, E, A>): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
@@ -160,7 +169,7 @@ export interface OpHooks<T, E> {
   withSignal: (signal: AbortSignal) => Op<T, E, []>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, []>;
   /** Backs public `.on("enter", fn)` on ops built from these hooks. */
-  registerEnterInitialize: (initialize: EnterFn) => Op<T, E, []>;
+  registerEnterInitialize: (initialize: EnterFn<[]>) => Op<T, E, []>;
   /** Backs public `.on("exit", fn)` on ops built from these hooks. */
-  registerExitFinalize: (finalize: ExitFn<T, E>) => Op<T, E, []>;
+  registerExitFinalize: (finalize: ExitFn<T, E, []>) => Op<T, E, []>;
 }

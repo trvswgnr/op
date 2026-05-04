@@ -34,8 +34,8 @@ export const Op = Object.assign(fromGenFn, {
  * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
  * `withRetry(policy)`, `withTimeout(ms)`, `withSignal(signal)`, `withRelease(release)`,
  * `.on("enter", initialize)`, `.on("exit", finalize)`, and `Op.defer(finalize)` inside generators.
- * Enter handlers receive {@link EnterContext}; exit handlers receive {@link ExitContext} with the same
- * `result` as `.run()`.
+ * Enter handlers receive {@link EnterContext} (`signal` + runtime `args`); exit handlers receive
+ * {@link ExitContext} (`signal` + runtime `args` + same `result` as `.run()`).
  *
  * @template T Value returned when the operation succeeds
  * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws)

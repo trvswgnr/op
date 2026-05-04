@@ -351,7 +351,7 @@ function assertOpFactory(input: unknown): {
   if (typeof op.of !== "function" || typeof op.try !== "function" || typeof op.all !== "function") {
     throw new Error("Imported Op is missing required methods (of/try/all).");
   }
-  return op as unknown as ReturnType<typeof assertOpFactory>;
+  return op as ReturnType<typeof assertOpFactory>;
 }
 
 async function runVariant(name: string, fn: () => Promise<unknown>): Promise<BenchmarkRecord> {

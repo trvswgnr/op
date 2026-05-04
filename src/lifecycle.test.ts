@@ -122,6 +122,7 @@ describe('op.on("enter")', () => {
     expect(result.value).toBe(123);
     expect(events).toEqual(["enter", "body"]);
     expect(seenCtx.signal).toBeInstanceOf(AbortSignal);
+    expect(seenCtx.args).toEqual([]);
   });
 
   test('.on("enter") runs before body when downstream fails', async () => {
@@ -222,6 +223,21 @@ describe('op.on("enter")', () => {
       vi.useRealTimers();
     }
   });
+
+  test('.on("enter") receives runtime args for arity ops', async () => {
+    let seenCtx!: EnterContext<[string, number]>;
+    const result = await Op(function* (name: string, retries: number) {
+      return `${name}:${retries}`;
+    })
+      .on("enter", (ctx) => {
+        seenCtx = ctx;
+      })
+      .run("cache", 3);
+
+    assert(result.isOk(), "should be Ok");
+    expect(result.value).toBe("cache:3");
+    expect(seenCtx.args).toEqual(["cache", 3]);
+  });
 });
 
 describe('op.on("exit")', () => {
@@ -291,6 +307,7 @@ describe('op.on("exit")', () => {
     assert(okCtx !== undefined);
     expect(okCtx.result).toBe(ok);
     expect(okCtx.signal.aborted).toBe(false);
+    expect(okCtx.args).toEqual([]);
 
     let typedCtx!: ExitContext<never, string>;
     const typedErr = await Op.fail("no")
@@ -301,6 +318,7 @@ describe('op.on("exit")', () => {
     assert(typedErr.isErr());
     assert(typedCtx !== undefined);
     expect(typedCtx.result).toBe(typedErr);
+    expect(typedCtx.args).toEqual([]);
 
     let throwCtx!: ExitContext<never, never>;
     const boom = new Error("sync");
@@ -315,6 +333,7 @@ describe('op.on("exit")', () => {
     assert(threw.isErr());
     expect(throwCtx).toBeDefined();
     expect(throwCtx.result).toBe(threw);
+    expect(throwCtx.args).toEqual([]);
   });
 
   test('.on("exit") ExitContext.result matches run after withTimeout', async () => {
@@ -333,10 +352,27 @@ describe('op.on("exit")', () => {
       assert(timed.isErr());
       expect(timedCtx).toBeDefined();
       expect(timedCtx.result).toBe(timed);
+      expect(timedCtx.args).toEqual([]);
       expect(timed.error).toBeInstanceOf(TimeoutError);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test('.on("exit") receives runtime args for arity ops', async () => {
+    let seenCtx!: ExitContext<number, never, [string]>;
+    const result = await Op(function* (name: string) {
+      return name.length;
+    })
+      .on("exit", (ctx) => {
+        seenCtx = ctx;
+      })
+      .run("gamma");
+
+    assert(result.isOk(), "should be Ok");
+    expect(result.value).toBe(5);
+    expect(seenCtx.args).toEqual(["gamma"]);
+    expect(seenCtx.result).toBe(result);
   });
 });
 

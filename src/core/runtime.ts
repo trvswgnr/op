@@ -52,7 +52,9 @@ export async function drive<T, E>(
   op: Op<T, E, []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
-  const finalizers: Array<(ctx: ExitContext<unknown, unknown>) => Promise<void>> = [];
+  const finalizers: Array<
+    (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>
+  > = [];
   const resumeSuspended = async (
     instruction: SuspendInstruction,
     iter: Iterator<Instruction<E>, T, unknown>,
@@ -66,7 +68,7 @@ export async function drive<T, E>(
   };
   /** Run every finalizer LIFO; collect faults from each (later-registered runs first; all still run even if one throws). */
   const runFinalizersSafely = async (
-    ctx: ExitContext<unknown, unknown>,
+    ctx: ExitContext<unknown, unknown, readonly unknown[]>,
   ): Promise<unknown | void> => {
     const faults: unknown[] = [];
     for (let index = finalizers.length - 1; index >= 0; index -= 1) {
@@ -94,7 +96,7 @@ export async function drive<T, E>(
     if (iter !== undefined) {
       closeGenerator(iter);
     }
-    const exitCtx: ExitContext<T, E> = { signal, result };
+    const exitCtx: ExitContext<T, E, []> = { signal, args: [], result };
     const cleanupFault = await runFinalizersSafely(exitCtx);
     if (cleanupFault !== undefined) {
       return Result.err(new UnhandledException({ cause: cleanupFault }));

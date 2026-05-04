@@ -23,6 +23,7 @@ import { runOp } from "./run-op.js";
 type InferNullaryOpErr<R> = R extends Op<unknown, infer E, []> ? E : never;
 type RecoverValue<R> = R extends Op<infer T, unknown, []> ? T : Awaited<R>;
 type RecoverError<R> = R extends Op<unknown, infer E, []> ? E : never;
+const EMPTY_ARGS: [] = [];
 
 export const NULLARY_OP_SYMBOL = Symbol("NullaryOp");
 
@@ -42,14 +43,16 @@ function conditionalPredicate<E>(pred: ((error: E) => boolean) | WithPredicateMe
 function dispatchLifecycleNullary<T, E>(
   hooks: OpHooks<T, E>,
   event: OpLifecycleHook,
-  handler: LifecycleFn<T, E>,
+  handler: LifecycleFn<T, E, []>,
 ): Op<T, E, []> {
   if (event === "enter") {
-    return hooks.registerEnterInitialize(handler as EnterFn);
+    // Discriminant narrows runtime event, but TS cannot narrow unioned function type through generic `event`.
+    return hooks.registerEnterInitialize(handler as EnterFn<[]>);
   }
 
   if (event === "exit") {
-    return hooks.registerExitFinalize(handler as ExitFn<T, E>);
+    // Discriminant narrows runtime event, but TS cannot narrow unioned function type through generic `event`.
+    return hooks.registerExitFinalize(handler as ExitFn<T, E, []>);
   }
 
   const _: never = event;
@@ -69,7 +72,7 @@ export function makeNullaryOp<T, E>(
     withTimeout: hooks.withTimeout,
     withSignal: hooks.withSignal,
     withRelease: hooks.withRelease,
-    on: (event: OpLifecycleHook, handler: LifecycleFn<T, E>) =>
+    on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, []>) =>
       dispatchLifecycleNullary(hooks, event, handler),
     map: <U>(transform: (value: T) => U) => mapOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
@@ -115,12 +118,13 @@ export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<
   );
 }
 
-export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn): Op<T, E, []> {
+export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
-      yield new SuspendInstruction((signal: AbortSignal) =>
-        Promise.resolve(initialize({ signal } as EnterContext)).then(() => {}),
-      );
+      yield new SuspendInstruction((signal: AbortSignal) => {
+        const enterCtx: EnterContext<[]> = { signal, args: EMPTY_ARGS };
+        return Promise.resolve(initialize(enterCtx)).then(() => {});
+      });
 
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
@@ -142,12 +146,18 @@ export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn): O
   );
 }
 
-export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>): Op<T, E, []> {
+export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, []>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
-      yield new RegisterExitFinalizerInstruction((ctx) =>
-        Promise.resolve(finalize(ctx as ExitContext<T, E>)).then(() => {}),
-      );
+      yield new RegisterExitFinalizerInstruction((ctx) => {
+        // Finalizer registry erases generic payloads to unknown; this restores the concrete op result types.
+        const exitCtx: ExitContext<T, E, []> = {
+          signal: ctx.signal,
+          result: ctx.result as Result<T, E | UnhandledException>,
+          args: EMPTY_ARGS,
+        };
+        return Promise.resolve(finalize(exitCtx)).then(() => {});
+      });
 
       const result = (yield new SuspendInstruction((signal: AbortSignal) =>
         drive(op, signal),
@@ -159,7 +169,7 @@ export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E>):
     {
       withRetry: (policy) => onExitNullaryOp(op.withRetry(policy), finalize),
       withTimeout: (timeoutMs) =>
-        onExitNullaryOp(op.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError>),
+        onExitNullaryOp(op.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError, []>),
       withSignal: (signal) => onExitNullaryOp(op.withSignal(signal), finalize),
       withRelease: (release) => withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
       registerEnterInitialize: (initialize) =>

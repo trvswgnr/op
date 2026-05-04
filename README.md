@@ -84,7 +84,7 @@ Creates an op that always fails with `error`.
 ### `Op.defer(finalize)`
 
 Registers cleanup for the **current** op run inside a generator. **`finalize(ctx)`** receives **`ExitContext`**:
-the run `AbortSignal` plus **`result`**: the same **`Result`** instance `.run()` returns for that settle (from `better-result`, so use `.isOk()` / `.isErr()` as usual).
+the run `AbortSignal`, runtime **`args`**, plus **`result`**: the same **`Result`** instance `.run()` returns for that settle (from `better-result`, so use `.isOk()` / `.isErr()` as usual).
 
 Deferred callbacks share one stack
 with `.withRelease` / `.on("exit", ...)`: they run in **LIFO** order when the run unwinds (success, typed
@@ -369,7 +369,7 @@ afterward in LIFO order; multiple faults become a **nested `Error.cause` chain**
 
 ### `.on("exit", finalize)`
 
-Registers unconditional finalization when the enclosing run settles (success or failure), on the same LIFO stack as `Op.defer` and `.withRelease`. **`finalize(ctx)`** receives **`ExitContext`** with the same **`ctx.result`** as `.run()` returns. If `finalize` throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a nested **`error.cause` chain** if several finalizers fault).
+Registers unconditional finalization when the enclosing run settles (success or failure), on the same LIFO stack as `Op.defer` and `.withRelease`. **`finalize(ctx)`** receives **`ExitContext`** with run `args` and the same **`ctx.result`** as `.run()` returns. If `finalize` throws, `.run()` fails with `UnhandledException` and `cause` set to that fault (or a nested **`error.cause` chain** if several finalizers fault).
 
 ```ts
 const result = await doWork.on("exit", (ctx) => telemetry.record(ctx)).run();
@@ -378,12 +378,14 @@ const result = await doWork.on("exit", (ctx) => telemetry.record(ctx)).run();
 ### `.on("enter", initialize)`
 
 Registers run-start initialization before the wrapped op body is driven. `initialize(ctx)`
-receives `EnterContext` with the run `signal`.
+receives `EnterContext` with the run `signal` and runtime `args`.
 
 ```ts
 const result = await doWork
-  .on("enter", ({ signal }) => telemetry.startSpan({ aborted: signal.aborted }))
-  .on("exit", (ctx) => telemetry.finishSpan(ctx.result))
+  .on("enter", ({ signal, args }) =>
+    telemetry.startSpan({ aborted: signal.aborted, key: String(args[0]) }),
+  )
+  .on("exit", (ctx) => telemetry.finishSpan({ args: ctx.args, result: ctx.result }))
   .run();
 ```
 

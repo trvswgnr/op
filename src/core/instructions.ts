@@ -11,7 +11,7 @@ export class SuspendInstruction extends Tagged("SuspendInstruction") {
   }
 }
 
-type FinalizeFn = (ctx: ExitContext<unknown, unknown>) => Promise<void>;
+type FinalizeFn = (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>;
 export class RegisterExitFinalizerInstruction extends Tagged("RegisterExitFinalizerInstruction") {
   readonly finalize: FinalizeFn;
 

@@ -31,32 +31,46 @@ export interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
   withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, A>;
   withSignal: (signal: AbortSignal) => Op<T, E, A>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, A>;
-  on: (event: OpLifecycleHook, handler: LifecycleFn<T, E>) => Op<T, E, A>;
+  on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, A>) => Op<T, E, A>;
+}
+
+/**
+ * Casts an unknown value to a given type
+ *
+ * @warning This function is UNSAFE and should be used only be used when the
+ * type is known to be correct. Every call site for this function should be
+ * accompanied by a comment explaining why it is absolutely necessary.
+ */
+function __unsafe__cast<T>(value: unknown): T {
+  return value as T;
 }
 
 export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
   makeHandlers: (self: Op<T, E, A>) => FluentArityHandlers<T, E, A>,
 ): Op<T, E, A> {
-  const self = Object.assign(invoke, {
-    run: (...args: A) => drive(invoke(...args), new AbortController().signal),
-    withRetry: (policy?: RetryPolicy) => makeHandlers(self).withRetry(policy),
-    withTimeout: (timeoutMs: number) => makeHandlers(self).withTimeout(timeoutMs),
-    withSignal: (signal: AbortSignal) => makeHandlers(self).withSignal(signal),
-    withRelease: (release: ReleaseFn<T>) => makeHandlers(self).withRelease(release),
-    on: (event: OpLifecycleHook, finalize: ExitFn<T, E>) => makeHandlers(self).on(event, finalize),
-    map: <U>(transform: (value: T) => U) => mapOp(self, transform),
-    mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
-    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
-    tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
-    tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
-    recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-      recoverOp(self, predicate, handler),
-    _tag: "Op" as const,
-    // TS cannot represent a callable value that is also this exact fluent object shape
-    // without losing the tuple-arg generic `A`; we cast once at construction to preserve
-    // the runtime-correct shape that `drive` and all fluent helpers rely on
-  }) as unknown as Op<T, E, A>;
+  // TS cannot represent a callable value that is also this exact fluent object shape
+  // without losing the tuple-arg generic `A`; we coerce once at construction to preserve
+  // the runtime-correct shape that `drive` and all fluent helpers rely on
+  const self: Op<T, E, A> = __unsafe__cast(
+    Object.assign(invoke, {
+      run: (...args: A) => drive(invoke(...args), new AbortController().signal),
+      withRetry: (policy?: RetryPolicy) => makeHandlers(self).withRetry(policy),
+      withTimeout: (timeoutMs: number) => makeHandlers(self).withTimeout(timeoutMs),
+      withSignal: (signal: AbortSignal) => makeHandlers(self).withSignal(signal),
+      withRelease: (release: ReleaseFn<T>) => makeHandlers(self).withRelease(release),
+      on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, A>) =>
+        makeHandlers(self).on(event, handler),
+      map: <U>(transform: (value: T) => U) => mapOp(self, transform),
+      mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
+      flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
+      tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
+      tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
+      recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
+        recoverOp(self, predicate, handler),
+      _tag: "Op" as const,
+    }),
+  );
   return self;
 }
 
@@ -71,10 +85,11 @@ export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
   if (isNullaryOp(op)) {
     // TS cannot refine generic `A` to `[]` from this runtime check, even though nullary
     // ops are guaranteed to satisfy that branch. We cast to preserve the caller's `A`
-    return mapNullary(op) as unknown as Op<TOut, EOut, A>;
+    return __unsafe__cast(mapNullary(__unsafe__cast(op)));
   }
 
-  const source = op as OpArity<TIn, EIn, A>;
+  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
+  const source: OpArity<TIn, EIn, A> = __unsafe__cast(op);
   return makeFluentArityOp(
     (...args) => mapNullary(source(...args)),
     (self) => makeHandlers(source, self),
@@ -83,15 +98,28 @@ export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
 
 export function onExitOp<T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
-  finalize: ExitFn<T, E>,
+  finalize: ExitFn<T, E, A>,
 ): Op<T, E, A> {
-  return liftArityOp(
-    op,
-    (resolved) => onExitNullaryOp(resolved, finalize),
-    (source, self) => ({
+  if (isNullaryOp(op)) {
+    const source: Op<T, E, []> = __unsafe__cast(op);
+    // Nullary branch has no runtime args; adapt generic `A` to the concrete nullary tuple
+    return __unsafe__cast(onExitNullaryOp(source, __unsafe__cast(finalize)));
+  }
+
+  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
+  const source: OpArity<T, E, A> = __unsafe__cast(op);
+  return makeFluentArityOp(
+    (...args) =>
+      onExitNullaryOp(source(...args), (ctx) =>
+        finalize({
+          signal: ctx.signal,
+          result: ctx.result,
+          args,
+        }),
+      ),
+    (self) => ({
       withRetry: (policy) => onExitOp(source.withRetry(policy), finalize),
-      withTimeout: (timeoutMs) =>
-        onExitOp(source.withTimeout(timeoutMs), finalize as ExitFn<T, E | TimeoutError>),
+      withTimeout: (timeoutMs) => onExitOp(source.withTimeout(timeoutMs), __unsafe__cast(finalize)),
       withSignal: (signal) => onExitOp(source.withSignal(signal), finalize),
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, hookFinalize) => onOp(self, event, hookFinalize),
@@ -101,12 +129,25 @@ export function onExitOp<T, E, A extends readonly unknown[]>(
 
 export function onEnterOp<T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
-  initialize: EnterFn,
+  initialize: EnterFn<A>,
 ): Op<T, E, A> {
-  return liftArityOp(
-    op,
-    (resolved) => onEnterNullaryOp(resolved, initialize),
-    (source, self) => ({
+  if (isNullaryOp(op)) {
+    // SAFETY: there are too many casts here and we should try to find the root cause
+    const source: Op<T, E, []> = __unsafe__cast(op);
+    return __unsafe__cast(onEnterNullaryOp(source, __unsafe__cast(initialize)));
+  }
+
+  // Runtime narrowing handles this branch; TS cannot carry the tuple-generic refinement
+  const source: OpArity<T, E, A> = __unsafe__cast(op);
+  return makeFluentArityOp(
+    (...args) =>
+      onEnterNullaryOp(source(...args), ({ signal }) =>
+        initialize({
+          signal,
+          args,
+        }),
+      ),
+    (self) => ({
       withRetry: (policy) => onEnterOp(source.withRetry(policy), initialize),
       withTimeout: (timeoutMs) => onEnterOp(source.withTimeout(timeoutMs), initialize),
       withSignal: (signal) => onEnterOp(source.withSignal(signal), initialize),
@@ -119,14 +160,16 @@ export function onEnterOp<T, E, A extends readonly unknown[]>(
 export function onOp<T, E, A extends readonly unknown[]>(
   op: Op<T, E, A>,
   event: OpLifecycleHook,
-  handler: LifecycleFn<T, E>,
+  handler: LifecycleFn<T, E, A>,
 ): Op<T, E, A> {
   if (event === "enter") {
-    return onEnterOp(op, handler as EnterFn);
+    // Discriminant narrows runtime event, but TS cannot narrow unioned function type parameterized by `A`.
+    return onEnterOp(op, handler as EnterFn<A>);
   }
 
   if (event === "exit") {
-    return onExitOp(op, handler as ExitFn<T, E>);
+    // Discriminant narrows runtime event, but TS cannot narrow unioned function type parameterized by `A`.
+    return onExitOp(op, handler as ExitFn<T, E, A>);
   }
 
   event satisfies never;

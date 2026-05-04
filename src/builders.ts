@@ -116,12 +116,12 @@ export function _try<T, E = UnhandledException>(
 function makeArityOp<T, E, A extends readonly unknown[]>(
   invoke: (...args: A) => Op<T, E, []>,
 ): Op<T, E, A> {
-  return makeFluentArityOp(invoke, (_self) => ({
+  return makeFluentArityOp(invoke, (self) => ({
     withRetry: (policy) => makeArityOp((...args) => withRetryOp(invoke(...args), policy)),
     withTimeout: (timeoutMs) => makeArityOp((...args) => withTimeoutOp(invoke(...args), timeoutMs)),
     withSignal: (signal) => makeArityOp((...args) => withSignalOp(invoke(...args), signal)),
     withRelease: (release) => makeArityOp((...args) => withReleaseOp(invoke(...args), release)),
-    on: (event, finalize) => makeArityOp((...args) => onOp(invoke(...args), event, finalize)),
+    on: (event, handler) => onOp(self, event, handler),
   }));
 }
 
@@ -135,6 +135,7 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   // this keeps arity/nullary classification deterministic via explicit op kind metadata
   // instead of runtime function reflection or shape guessing in correctness paths
   return makeArityOp((...args: A) => {
+    // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast.
     const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(() => f(...args) as never, {
       withRetry: (policy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
