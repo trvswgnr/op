@@ -26,9 +26,10 @@ This project is designed to be runtime-agnostic: no Node-specific APIs are requi
 operation model.
 
 `@prodkit/op` pairs naturally with `better-result` and declares it as a peer dependency.
-<small>If your package manager does not auto-install peers, install it explicitly:
+
+<sup><sub>If your package manager does not auto-install peers, install it explicitly:
 `npm i better-result`.
-Import `Result`/`TaggedError`/`UnhandledException` directly from `better-result`.</small>
+Import `Result`/`TaggedError`/`UnhandledException` directly from `better-result`.</sub></sup>
 
 ## Quick start
 
