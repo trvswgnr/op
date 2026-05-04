@@ -1,4 +1,5 @@
-import { Op, TaggedError } from "@prodkit/op";
+import { Op } from "@prodkit/op";
+import { TaggedError } from "better-result";
 
 export class DivisionByZeroError extends TaggedError("DivisionByZeroError")() {}
 

@@ -1,4 +1,5 @@
-import { Op, TaggedError } from "@prodkit/op";
+import { Op } from "@prodkit/op";
+import { TaggedError } from "better-result";
 import * as v from "valibot";
 
 type InventoryReservation = {

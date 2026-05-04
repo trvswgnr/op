@@ -1,5 +1,6 @@
 import { assert, describe, expect, test, vi } from "vitest";
-import { ErrorGroup, Op, TaggedError, UnhandledException } from "./index.js";
+import { ErrorGroup, Op } from "./index.js";
+import { TaggedError, UnhandledException } from "./errors.js";
 import {
   deferredPromise,
   invalidConcurrencies,
@@ -7,6 +8,8 @@ import {
   resolveAfter,
   trackAbortListeners,
 } from "./test-utils.js";
+
+const alwaysTrue: boolean = true;
 
 // Scope: integration behavior for Op combinators and combinator-policy interplay
 describe("Op.all", () => {
@@ -28,9 +31,7 @@ describe("Op.all", () => {
       const r = await Op.all([Op.of(1)], concurrency).run();
       assert(r.isErr(), "should be Err");
       expect(r.error).toBeInstanceOf(UnhandledException);
-      if (r.error instanceof UnhandledException) {
-        expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
-      }
+      expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
     },
   );
 
@@ -61,18 +62,17 @@ describe("Op.all", () => {
     const n: number = 1;
     const s: string = "x";
     const a = Op(function* () {
-      if (Math.random() > 2) return yield* new AErr();
+      if (alwaysTrue) return yield* new AErr();
       return n;
     });
     const b = Op(function* () {
-      if (Math.random() > 2) return yield* new BErr();
+      if (alwaysTrue) return yield* new BErr();
       return s;
     });
     const combined = Op.all([a, b]);
     const r = await combined.run();
-    if (r.isErr()) {
-      expect(r.error).toBeInstanceOf(AErr);
-    }
+    assert(r.isErr(), "should be Err");
+    expect(r.error).toBeInstanceOf(AErr);
   });
 
   test("awaits every child before returning after a failure", async () => {
@@ -87,7 +87,6 @@ describe("Op.all", () => {
         }),
     );
     const fast = Op.fail("boom" as const);
-
     await Op.all([slow, fast]).run();
     expect(slowObservedAbort).toBe(true);
   });
@@ -181,7 +180,7 @@ describe("Op.allSettled", () => {
     const r = await Op.allSettled([Op.of(1), Op.fail("no" as const), Op.of("ok")]).run();
     assert(r.isOk(), "should be Ok");
     const [a, b, c] = r.value;
-    assert(a.isOk() && b.isErr() && c.isOk(), "branches");
+    assert(a.isOk() && b.isErr() && c.isOk(), "branches should be Ok, Err, Ok");
     expect(a.value).toBe(1);
     expect(b.error).toBe("no");
     expect(c.value).toBe("ok");
@@ -199,9 +198,7 @@ describe("Op.allSettled", () => {
       const r = await Op.allSettled([Op.of(1)], concurrency).run();
       assert(r.isErr(), "should be Err");
       expect(r.error).toBeInstanceOf(UnhandledException);
-      if (r.error instanceof UnhandledException) {
-        expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
-      }
+      expect(r.error.cause).toEqual(new RangeError("concurrency must be a positive integer"));
     },
   );
 
@@ -229,7 +226,7 @@ describe("Op.allSettled", () => {
     assert(r.isOk(), "should be Ok");
     expect(siblingAborted).toBe(false);
     const [first] = r.value;
-    assert(first.isOk(), "slow sibling completed normally");
+    assert(first.isOk(), "first should be Ok");
     expect(first.value).toBe(1);
   });
 
@@ -249,7 +246,7 @@ describe("Op.allSettled", () => {
     assert(r.isOk(), "should be Ok");
     expect(started).toEqual([0, 1]);
     const [a, b] = r.value;
-    assert(a.isErr() && b.isOk(), "branches");
+    assert(a.isErr() && b.isOk(), "branches should be Err, Ok");
     expect(a.error).toBe("boom");
     expect(b.value).toBe("ok");
   });
@@ -260,7 +257,7 @@ describe("Op.settle", () => {
     const r = await Op.settle(Op.of(69)).run();
     assert(r.isOk(), "should be Ok");
     const settled = r.value;
-    assert(settled.isOk(), "inner op succeeded");
+    assert(settled.isOk(), "should be Ok");
     expect(settled.value).toBe(69);
   });
 
@@ -268,7 +265,7 @@ describe("Op.settle", () => {
     const r = await Op.settle(Op.fail("nope" as const)).run();
     assert(r.isOk(), "should be Ok");
     const settled = r.value;
-    assert(settled.isErr(), "inner op failed");
+    assert(settled.isErr(), "should be Err");
     expect(settled.error).toBe("nope");
   });
 
@@ -313,23 +310,23 @@ describe("Op.any", () => {
       Op.fail("c" as const),
     ]).run();
     assert(r.isErr(), "should be Err");
-    assert(r.error instanceof ErrorGroup, "ErrorGroup");
+    assert(ErrorGroup.is(r.error), "should be ErrorGroup");
     expect(r.error.errors).toEqual(["a", "b", "c"]);
   });
 
   test("empty input fails with empty ErrorGroup", async () => {
     const r = await Op.any([]).run();
     assert(r.isErr(), "should be Err");
-    assert(r.error instanceof ErrorGroup, "ErrorGroup");
+    assert(ErrorGroup.is(r.error), "should be ErrorGroup");
     expect(r.error.errors).toEqual([]);
   });
 
   test("error type is ErrorGroup<union of child errors>", async () => {
     const combined = Op.any([Op.fail(1), Op.fail("two" as const)]);
     const r = await combined.run();
-    if (r.isErr() && r.error instanceof ErrorGroup) {
-      expect(r.error.errors).toEqual([1, "two"]);
-    }
+    assert(r.isErr(), "should be Err");
+    assert(ErrorGroup.is(r.error), "should be ErrorGroup");
+    expect(r.error.errors).toEqual([1, "two"]);
   });
 
   test("preserves index order when failures settle out of order", async () => {
@@ -365,7 +362,7 @@ describe("Op.any", () => {
 
     const run = Op.any([loser, Op.of(7)]).run();
     let settled = false;
-    void run.then(() => {
+    run.then(() => {
       settled = true;
     });
 
@@ -471,7 +468,7 @@ describe("Op.race", () => {
 
     const run = Op.race([loser, Op.of(99)]).run();
     let settled = false;
-    void run.then(() => {
+    run.then(() => {
       settled = true;
     });
 
@@ -616,7 +613,7 @@ describe("combinator abort listener cleanup", () => {
 
       const r = await run;
       assert(r.isErr(), "should be Err");
-      assert(r.error instanceof ErrorGroup, "ErrorGroup");
+      assert(ErrorGroup.is(r.error), "should be ErrorGroup");
       expect(r.error.errors.length).toBeGreaterThan(0);
       expect(tracked.activeAbortListeners).toBe(0);
     } finally {

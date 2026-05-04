@@ -1,5 +1,6 @@
 import { assert, describe, expect, test, vi } from "vitest";
-import { Op, TaggedError, UnhandledException } from "./index.js";
+import { Op } from "./index.js";
+import { TaggedError, UnhandledException } from "./errors.js";
 
 // Scope: integration tests for fluent operator behavior
 describe("operator combinators", () => {

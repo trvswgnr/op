@@ -1,9 +1,9 @@
 import type { Err } from "./result.js";
 import { Result } from "./result.js";
 import { Tagged } from "./tagged.js";
-import { TaggedError, UnhandledException } from "better-result";
+import { TaggedError, UnhandledException, type TaggedErrorInstance } from "better-result";
 
-export { TaggedError, UnhandledException };
+export { TaggedError, UnhandledException, type TaggedErrorInstance };
 
 /**
  * Built-in typed error emitted when an operation exceeds a timeout budget

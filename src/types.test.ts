@@ -1,14 +1,7 @@
 import { describe, expectTypeOf, test } from "vitest";
-import {
-  ErrorGroup,
-  Op,
-  TaggedError,
-  TimeoutError,
-  UnhandledException,
-  type ExitContext,
-  type Result,
-  type TaggedErrorInstance,
-} from "./index.js";
+import { ErrorGroup, Op, TimeoutError, type ExitContext } from "./index.js";
+import { TaggedError, UnhandledException, type TaggedErrorInstance } from "./errors.js";
+import { Result } from "./result.js";
 
 describe("type inference contracts", () => {
   test("builders infer Op shape and run() output", () => {

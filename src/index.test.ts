@@ -1,5 +1,6 @@
 import { assert, describe, expect, test, vi } from "vitest";
-import { Op, TaggedError, TimeoutError, UnhandledException, exponentialBackoff } from "./index.js";
+import { Op, TimeoutError, exponentialBackoff } from "./index.js";
+import { TaggedError, UnhandledException } from "./errors.js";
 import { resolveAfter } from "./test-utils.js";
 
 describe("public API (index)", () => {

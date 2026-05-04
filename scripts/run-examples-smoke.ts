@@ -3,7 +3,8 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { Op, TaggedError, matchError } from "@prodkit/op";
+import { Op } from "@prodkit/op";
+import { TaggedError, matchError } from "better-result";
 
 const logger = console;
 

@@ -1,5 +1,6 @@
 import { assert, describe, expect, test, vi } from "vitest";
-import { Op, TimeoutError, UnhandledException, type ExitContext } from "./index.js";
+import { Op, TimeoutError, type ExitContext } from "./index.js";
+import { UnhandledException } from "./errors.js";
 import { SuspendInstruction } from "./core/instructions.js";
 
 // Scope: integration behavior for cleanup/finalization and lifecycle hooks

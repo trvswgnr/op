@@ -9,29 +9,6 @@ import {
 } from "./core/types.js";
 import { runOp } from "./core/run-op.js";
 import { exponentialBackoff } from "./policies.js";
-export {
-  Err,
-  Ok,
-  Panic,
-  Result,
-  ResultDeserializationError,
-  TaggedError,
-  UnhandledException,
-  isPanic,
-  isTaggedError,
-  matchError,
-  matchErrorPartial,
-  panic,
-} from "better-result";
-export type {
-  InferErr,
-  InferOk,
-  SerializedErr,
-  SerializedOk,
-  SerializedResult,
-  TaggedErrorClass,
-  TaggedErrorInstance,
-} from "better-result";
 
 const empty: _Op<void, never, []> = succeed(undefined);
 
