@@ -84,10 +84,9 @@ export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
     self: OpArity<TOut, EOut, A>,
   ) => FluentArityHandlers<TOut, EOut, A>,
 ): OpArity<TOut, EOut, A> {
-  const source = op;
   return makeFluentArityOp(
-    (...args) => mapNullary(source(...args)),
-    (self) => makeHandlers(source, self),
+    (...args) => mapNullary(op(...args)),
+    (self) => makeHandlers(op, self),
   );
 }
 
