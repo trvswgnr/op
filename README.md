@@ -297,6 +297,57 @@ controller.abort(new Error("request cancelled"));
 const result = await runPromise;
 ```
 
+### Cooperative cancellation contract
+
+Cancellation is cooperative, not preemptive. `@prodkit/op` guarantees that it raises abort
+signals at the right points, but your operation code must observe those signals for work to
+stop quickly.
+
+Runtime guarantees:
+
+- `.withTimeout(...)`, `.withSignal(...)`, and short-circuiting combinators (`Op.all`, `Op.any`,
+  `Op.race`) propagate abort through `AbortSignal`.
+- When a combinator decides its final result early, in-flight siblings are aborted and the
+  combinator waits for them to settle before returning.
+- Scheduled teardown still runs (`Op.defer`, `.withRelease`, `.on("exit", ...)`) even when a run
+  ends via timeout or external abort.
+
+Caller responsibilities:
+
+- Build side-effecting work with `Op.try((signal) => ...)` and pass `signal` to cancellable APIs
+  (`fetch`, DB clients, queue clients, etc.).
+- Keep composed child ops signal-aware so branch-level cancellation in combinators can stop
+  downstream IO.
+- Treat cancellation as a stop request: if an underlying dependency ignores `AbortSignal`, that
+  dependency can continue running after the op settles.
+
+Recommended composed-run wiring:
+
+```ts
+const controller = new AbortController();
+
+const fetchJson = (url: string) =>
+  Op.try(async (signal) => {
+    const res = await fetch(url, { signal });
+    return res.json();
+  });
+
+const loadDashboard = Op.all([
+  fetchJson("/api/users/1"),
+  fetchJson("/api/alerts"),
+  fetchJson("/api/settings"),
+])
+  .withTimeout(1_500)
+  .withSignal(controller.signal);
+
+const runPromise = loadDashboard.run();
+
+// for example: HTTP disconnect, worker shutdown, or route transition
+controller.abort(new Error("caller aborted dashboard load"));
+
+const result = await runPromise;
+```
+
 ### `.withRelease(release)`
 
 Registers resource release logic that runs after a successful resource-producing step settles.

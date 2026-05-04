@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documented the cooperative cancellation contract in `README.md`, including
+  explicit runtime guarantees, caller responsibilities, and a composed
+  `Op.all(...).withTimeout(...).withSignal(...)` wiring example.
 - Locked `Op.any`/`Op.race` loser semantics so aborted branches now finish
   cleanup/finalizers before `run()` returns, while preserving first-settler
   result precedence to keep outcome behavior stable.
