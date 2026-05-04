@@ -549,8 +549,11 @@ npm run test
 npm run typecheck
 npm run lint
 npm run build
+npm run bench
 npm run examples:test:pack
 ```
+
+For benchmark baseline modes and contributor guidance, see `benchmarks/README.md`.
 
 ## Contributing
 

@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `DESIGN.md` documenting execution invariants (cleanup ordering, error
   precedence, and combinator chain-order guarantees) with direct links to
   representative runtime paths and tests to reduce semantic drift risk.
+- Added a dedicated `benchmarks/` harness with baseline comparisons against
+  latest `main` (default) or latest npm release, covering runtime overhead
+  scenarios plus minified/gzip bundle-size deltas.
 
 ### Changed
 
@@ -33,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified contributor testing governance with an explicit two-tier strategy in
   `CONTRIBUTING.md`, including unit vs integration scope boundaries and a
   no-duplication decision rule for placing assertions.
+- Added contributor benchmark guidance in `CONTRIBUTING.md` and a dedicated
+  `benchmarks/README.md` playbook, while keeping README benchmark docs minimal.
 - Consolidated compile-time API contracts into a dedicated `src/types.test.ts`
   file and removed scattered `expectTypeOf` assertions from runtime behavior
   tests so type regressions can be audited in one place.

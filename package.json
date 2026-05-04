@@ -37,9 +37,14 @@
     "access": "public"
   },
   "scripts": {
+    "bench": "npm --prefix benchmarks run bench",
+    "bench:main": "npm --prefix benchmarks run bench -- --baseline=main",
+    "bench:npm": "npm --prefix benchmarks run bench -- --baseline=npm",
+    "bench:all": "npm run bench:main && npm run bench:npm",
+    "bench:typecheck": "npm --prefix benchmarks run typecheck",
     "build": "tsdown --config-loader unrun",
     "changelog:check": "node ./scripts/check-changelog-version.ts",
-    "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:smoke:pack && npm run examples:typecheck",
+    "check": "npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test && npm run examples:smoke:pack && npm run examples:typecheck && npm run bench:typecheck",
     "clean": "rm -rf dist",
     "examples:smoke:pack": "node ./scripts/run-examples-smoke.ts pack",
     "examples:smoke:github": "node ./scripts/run-examples-smoke.ts github",

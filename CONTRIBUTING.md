@@ -20,6 +20,20 @@ Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.ym
 
 All examples are consumer-level and live under `examples/*`.
 
+## Benchmarking
+
+Use the benchmark harness when you need to validate runtime overhead or package-size drift against a baseline:
+
+```bash
+npm run bench
+```
+
+- Default baseline is latest commit on `main`.
+- For latest published package comparison, run `npm run bench:npm`.
+- Keep benchmark interpretation directional; rely on relative deltas and rerun unexpected regressions before acting.
+
+Detailed benchmark scenarios and authoring guidance live in `benchmarks/README.md`.
+
 ## Type Cast Policy
 
 - Every remaining cast must carry an inline comment describing the concrete TypeScript limitation.
