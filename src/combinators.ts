@@ -11,10 +11,10 @@ type AnyNullaryOp = Op<unknown, unknown, []>;
 
 function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const self: Op<T, E, []> = makeNullaryOp(gen, {
+    ...createDefaultHooks(() => self),
     withRetry: (policy?) => withRetryOp(self, policy),
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),
-    ...createDefaultHooks(() => self),
   });
   return self;
 }

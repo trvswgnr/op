@@ -230,10 +230,10 @@ export function mapNullaryOp<T, E, U>(
       return mapped;
     },
     {
+      ...createDefaultHooks(() => mapNullaryOp(op, transform)),
       withRetry: (policy) => mapNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
       withSignal: (signal) => mapNullaryOp(op.withSignal(signal), transform),
-      ...createDefaultHooks(() => mapNullaryOp(op, transform)),
     },
   );
 }
@@ -258,10 +258,10 @@ export function flatMapNullaryOp<T, E, U, E2>(
       return second.value;
     },
     {
+      ...createDefaultHooks(() => mapped),
       withRetry: (policy) => withRetryOp(mapped, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(mapped, timeoutMs),
       withSignal: (signal) => withSignalOp(mapped, signal),
-      ...createDefaultHooks(() => mapped),
     },
   );
 
@@ -295,10 +295,10 @@ export function tapNullaryOp<T, E, R>(
       return source.value;
     },
     {
+      ...createDefaultHooks(() => tapNullaryOp(op, observe)),
       withRetry: (policy) => tapNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
       withSignal: (signal) => tapNullaryOp(op.withSignal(signal), observe),
-      ...createDefaultHooks(() => tapNullaryOp(op, observe)),
     },
   );
 }
@@ -333,13 +333,13 @@ export function tapErrNullaryOp<T, E, R>(
       return yield* source;
     },
     {
+      ...createDefaultHooks(() => tapErrNullaryOp(op, observe)),
       withRetry: (policy) => tapErrNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs) =>
         tapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
           TimeoutError.is(error) ? undefined : observe(error),
         ),
       withSignal: (signal) => tapErrNullaryOp(op.withSignal(signal), observe),
-      ...createDefaultHooks(() => tapErrNullaryOp(op, observe)),
     },
   );
 }
@@ -373,13 +373,13 @@ export function mapErrNullaryOp<T, E, E2>(
       return yield* Result.err(mapped);
     },
     {
+      ...createDefaultHooks(() => mapErrNullaryOp(op, transform)),
       withRetry: (policy) => mapErrNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs) =>
         mapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
           TimeoutError.is(error) ? error : transform(error),
         ),
       withSignal: (signal) => mapErrNullaryOp(op.withSignal(signal), transform),
-      ...createDefaultHooks(() => mapErrNullaryOp(op, transform)),
     },
   );
 }
@@ -420,6 +420,7 @@ export function recoverNullaryOp<T, E, R>(
       return recoveredResult.value;
     },
     {
+      ...createDefaultHooks(() => recoverNullaryOp(op, predicate, handler)),
       withRetry: (policy) => recoverNullaryOp(op.withRetry(policy), predicate, handler),
       withTimeout: (timeoutMs) =>
         recoverNullaryOp(
@@ -428,7 +429,6 @@ export function recoverNullaryOp<T, E, R>(
           cast(handler),
         ),
       withSignal: (signal) => recoverNullaryOp(op.withSignal(signal), predicate, handler),
-      ...createDefaultHooks(() => recoverNullaryOp(op, predicate, handler)),
     },
   );
 }
