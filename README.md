@@ -425,7 +425,7 @@ const validate = Op(function* (name: string) {
 - `shouldRetry: () => true`
 - exponential backoff from `100ms` up to `1000ms`
 
-You can also build your own delay function with `exponentialBackoff({ baseMs, maxMs, jitterMs })`.
+You can also build your own delay function with `exponentialBackoff({ base, max, jitter })`.
 
 ```ts
 import { exponentialBackoff } from "@prodkit/op";
@@ -433,7 +433,7 @@ import { exponentialBackoff } from "@prodkit/op";
 const policy = {
   maxAttempts: 5,
   shouldRetry: (cause: unknown) => cause instanceof Error,
-  getDelay: exponentialBackoff({ baseMs: 200, maxMs: 2_000, jitterMs: 100 }),
+  getDelay: exponentialBackoff({ base: 200, max: 2_000, jitter: 0.5 }),
 };
 ```
 
