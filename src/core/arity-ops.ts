@@ -125,13 +125,7 @@ export function onEnterOp<T, E, A extends readonly unknown[]>(
 ): OpArity<T, E, A> {
   const source = op;
   return makeFluentArityOp(
-    (...args) =>
-      onEnterNullaryOp(source(...args), ({ signal }) =>
-        initialize({
-          signal,
-          args,
-        }),
-      ),
+    (...args) => onEnterNullaryOp(source(...args), ({ signal }) => initialize({ signal, args })),
     (self) => ({
       withRetry: (policy) => onEnterOp(asArityOp(source.withRetry(policy)), initialize),
       withTimeout: (timeoutMs) => onEnterOp(asArityOp(source.withTimeout(timeoutMs)), initialize),
@@ -206,7 +200,7 @@ export function mapErrOp<T, E, A extends readonly unknown[], E2>(
       withRetry: (policy) => mapErrOp(asArityOp(source.withRetry(policy)), transform),
       withTimeout: (timeoutMs) =>
         mapErrOp(asArityOp(source.withTimeout(timeoutMs)), (error) =>
-          error instanceof TimeoutError ? error : transform(error),
+          TimeoutError.is(error) ? error : transform(error),
         ),
       withSignal: (signal) => mapErrOp(asArityOp(source.withSignal(signal)), transform),
       withRelease: (release) => withReleaseOp(self, release),
