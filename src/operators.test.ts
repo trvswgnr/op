@@ -1,6 +1,7 @@
 import { assert, describe, expect, test, vi } from "vitest";
 import { Op } from "./index.js";
 import { TaggedError, UnhandledException } from "./errors.js";
+import { TRUE } from "./test-utils.js";
 
 // Scope: integration tests for fluent operator behavior
 describe("operator combinators", () => {
@@ -272,10 +273,7 @@ describe("operator combinators", () => {
           return yield* new AErr();
         }
         return yield* new BErr();
-      }).recover(
-        (error): error is AErr => error instanceof AErr,
-        () => Op.fail(new RecoveryErr()),
-      );
+      }).recover(AErr.is, () => Op.fail(new RecoveryErr()));
 
       const recovered = await op.run("a");
       assert(recovered.isErr(), "should be Err");
@@ -291,10 +289,7 @@ describe("operator combinators", () => {
 
       const recovered = Op(function* () {
         return yield* new MissingConfigError();
-      }).recover(
-        (error): error is MissingConfigError => error instanceof MissingConfigError,
-        () => "fallback" as const,
-      );
+      }).recover(MissingConfigError.is, () => "fallback" as const);
 
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
@@ -306,10 +301,7 @@ describe("operator combinators", () => {
 
       const recovered = Op(function* () {
         return yield* new MissingConfigError();
-      }).recover(
-        (error): error is MissingConfigError => error instanceof MissingConfigError,
-        () => Op.of(69),
-      );
+      }).recover(MissingConfigError.is, () => Op.of(69));
 
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
@@ -332,7 +324,7 @@ describe("operator combinators", () => {
     test("recover can handle typed errors with explicit constructor", async () => {
       class TestError extends TaggedError("TestError")() {}
       const recovered = Op(function* () {
-        if (Infinity) {
+        if (TRUE) {
           return yield* new TestError();
         }
         return 69;
@@ -362,7 +354,7 @@ describe("operator combinators", () => {
       class E2 extends TaggedError("E2")() {}
       class E3 extends TaggedError("E3")() {}
       const op = Op(function* () {
-        if (Infinity > 0) {
+        if (TRUE) {
           return yield* new E1();
         }
         return yield* new E2();

@@ -2,6 +2,7 @@ import { describe, expectTypeOf, test } from "vitest";
 import { ErrorGroup, Op, TimeoutError, type EnterContext, type ExitContext } from "./index.js";
 import { TaggedError, UnhandledException, type TaggedErrorInstance } from "./errors.js";
 import { Result } from "./result.js";
+import { TRUE } from "./test-utils.js";
 
 describe("type inference contracts", () => {
   test("builders infer Op shape and run() output", () => {
@@ -171,7 +172,7 @@ describe("type inference contracts", () => {
     expectTypeOf(op).toEqualTypeOf<Op<never, BErr | RecoveryErr, ["a" | "b"]>>();
 
     const base = Op(function* () {
-      if (Infinity > 0) {
+      if (TRUE) {
         return yield* new AErr();
       }
       return yield* new BErr();
