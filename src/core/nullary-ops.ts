@@ -68,6 +68,19 @@ function dispatchLifecycleNullary<T, E>(
   return _;
 }
 
+type DefaultHooks<T, E> = Pick<
+  OpHooks<T, E>,
+  "withRelease" | "registerEnterInitialize" | "registerExitFinalize"
+>;
+
+export function createDefaultHooks<T, E>(getSelf: () => Op<T, E, []>): DefaultHooks<T, E> {
+  return {
+    withRelease: (release) => withCleanupNullaryOp(getSelf(), release),
+    registerEnterInitialize: (initialize) => onEnterNullaryOp(getSelf(), initialize),
+    registerExitFinalize: (finalize) => onExitNullaryOp(getSelf(), finalize),
+  };
+}
+
 export function makeNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
@@ -134,9 +147,9 @@ export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<
 export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
-      yield new SuspendInstruction((signal: AbortSignal) => {
+      yield new SuspendInstruction(async (signal: AbortSignal) => {
         const enterCtx: EnterContext<[]> = { signal, args: EMPTY_ARGS };
-        return Promise.resolve(initialize(enterCtx)).then(() => {});
+        await Promise.resolve(initialize(enterCtx));
       });
 
       const result: Result<T, E | UnhandledException> = cast(
@@ -162,14 +175,14 @@ export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>
 export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, []>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
-      yield new RegisterExitFinalizerInstruction((ctx) => {
+      yield new RegisterExitFinalizerInstruction(async (ctx) => {
         // Finalizer registry erases generic payloads to unknown; this restores the concrete op result types.
         const exitCtx: ExitContext<T, E, []> = {
           signal: ctx.signal,
           result: cast(ctx.result),
           args: EMPTY_ARGS,
         };
-        return Promise.resolve(finalize(exitCtx)).then(() => {});
+        await Promise.resolve(finalize(exitCtx));
       });
 
       const result: Result<T, E | UnhandledException> = cast(
@@ -220,10 +233,7 @@ export function mapNullaryOp<T, E, U>(
       withRetry: (policy) => mapNullaryOp(op.withRetry(policy), transform),
       withTimeout: (timeoutMs) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
       withSignal: (signal) => mapNullaryOp(op.withSignal(signal), transform),
-      withRelease: (release) => withCleanupNullaryOp(mapNullaryOp(op, transform), release),
-      registerEnterInitialize: (initialize) =>
-        onEnterNullaryOp(mapNullaryOp(op, transform), initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(mapNullaryOp(op, transform), finalize),
+      ...createDefaultHooks(() => mapNullaryOp(op, transform)),
     },
   );
 }
@@ -251,9 +261,7 @@ export function flatMapNullaryOp<T, E, U, E2>(
       withRetry: (policy) => withRetryOp(mapped, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(mapped, timeoutMs),
       withSignal: (signal) => withSignalOp(mapped, signal),
-      withRelease: (release) => withCleanupNullaryOp(mapped, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(mapped, initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(mapped, finalize),
+      ...createDefaultHooks(() => mapped),
     },
   );
 
@@ -290,10 +298,7 @@ export function tapNullaryOp<T, E, R>(
       withRetry: (policy) => tapNullaryOp(op.withRetry(policy), observe),
       withTimeout: (timeoutMs) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
       withSignal: (signal) => tapNullaryOp(op.withSignal(signal), observe),
-      withRelease: (release) => withCleanupNullaryOp(tapNullaryOp(op, observe), release),
-      registerEnterInitialize: (initialize) =>
-        onEnterNullaryOp(tapNullaryOp(op, observe), initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(tapNullaryOp(op, observe), finalize),
+      ...createDefaultHooks(() => tapNullaryOp(op, observe)),
     },
   );
 }
@@ -334,10 +339,7 @@ export function tapErrNullaryOp<T, E, R>(
           TimeoutError.is(error) ? undefined : observe(error),
         ),
       withSignal: (signal) => tapErrNullaryOp(op.withSignal(signal), observe),
-      withRelease: (release) => withCleanupNullaryOp(tapErrNullaryOp(op, observe), release),
-      registerEnterInitialize: (initialize) =>
-        onEnterNullaryOp(tapErrNullaryOp(op, observe), initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(tapErrNullaryOp(op, observe), finalize),
+      ...createDefaultHooks(() => tapErrNullaryOp(op, observe)),
     },
   );
 }
@@ -377,10 +379,7 @@ export function mapErrNullaryOp<T, E, E2>(
           TimeoutError.is(error) ? error : transform(error),
         ),
       withSignal: (signal) => mapErrNullaryOp(op.withSignal(signal), transform),
-      withRelease: (release) => withCleanupNullaryOp(mapErrNullaryOp(op, transform), release),
-      registerEnterInitialize: (initialize) =>
-        onEnterNullaryOp(mapErrNullaryOp(op, transform), initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(mapErrNullaryOp(op, transform), finalize),
+      ...createDefaultHooks(() => mapErrNullaryOp(op, transform)),
     },
   );
 }
@@ -429,12 +428,7 @@ export function recoverNullaryOp<T, E, R>(
           cast(handler),
         ),
       withSignal: (signal) => recoverNullaryOp(op.withSignal(signal), predicate, handler),
-      withRelease: (release) =>
-        withCleanupNullaryOp(recoverNullaryOp(op, predicate, handler), release),
-      registerEnterInitialize: (initialize) =>
-        onEnterNullaryOp(recoverNullaryOp(op, predicate, handler), initialize),
-      registerExitFinalize: (finalize) =>
-        onExitNullaryOp(recoverNullaryOp(op, predicate, handler), finalize),
+      ...createDefaultHooks(() => recoverNullaryOp(op, predicate, handler)),
     },
   );
 }

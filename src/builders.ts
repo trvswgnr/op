@@ -10,12 +10,7 @@ import {
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
-import {
-  makeNullaryOp,
-  onEnterNullaryOp,
-  onExitNullaryOp,
-  withCleanupNullaryOp,
-} from "./core/nullary-ops.js";
+import { makeNullaryOp, createDefaultHooks, withCleanupNullaryOp } from "./core/nullary-ops.js";
 import { cast } from "./shared.js";
 
 function isAwaited<T>(value: T | Promise<T>): value is Awaited<T> {
@@ -38,9 +33,7 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withCleanupNullaryOp(op, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
+      ...createDefaultHooks(() => op),
     },
   );
 
@@ -59,9 +52,7 @@ export function fail<E>(value: E): Op<never, E, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withCleanupNullaryOp(op, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
+      ...createDefaultHooks(() => op),
     },
   );
 
@@ -84,9 +75,7 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withCleanupNullaryOp(op, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
-      registerExitFinalize: (nextFinalize) => onExitNullaryOp(op, nextFinalize),
+      ...createDefaultHooks(() => op),
     },
   );
   return op;
@@ -119,9 +108,7 @@ export function _try<T, E = UnhandledException>(
       withRetry: (policy) => withRetryOp(op, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
       withSignal: (signal) => withSignalOp(op, signal),
-      withRelease: (release) => withCleanupNullaryOp(op, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(op, initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(op, finalize),
+      ...createDefaultHooks(() => op),
     },
   );
   return op;
@@ -155,9 +142,7 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
       withRetry: (policy) => withRetryOp(bound, policy),
       withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
       withSignal: (signal) => withSignalOp(bound, signal),
-      withRelease: (release) => withCleanupNullaryOp(bound, release),
-      registerEnterInitialize: (initialize) => onEnterNullaryOp(bound, initialize),
-      registerExitFinalize: (finalize) => onExitNullaryOp(bound, finalize),
+      ...createDefaultHooks(() => bound),
     });
     return bound;
   });

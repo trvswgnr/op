@@ -4,13 +4,7 @@ import { asArityOp, makeFluentArityOp, onOp, withReleaseOp } from "./core/arity-
 import { TrackedErr, type Instruction, type Op, type OpArity } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
-import {
-  isNullaryOp,
-  makeNullaryOp,
-  onEnterNullaryOp,
-  onExitNullaryOp,
-  withCleanupNullaryOp,
-} from "./core/nullary-ops.js";
+import { isNullaryOp, makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
 import { cast } from "./shared.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
@@ -126,9 +120,7 @@ function makePolicyNullaryOp<T, E>(
     withRetry: (policy) => withRetryOp(self, policy),
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),
-    withRelease: (release) => withCleanupNullaryOp(self, release),
-    registerEnterInitialize: (initialize) => onEnterNullaryOp(self, initialize),
-    registerExitFinalize: (finalize) => onExitNullaryOp(self, finalize),
+    ...createDefaultHooks(() => self),
   });
 
   return self;

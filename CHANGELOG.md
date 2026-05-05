@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extracted default nullary lifecycle hook wiring into a shared helper and
+  reused it across builders, combinators, policies, and core nullary operators
+  to remove repetitive hook plumbing without changing runtime behavior.
 - Fixed `tap`, `tapErr`, and `recover` so callbacks that return `Op(function* () {})`
   are now executed instead of being treated as plain values, closing a runtime
   type-soundness hole where failures could be silently dropped or function objects

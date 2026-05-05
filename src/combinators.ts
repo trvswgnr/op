@@ -4,12 +4,7 @@ import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Err, Ok, Result } from "./result.js";
-import {
-  makeNullaryOp,
-  onEnterNullaryOp,
-  onExitNullaryOp,
-  withCleanupNullaryOp,
-} from "./core/nullary-ops.js";
+import { makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
 import { cast } from "./shared.js";
 
 type AnyNullaryOp = Op<unknown, unknown, []>;
@@ -19,9 +14,7 @@ function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>
     withRetry: (policy?) => withRetryOp(self, policy),
     withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
     withSignal: (signal) => withSignalOp(self, signal),
-    withRelease: (release) => withCleanupNullaryOp(self, release),
-    registerEnterInitialize: (initialize) => onEnterNullaryOp(self, initialize),
-    registerExitFinalize: (finalize) => onExitNullaryOp(self, finalize),
+    ...createDefaultHooks(() => self),
   });
   return self;
 }
