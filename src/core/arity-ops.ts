@@ -3,14 +3,13 @@ import type { RetryPolicy } from "../policies.js";
 import type {
   EnterFn,
   ExitFn,
-  InferNullaryOpErr,
   LifecycleFn,
   Op,
   OpArity,
   OpLifecycleHook,
-  RecoverError,
-  RecoverValue,
   ReleaseFn,
+  InferOpOk,
+  InferOpErr,
 } from "./types.js";
 import { drive } from "./runtime.js";
 import {
@@ -229,7 +228,7 @@ export function flatMapOp<T, E, A extends readonly unknown[], U, E2>(
 export function tapOp<T, E, A extends readonly unknown[], R>(
   op: OpArity<T, E, A>,
   observe: (value: T) => R,
-): OpArity<T, E | InferNullaryOpErr<R>, A> {
+): OpArity<T, E | InferOpErr<R>, A> {
   return liftArityOp(
     op,
     (resolved) => tapNullaryOp(resolved, observe),
@@ -246,7 +245,7 @@ export function tapOp<T, E, A extends readonly unknown[], R>(
 export function tapErrOp<T, E, A extends readonly unknown[], R>(
   op: OpArity<T, E, A>,
   observe: (error: E) => R,
-): OpArity<T, E | InferNullaryOpErr<R>, A> {
+): OpArity<T, E | InferOpErr<R>, A> {
   return liftArityOp(
     op,
     (resolved) => tapErrNullaryOp(resolved, observe),
@@ -267,7 +266,7 @@ export function recoverOp<T, E, A extends readonly unknown[], R>(
   op: OpArity<T, E, A>,
   predicate: (error: E) => boolean,
   handler: (error: E) => R,
-): OpArity<T | RecoverValue<R>, E | RecoverError<R>, A> {
+): OpArity<T | InferOpOk<R>, E | InferOpErr<R>, A> {
   return liftArityOp(
     op,
     (resolved) => recoverNullaryOp(resolved, predicate, handler),
