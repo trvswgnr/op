@@ -65,8 +65,8 @@ export function allOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result: Result<AllOpOk<Ops>, AllOpErr<Ops>> = cast(
-      yield new SuspendInstruction((outerSignal) => driveAll(snapshot, outerSignal, concurrency)),
+    const result: Result<AllOpOk<Ops>, AllOpErr<Ops>> = yield* new SuspendInstruction(
+      (outerSignal) => driveAll(snapshot, outerSignal, concurrency),
     );
 
     if (result.isErr()) return yield* result;
@@ -182,10 +182,8 @@ export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result: Result<AllSettledOpOk<Ops>, never> = cast(
-      yield new SuspendInstruction((outerSignal) =>
-        driveAllSettled(snapshot, outerSignal, concurrency),
-      ),
+    const result: Result<AllSettledOpOk<Ops>, never> = yield* new SuspendInstruction(
+      (outerSignal) => driveAllSettled(snapshot, outerSignal, concurrency),
     );
 
     if (result.isErr()) return yield* result;
@@ -195,7 +193,7 @@ export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
 
 export function settleOp<T, E>(op: Op<T, E, []>): Op<Result<T, E>, never, []> {
   return makeCombinatorOp(function* () {
-    return cast(yield new SuspendInstruction((outerSignal) => drive(op, outerSignal)));
+    return yield* new SuspendInstruction((outerSignal) => drive(op, outerSignal));
   });
 }
 
@@ -275,8 +273,8 @@ export function anyOp<const Ops extends readonly AnyNullaryOp[]>(
   const snapshot = ops.slice();
 
   return makeCombinatorOp(function* () {
-    const result: Result<AnyOpOk<Ops>, AnyOpErr<Ops>> = cast(
-      yield new SuspendInstruction((outerSignal) => driveAny(snapshot, outerSignal)),
+    const result: Result<AnyOpOk<Ops>, AnyOpErr<Ops>> = yield* new SuspendInstruction(
+      (outerSignal) => driveAny(snapshot, outerSignal),
     );
 
     if (result.isErr()) return yield* result;
@@ -337,8 +335,8 @@ export function raceOp<const Ops extends readonly AnyNullaryOp[]>(
 ): Op<RaceOpOk<Ops>, RaceOpErr<Ops>, []> {
   const snapshot = ops.slice();
   return makeCombinatorOp(function* () {
-    const result: Result<RaceOpOk<Ops>, RaceOpErr<Ops>> = cast(
-      yield new SuspendInstruction((outerSignal) => driveRace(snapshot, outerSignal)),
+    const result: Result<RaceOpOk<Ops>, RaceOpErr<Ops>> = yield* new SuspendInstruction(
+      (outerSignal) => driveRace(snapshot, outerSignal),
     );
 
     if (result.isErr()) return yield* result;

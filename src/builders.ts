@@ -81,15 +81,13 @@ export function _try<T, E = UnhandledException>(
 ): Op<Awaited<T>, TrackedErr<E>, []> {
   const op: Op<Awaited<T>, TrackedErr<E>, []> = makeNullaryOp(
     function* () {
-      const result: Result<T, E> = cast(
-        yield new SuspendInstruction((signal: AbortSignal) =>
-          Promise.resolve()
-            .then(() => f(signal))
-            .then(
-              (a) => Result.ok(a),
-              (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
-            ),
-        ),
+      const result: Result<T, E> = yield* new SuspendInstruction((signal: AbortSignal) =>
+        Promise.resolve()
+          .then(() => f(signal))
+          .then(
+            (a) => Result.ok(a),
+            (cause) => Result.err(onError ? onError(cause) : new UnhandledException({ cause })),
+          ),
       );
 
       if (result.isErr()) return yield* result;

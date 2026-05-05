@@ -162,10 +162,8 @@ function withRetryNullaryOp<T, E>(
 
     while (true) {
       type AttemptStep = { result: Result<T, E | UnhandledException>; aborted: boolean };
-      const attemptStep: AttemptStep = cast(
-        yield new SuspendInstruction((signal: AbortSignal) =>
-          drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
-        ),
+      const attemptStep: AttemptStep = yield* new SuspendInstruction((signal: AbortSignal) =>
+        drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
       );
 
       const result = attemptStep.result;
@@ -182,10 +180,8 @@ function withRetryNullaryOp<T, E>(
 
       const delayMs = Math.max(0, policy.getDelay(attempt, error));
       if (delayMs > 0) {
-        const delayAborted: boolean = cast(
-          yield new SuspendInstruction((signal: AbortSignal) =>
-            abortableDelay(delayMs, signal).then(() => signal.aborted),
-          ),
+        const delayAborted: boolean = yield* new SuspendInstruction((signal: AbortSignal) =>
+          abortableDelay(delayMs, signal).then(() => signal.aborted),
         );
 
         if (delayAborted) return yield* result;
@@ -209,10 +205,9 @@ function withTimeoutNullaryOp<T, E>(
   const clampedTimeoutMs = Math.max(0, timeoutMs);
 
   return makePolicyNullaryOp(function* () {
-    const result: Result<T, E | UnhandledException | TimeoutError> = cast(
-      yield new SuspendInstruction((outerSignal: AbortSignal) =>
+    const result: Result<T, E | UnhandledException | TimeoutError> = yield* new SuspendInstruction(
+      (outerSignal: AbortSignal) =>
         raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
-      ),
     );
 
     if (result.isErr()) return yield* result;
@@ -227,10 +222,9 @@ function withTimeoutNullaryOp<T, E>(
  */
 function withSignalNullaryOp<T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> {
   return makePolicyNullaryOp(function* () {
-    const result: Result<T, E | UnhandledException> = cast(
-      yield new SuspendInstruction((outerSignal: AbortSignal) =>
+    const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
+      (outerSignal: AbortSignal) =>
         runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
-      ),
     );
 
     if (result.isErr()) return yield* result;
