@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Fixed `tap`, `tapErr`, and `recover` so callbacks that return `Op(function* () {})`
+  are now executed instead of being treated as plain values, closing a runtime
+  type-soundness hole where failures could be silently dropped or function objects
+  could leak as successful results.
 - Documented the cooperative cancellation contract in `README.md`, including
   explicit runtime guarantees, caller responsibilities, and a composed
   `Op.all(...).withTimeout(...).withSignal(...)` wiring example.

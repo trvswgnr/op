@@ -154,6 +154,35 @@ describe("operator combinators", () => {
       expect(result.error).toBe("tap-failed");
     });
 
+    test("tap drives Op(function*) observers that succeed", async () => {
+      const seen: string[] = [];
+      const result = await Op.of(4)
+        .tap((value) =>
+          Op(function* () {
+            seen.push(`observed:${value}`);
+            return 69;
+          }),
+        )
+        .run();
+
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(4);
+      expect(seen).toEqual(["observed:4"]);
+    });
+
+    test("tap propagates failures from Op(function*) observers", async () => {
+      const result = await Op.of(4)
+        .tap(() =>
+          Op(function* () {
+            return yield* Op.fail("tap-gen-failed" as const);
+          }),
+        )
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("tap-gen-failed");
+    });
+
     test("tap turns thrown observer errors into UnhandledException", async () => {
       const cause = new Error("observer-boom");
       const result = await Op.of(4)
@@ -224,6 +253,35 @@ describe("operator combinators", () => {
         .run();
       assert(result.isErr(), "should be Err");
       expect(result.error).toBe("observer-failed");
+    });
+
+    test("tapErr drives Op(function*) observers that succeed", async () => {
+      const seen: string[] = [];
+      const result = await Op.fail("bad-input" as const)
+        .tapErr((error) =>
+          Op(function* () {
+            seen.push(error.toUpperCase());
+            return 69;
+          }),
+        )
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("bad-input");
+      expect(seen).toEqual(["BAD-INPUT"]);
+    });
+
+    test("tapErr propagates failures from Op(function*) observers", async () => {
+      const result = await Op.fail("bad-input" as const)
+        .tapErr(() =>
+          Op(function* () {
+            return yield* Op.fail("tap-err-gen-failed" as const);
+          }),
+        )
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBe("tap-err-gen-failed");
     });
 
     test("tapErr turns thrown observer errors into UnhandledException", async () => {
@@ -306,6 +364,39 @@ describe("operator combinators", () => {
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(69);
+    });
+
+    test("recover drives Op(function*) handlers that succeed", async () => {
+      class MissingConfigError extends TaggedError("MissingConfigError")() {}
+
+      const recovered = Op(function* () {
+        return yield* new MissingConfigError();
+      }).recover(MissingConfigError.is, () =>
+        Op(function* () {
+          return 42;
+        }),
+      );
+
+      const result = await recovered.run();
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(42);
+    });
+
+    test("recover propagates failures from Op(function*) handlers", async () => {
+      class MissingConfigError extends TaggedError("MissingConfigError")() {}
+      class RecoveryErr extends TaggedError("RecoveryErr")() {}
+
+      const recovered = Op(function* () {
+        return yield* new MissingConfigError();
+      }).recover(MissingConfigError.is, () =>
+        Op(function* () {
+          return yield* new RecoveryErr();
+        }),
+      );
+
+      const result = await recovered.run();
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(RecoveryErr);
     });
 
     test("recover bypasses UnhandledException even when predicate matches", async () => {
