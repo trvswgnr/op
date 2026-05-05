@@ -21,10 +21,9 @@ export class TimeoutError extends TaggedError("TimeoutError")<{
  * A typed aggregate error used by combinators that need to preserve multiple failures
  */
 export class ErrorGroup<E> extends Tagged("ErrorGroup", AggregateError) {
-  override readonly errors: E[];
+  declare readonly errors: E[];
   constructor(errors: Iterable<E>, message: string) {
     super(errors, message);
-    this.errors = Array.from(errors);
     this.name = this._tag;
   }
 
