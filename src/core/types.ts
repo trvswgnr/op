@@ -11,6 +11,9 @@ export type TrackedErr<E, Excluded = never> = E extends UnhandledException
     ? never
     : E;
 
+export type InferOpOk<R> = R extends Op<infer T, unknown, infer _> ? T : Awaited<R>;
+export type InferOpErr<R> = R extends Op<unknown, infer E, infer _> ? E : never;
+
 /**
  * Passed to {@link ExitFn} when the run unwinds.
  *
@@ -86,18 +89,13 @@ export interface WithFlatMap<T, E, A extends readonly unknown[]> {
   flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Op<U, E | E2, A>;
 }
 
-export type InferNullaryOpErr<R> = R extends Op<unknown, infer E, []> ? E : never;
-
 export interface WithTap<T, E, A extends readonly unknown[]> {
-  tap<R>(observe: (value: T) => R): Op<T, E | InferNullaryOpErr<R>, A>;
+  tap<R>(observe: (value: T) => R): Op<T, E | InferOpErr<R>, A>;
 }
 
 export interface WithTapErr<T, E, A extends readonly unknown[]> {
-  tapErr<R>(observe: (error: TrackedErr<E>) => R): Op<T, TrackedErr<E> | InferNullaryOpErr<R>, A>;
+  tapErr<R>(observe: (error: TrackedErr<E>) => R): Op<T, TrackedErr<E> | InferOpErr<R>, A>;
 }
-
-export type InferOpOk<R> = R extends Op<infer T, unknown, infer _> ? T : Awaited<R>;
-export type InferOpErr<R> = R extends Op<unknown, infer E, infer _> ? E : never;
 
 export type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
 

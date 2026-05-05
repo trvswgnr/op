@@ -1,5 +1,5 @@
 import { ErrorGroup, UnhandledException } from "./errors.js";
-import { type Instruction, type Op } from "./core/types.js";
+import { type Instruction, type Op, type InferOpOk, type InferOpErr } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
@@ -13,8 +13,6 @@ import {
 import { cast } from "./shared.js";
 
 type AnyNullaryOp = Op<unknown, unknown, []>;
-type InferOpOk<O> = O extends Op<infer T, unknown, []> ? T : never;
-type InferOpErr<O> = O extends Op<unknown, infer E, []> ? E : never;
 
 function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const self: Op<T, E, []> = makeNullaryOp(gen, {
