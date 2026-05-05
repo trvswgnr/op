@@ -157,9 +157,12 @@ export type Op<T, E, A extends readonly unknown[]> = (A extends []
   Tagged<"Op">;
 
 export interface OpHooks<T, E> {
-  withRetry: (policy?: RetryPolicy) => Op<T, E, []>;
-  withTimeout: (timeoutMs: number) => Op<T, E | TimeoutError, []>;
-  withSignal: (signal: AbortSignal) => Op<T, E, []>;
+  /** Inner op to push policy wrappers to (when present with `rebuild`). */
+  inner?: Op<unknown, unknown, []>;
+  /** Rebuild this operator around a new inner op for push-through policy behavior. */
+  rebuild?: (newInner: Op<unknown, unknown, []>) => Op<T, unknown, []>;
+  /** Optional timeout-specific rebuild for error-channel widening edge cases. */
+  rebuildForTimeout?: (newInner: Op<unknown, unknown, []>) => Op<T, unknown, []>;
   withRelease: (release: ReleaseFn<T>) => Op<T, E, []>;
   /** Backs public `.on("enter", fn)` on ops built from these hooks. */
   registerEnterInitialize: (initialize: EnterFn<[]>) => Op<T, E, []>;

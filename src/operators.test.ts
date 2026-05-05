@@ -1,6 +1,6 @@
 import { assert, describe, expect, test, vi } from "vitest";
 import { Op } from "./index.js";
-import { TaggedError, UnhandledException } from "./errors.js";
+import { TaggedError, TimeoutError, UnhandledException } from "./errors.js";
 import { TRUE } from "./test-utils.js";
 
 // Scope: integration tests for fluent operator behavior
@@ -22,6 +22,30 @@ describe("operator combinators", () => {
         .run();
       assert(result.isErr(), "should be Err");
       expect(result.error).toBe("boom");
+    });
+
+    test("map withRetry only retries the source op, not transform throws", async () => {
+      let sourceAttempts = 0;
+      let transformAttempts = 0;
+      const result = await Op.try(() => {
+        sourceAttempts += 1;
+        return 1;
+      })
+        .map(() => {
+          transformAttempts += 1;
+          throw new Error("parse failed");
+        })
+        .withRetry({
+          maxAttempts: 3,
+          shouldRetry: () => true,
+          getDelay: () => 0,
+        })
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+      expect(sourceAttempts).toBe(1);
+      expect(transformAttempts).toBe(1);
     });
   });
 
@@ -74,6 +98,19 @@ describe("operator combinators", () => {
       expect(result.value).toBe(69);
       expect(attempts).toBe(2);
     });
+
+    test("mapErr withTimeout preserves TimeoutError without mapping", async () => {
+      const result = await Op.try(
+        () => new Promise<number>((resolve) => setTimeout(() => resolve(1), 20)),
+        () => "source-failed" as const,
+      )
+        .mapErr((error) => ({ kind: "app", error }))
+        .withTimeout(1)
+        .run();
+
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+    });
   });
 
   describe("op.flatMap", () => {
@@ -112,6 +149,33 @@ describe("operator combinators", () => {
       assert(result.isOk(), "should be Ok");
       expect(result.value).toBe(8);
       expect(attempts).toBe(2);
+    });
+
+    test("flatMap withRetry retries the whole composition including bind", async () => {
+      let sourceAttempts = 0;
+      let bindAttempts = 0;
+      const result = await Op.try(() => {
+        sourceAttempts += 1;
+        return "payload";
+      })
+        .flatMap(() =>
+          Op.try(() => {
+            bindAttempts += 1;
+            if (bindAttempts < 2) throw new Error("bind failed");
+            return 69;
+          }),
+        )
+        .withRetry({
+          maxAttempts: 2,
+          shouldRetry: () => true,
+          getDelay: () => 0,
+        })
+        .run();
+
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBe(69);
+      expect(sourceAttempts).toBe(2);
+      expect(bindAttempts).toBe(2);
     });
   });
 

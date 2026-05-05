@@ -1,6 +1,6 @@
 import { TimeoutError, UnhandledException } from "../errors.js";
 import { Result } from "../result.js";
-import { withRetryOp, withSignalOp, withTimeoutOp } from "../policies.js";
+import { withRetryOp, withSignalOp, withTimeoutOp, type RetryPolicy } from "../policies.js";
 import type {
   EnterContext,
   EnterFn,
@@ -86,13 +86,32 @@ export function makeNullaryOp<T, E>(
   hooks: OpHooks<T, E>,
 ): Op<T, TrackedErr<E>, []> {
   let self: Op<T, TrackedErr<E>, []>;
+  const hasPushThroughConfig = hooks.inner !== undefined && hooks.rebuild !== undefined;
+  const pushInner = hooks.inner;
+  const rebuild = hooks.rebuild;
+  const rebuildForTimeout = hooks.rebuildForTimeout ?? hooks.rebuild;
   const state = {
     [NULLARY_OP_SYMBOL]: true,
     [Symbol.iterator]: gen,
     run: () => runOp(self),
-    withRetry: hooks.withRetry,
-    withTimeout: hooks.withTimeout,
-    withSignal: hooks.withSignal,
+    withRetry: (policy?: RetryPolicy) => {
+      if (!hasPushThroughConfig || pushInner === undefined || rebuild === undefined) {
+        return cast(withRetryOp(self, policy));
+      }
+      return cast(rebuild(pushInner.withRetry(policy)));
+    },
+    withTimeout: (timeoutMs: number) => {
+      if (!hasPushThroughConfig || pushInner === undefined || rebuildForTimeout === undefined) {
+        return cast(withTimeoutOp(self, timeoutMs));
+      }
+      return cast(rebuildForTimeout(pushInner.withTimeout(timeoutMs)));
+    },
+    withSignal: (signal: AbortSignal) => {
+      if (!hasPushThroughConfig || pushInner === undefined || rebuild === undefined) {
+        return cast(withSignalOp(self, signal));
+      }
+      return cast(rebuild(pushInner.withSignal(signal)));
+    },
     withRelease: hooks.withRelease,
     on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, []>) =>
       dispatchLifecycleNullary(hooks, event, handler),
@@ -131,9 +150,8 @@ export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<
       return result.value;
     },
     {
-      withRetry: (policy) => withCleanupNullaryOp(op.withRetry(policy), release),
-      withTimeout: (timeoutMs) => withCleanupNullaryOp(op.withTimeout(timeoutMs), release),
-      withSignal: (signal) => withCleanupNullaryOp(op.withSignal(signal), release),
+      inner: op,
+      rebuild: (newInner) => withCleanupNullaryOp(cast<Op<T, E, []>>(newInner), release),
       withRelease: (nextRelease) =>
         withCleanupNullaryOp(withCleanupNullaryOp(op, release), nextRelease),
       registerEnterInitialize: (initialize) =>
@@ -160,9 +178,8 @@ export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>
       return result.value;
     },
     {
-      withRetry: (policy) => onEnterNullaryOp(op.withRetry(policy), initialize),
-      withTimeout: (timeoutMs) => onEnterNullaryOp(op.withTimeout(timeoutMs), initialize),
-      withSignal: (signal) => onEnterNullaryOp(op.withSignal(signal), initialize),
+      inner: op,
+      rebuild: (newInner) => onEnterNullaryOp(cast<Op<T, E, []>>(newInner), initialize),
       withRelease: (release) => withCleanupNullaryOp(onEnterNullaryOp(op, initialize), release),
       registerEnterInitialize: (nextInitialize) =>
         onEnterNullaryOp(onEnterNullaryOp(op, initialize), nextInitialize),
@@ -193,15 +210,11 @@ export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, [
       return result.value;
     },
     {
-      withRetry: (policy) => onExitNullaryOp(op.withRetry(policy), finalize),
-      withTimeout: (timeoutMs) =>
-        onExitNullaryOp(
-          op.withTimeout(timeoutMs),
-          // SAFETY: `withTimeout` widens the error type to `E | TimeoutError`,
-          // so we need to cast the finalize function to the wider type to match
-          cast(finalize),
-        ),
-      withSignal: (signal) => onExitNullaryOp(op.withSignal(signal), finalize),
+      inner: op,
+      rebuild: (newInner) => onExitNullaryOp(cast<Op<T, E, []>>(newInner), finalize),
+      rebuildForTimeout: (newInner) =>
+        // SAFETY: timeout push-through widens inner error type, so widen finalize accordingly.
+        onExitNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), cast(finalize)),
       withRelease: (release) => withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
       registerEnterInitialize: (initialize) =>
         onEnterNullaryOp(onExitNullaryOp(op, finalize), initialize),
@@ -231,9 +244,8 @@ export function mapNullaryOp<T, E, U>(
     },
     {
       ...createDefaultHooks(() => mapNullaryOp(op, transform)),
-      withRetry: (policy) => mapNullaryOp(op.withRetry(policy), transform),
-      withTimeout: (timeoutMs) => mapNullaryOp(op.withTimeout(timeoutMs), transform),
-      withSignal: (signal) => mapNullaryOp(op.withSignal(signal), transform),
+      inner: op,
+      rebuild: (newInner) => mapNullaryOp(cast<Op<T, E, []>>(newInner), transform),
     },
   );
 }
@@ -259,9 +271,6 @@ export function flatMapNullaryOp<T, E, U, E2>(
     },
     {
       ...createDefaultHooks(() => mapped),
-      withRetry: (policy) => withRetryOp(mapped, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(mapped, timeoutMs),
-      withSignal: (signal) => withSignalOp(mapped, signal),
     },
   );
 
@@ -296,9 +305,8 @@ export function tapNullaryOp<T, E, R>(
     },
     {
       ...createDefaultHooks(() => tapNullaryOp(op, observe)),
-      withRetry: (policy) => tapNullaryOp(op.withRetry(policy), observe),
-      withTimeout: (timeoutMs) => tapNullaryOp(op.withTimeout(timeoutMs), observe),
-      withSignal: (signal) => tapNullaryOp(op.withSignal(signal), observe),
+      inner: op,
+      rebuild: (newInner) => tapNullaryOp(cast<Op<T, E, []>>(newInner), observe),
     },
   );
 }
@@ -334,12 +342,12 @@ export function tapErrNullaryOp<T, E, R>(
     },
     {
       ...createDefaultHooks(() => tapErrNullaryOp(op, observe)),
-      withRetry: (policy) => tapErrNullaryOp(op.withRetry(policy), observe),
-      withTimeout: (timeoutMs) =>
-        tapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
+      inner: op,
+      rebuild: (newInner) => tapErrNullaryOp(cast<Op<T, E, []>>(newInner), observe),
+      rebuildForTimeout: (newInner) =>
+        tapErrNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
           TimeoutError.is(error) ? undefined : observe(error),
         ),
-      withSignal: (signal) => tapErrNullaryOp(op.withSignal(signal), observe),
     },
   );
 }
@@ -374,12 +382,12 @@ export function mapErrNullaryOp<T, E, E2>(
     },
     {
       ...createDefaultHooks(() => mapErrNullaryOp(op, transform)),
-      withRetry: (policy) => mapErrNullaryOp(op.withRetry(policy), transform),
-      withTimeout: (timeoutMs) =>
-        mapErrNullaryOp(op.withTimeout(timeoutMs), (error) =>
+      inner: op,
+      rebuild: (newInner) => mapErrNullaryOp(cast<Op<T, E, []>>(newInner), transform),
+      rebuildForTimeout: (newInner) =>
+        mapErrNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
           TimeoutError.is(error) ? error : transform(error),
         ),
-      withSignal: (signal) => mapErrNullaryOp(op.withSignal(signal), transform),
     },
   );
 }
@@ -421,14 +429,15 @@ export function recoverNullaryOp<T, E, R>(
     },
     {
       ...createDefaultHooks(() => recoverNullaryOp(op, predicate, handler)),
-      withRetry: (policy) => recoverNullaryOp(op.withRetry(policy), predicate, handler),
-      withTimeout: (timeoutMs) =>
+      inner: op,
+      rebuild: (newInner) => recoverNullaryOp(cast<Op<T, E, []>>(newInner), predicate, handler),
+      rebuildForTimeout: (newInner) =>
         recoverNullaryOp(
-          op.withTimeout(timeoutMs),
-          (error) => !TimeoutError.is(error) && conditionalPredicate(predicate, error),
+          cast<Op<T, E | TimeoutError, []>>(newInner),
+          (error: E | TimeoutError) =>
+            !TimeoutError.is(error) && conditionalPredicate(predicate, error),
           cast(handler),
         ),
-      withSignal: (signal) => recoverNullaryOp(op.withSignal(signal), predicate, handler),
     },
   );
 }

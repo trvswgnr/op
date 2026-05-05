@@ -2,7 +2,6 @@ import { ErrorGroup, UnhandledException } from "./errors.js";
 import { type Instruction, type Op, type InferOpOk, type InferOpErr } from "./core/types.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
-import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Err, Ok, Result } from "./result.js";
 import { makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
 import { cast } from "./shared.js";
@@ -12,9 +11,6 @@ type AnyNullaryOp = Op<unknown, unknown, []>;
 function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
   const self: Op<T, E, []> = makeNullaryOp(gen, {
     ...createDefaultHooks(() => self),
-    withRetry: (policy?) => withRetryOp(self, policy),
-    withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
-    withSignal: (signal) => withSignalOp(self, signal),
   });
   return self;
 }

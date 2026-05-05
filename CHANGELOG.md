@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strengthened algebraic correctness checks by replacing fixed-case monad law
   assertions with property-based tests and adding randomized `Result` algebra
   coverage for `map` and `andThen` composition laws.
+- Simplified nullary operator policy wiring to derive retry/timeout/signal behavior
+  from `inner`/`rebuild` config in `makeNullaryOp`, reducing per-operator boilerplate
+  while preserving push-through vs wrap-self semantics (including timeout widening
+  edge cases for `mapErr`, `tapErr`, `recover`, and `onExit`).
 
 ## [0.1.53] - 2026-05-02
 

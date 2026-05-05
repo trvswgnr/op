@@ -31,9 +31,6 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
     },
     {
       ...createDefaultHooks(() => op),
-      withRetry: (policy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal) => withSignalOp(op, signal),
     },
   );
 
@@ -50,9 +47,6 @@ export function fail<E>(value: E): Op<never, E, []> {
     },
     {
       ...createDefaultHooks(() => op),
-      withRetry: (policy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal) => withSignalOp(op, signal),
     },
   );
 
@@ -73,9 +67,6 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
     },
     {
       ...createDefaultHooks(() => op),
-      withRetry: (policy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal) => withSignalOp(op, signal),
     },
   );
   return op;
@@ -106,9 +97,6 @@ export function _try<T, E = UnhandledException>(
     },
     {
       ...createDefaultHooks(() => op),
-      withRetry: (policy) => withRetryOp(op, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(op, timeoutMs),
-      withSignal: (signal) => withSignalOp(op, signal),
     },
   );
   return op;
@@ -140,9 +128,6 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
     // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast
     const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(() => cast<never>(f(...args)), {
       ...createDefaultHooks(() => bound),
-      withRetry: (policy) => withRetryOp(bound, policy),
-      withTimeout: (timeoutMs) => withTimeoutOp(bound, timeoutMs),
-      withSignal: (signal) => withSignalOp(bound, signal),
     });
     return bound;
   });

@@ -118,9 +118,6 @@ function makePolicyNullaryOp<T, E>(
 ): Op<T, TrackedErr<E>, []> {
   const self: Op<T, TrackedErr<E>, []> = makeNullaryOp(gen, {
     ...createDefaultHooks(() => self),
-    withRetry: (policy) => withRetryOp(self, policy),
-    withTimeout: (timeoutMs) => withTimeoutOp(self, timeoutMs),
-    withSignal: (signal) => withSignalOp(self, signal),
   });
 
   return self;
