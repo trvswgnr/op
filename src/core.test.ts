@@ -1,14 +1,11 @@
 import { assert, describe, expect, test } from "vitest";
-import {
-  chainCleanupFaults,
-  closeGenerator,
-  drive,
-  isErrInstruction,
-  isRegisterExitFinalizerInstruction,
-  isSuspendInstruction,
-} from "./core/runtime.js";
+import { chainCleanupFaults, closeGenerator, drive } from "./core/runtime.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
-import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
+import {
+  isErrInstruction,
+  RegisterExitFinalizerInstruction,
+  SuspendInstruction,
+} from "./core/instructions.js";
 import type { Instruction, Op } from "./core/types.js";
 import { UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
@@ -60,11 +57,11 @@ describe("core/runtime helpers", () => {
     const typedErr = Result.err("typed");
     const typedOk = Result.ok("value");
 
-    expect(isSuspendInstruction(suspended)).toBe(true);
-    expect(isSuspendInstruction({ suspend: async () => 1 })).toBe(false);
+    expect(suspended instanceof SuspendInstruction).toBe(true);
+    expect({ suspend: async () => 1 } instanceof SuspendInstruction).toBe(false);
 
-    expect(isRegisterExitFinalizerInstruction(finalizer)).toBe(true);
-    expect(isRegisterExitFinalizerInstruction({ finalize: async () => {} })).toBe(false);
+    expect(finalizer instanceof RegisterExitFinalizerInstruction).toBe(true);
+    expect({ finalize: async () => {} } instanceof RegisterExitFinalizerInstruction).toBe(false);
 
     expect(isErrInstruction(typedErr)).toBe(true);
     expect(isErrInstruction(typedOk)).toBe(false);

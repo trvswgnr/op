@@ -1,27 +1,11 @@
 import { UnhandledException } from "../errors.js";
-import { Err, Result } from "../result.js";
-import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
+import { Result } from "../result.js";
+import {
+  isErrInstruction,
+  RegisterExitFinalizerInstruction,
+  SuspendInstruction,
+} from "./instructions.js";
 import { type ExitContext, type Instruction, type Op } from "./types.js";
-
-export function isSuspendInstruction(value: unknown): value is SuspendInstruction {
-  return value instanceof SuspendInstruction;
-}
-
-export function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "isErr" in value &&
-    typeof value.isErr === "function" &&
-    value.isErr()
-  );
-}
-
-export function isRegisterExitFinalizerInstruction(
-  value: unknown,
-): value is RegisterExitFinalizerInstruction {
-  return value instanceof RegisterExitFinalizerInstruction;
-}
 
 export function closeGenerator(iterator: Iterator<unknown, unknown, unknown>) {
   try {
@@ -110,12 +94,12 @@ export async function drive<T, E>(
     let step = iter.next();
     while (!step.done) {
       try {
-        if (isSuspendInstruction(step.value)) {
+        if (step.value instanceof SuspendInstruction) {
           step = await resumeSuspended(step.value, iter);
           continue;
         }
         const instr = step.value;
-        if (isRegisterExitFinalizerInstruction(instr)) {
+        if (instr instanceof RegisterExitFinalizerInstruction) {
           step = registerExitFinalizer(instr, iter);
           continue;
         }

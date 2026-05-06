@@ -1,5 +1,6 @@
 import type { ExitContext, Instruction } from "./types.js";
 import { Tagged } from "../tagged.js";
+import { Err } from "../result.js";
 
 type SuspendFn = (signal: AbortSignal) => Promise<unknown>;
 export class SuspendInstruction extends Tagged("SuspendInstruction") {
@@ -26,4 +27,14 @@ export class RegisterExitFinalizerInstruction extends Tagged("RegisterExitFinali
     super();
     this.finalize = finalize;
   }
+}
+
+export function isErrInstruction<E>(value: unknown): value is Err<unknown, E> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "isErr" in value &&
+    typeof value.isErr === "function" &&
+    value.isErr()
+  );
 }
