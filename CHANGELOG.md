@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `inner`/`rebuild` config in `makeNullaryOp`, reducing per-operator boilerplate
   while preserving push-through vs wrap-self semantics (including timeout widening
   edge cases for `mapErr`, `tapErr`, `recover`, and `onExit`).
+- Collapsed arity-level operator wrappers into a generic lifting path so fluent
+  `map`/`mapErr`/`flatMap`/`tap`/`tapErr`/`recover` on parameterized ops reuse
+  shared policy plumbing while preserving timeout and lifecycle behavior.
 
 ## [0.1.53] - 2026-05-02
 

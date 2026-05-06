@@ -8,8 +8,6 @@ import type {
   OpArity,
   OpLifecycleHook,
   ReleaseFn,
-  InferOpOk,
-  InferOpErr,
 } from "./types.js";
 import { drive } from "./runtime.js";
 import {
@@ -62,13 +60,41 @@ export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
       withRelease: (release: ReleaseFn<T>) => makeHandlers(self).withRelease(release),
       on: (event: OpLifecycleHook, handler: LifecycleFn<T, E, A>) =>
         makeHandlers(self).on(event, handler),
-      map: <U>(transform: (value: T) => U) => mapOp(self, transform),
-      mapErr: <E2>(transform: (error: E) => E2) => mapErrOp(self, transform),
-      flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapOp(self, bind),
-      tap: <R>(observe: (value: T) => R) => tapOp(self, observe),
-      tapErr: <R>(observe: (error: E) => R) => tapErrOp(self, observe),
+      map: <U>(transform: (value: T) => U) =>
+        liftArityOp(self, (resolved) => mapNullaryOp(resolved, transform)),
+      mapErr: <E2>(transform: (error: E) => E2) =>
+        liftArityOp(
+          self,
+          (resolved) => mapErrNullaryOp(resolved, transform),
+          (resolved) =>
+            mapErrNullaryOp(resolved, (error) =>
+              TimeoutError.is(error) ? error : transform(error),
+            ),
+        ),
+      flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) =>
+        liftArityOp(self, (resolved) => flatMapNullaryOp(resolved, bind)),
+      tap: <R>(observe: (value: T) => R) =>
+        liftArityOp(self, (resolved) => tapNullaryOp(resolved, observe)),
+      tapErr: <R>(observe: (error: E) => R) =>
+        liftArityOp(
+          self,
+          (resolved) => tapErrNullaryOp(resolved, observe),
+          (resolved) =>
+            tapErrNullaryOp(resolved, (error) =>
+              TimeoutError.is(error) ? undefined : observe(error),
+            ),
+        ),
       recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
-        recoverOp(self, predicate, handler),
+        liftArityOp(
+          self,
+          (resolved) => recoverNullaryOp(resolved, predicate, handler),
+          (resolved) =>
+            recoverNullaryOp(
+              resolved,
+              (error) => !TimeoutError.is(error) && predicate(error),
+              cast(handler),
+            ),
+        ),
       _tag: "Op" as const,
     }),
   );
@@ -78,14 +104,24 @@ export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
 export function liftArityOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
   op: OpArity<TIn, EIn, A>,
   mapNullary: (resolved: Op<TIn, EIn, []>) => Op<TOut, EOut, []>,
-  makeHandlers: (
-    source: OpArity<TIn, EIn, A>,
-    self: OpArity<TOut, EOut, A>,
-  ) => FluentArityHandlers<TOut, EOut, A>,
+  mapNullaryForTimeout?: (
+    resolved: Op<TIn, EIn | TimeoutError, []>,
+  ) => Op<TOut, EOut | TimeoutError, []>,
 ): OpArity<TOut, EOut, A> {
   return makeFluentArityOp(
     (...args) => mapNullary(op(...args)),
-    (self) => makeHandlers(op, self),
+    (self) => ({
+      withRetry: (policy) => liftArityOp(asArityOp(op.withRetry(policy)), mapNullary),
+      withTimeout: (timeoutMs) =>
+        liftArityOp<TIn, EIn | TimeoutError, A, TOut, EOut | TimeoutError>(
+          asArityOp(op.withTimeout(timeoutMs)),
+          cast(mapNullaryForTimeout ?? mapNullary),
+          mapNullaryForTimeout,
+        ),
+      withSignal: (signal) => liftArityOp(asArityOp(op.withSignal(signal)), mapNullary),
+      withRelease: (release) => withReleaseOp(self, release),
+      on: (event, handler) => onOp(self, event, handler),
+    }),
   );
 }
 
@@ -158,130 +194,14 @@ export function withReleaseOp<T, E, A extends readonly unknown[]>(
   op: OpArity<T, E, A>,
   release: ReleaseFn<T>,
 ): OpArity<T, E, A> {
-  return liftArityOp(
-    op,
-    (resolved) => withCleanupNullaryOp(resolved, release),
-    (source, self) => ({
+  const source = op;
+  return makeFluentArityOp(
+    (...args) => withCleanupNullaryOp(source(...args), release),
+    (self) => ({
       withRetry: (policy) => withReleaseOp(asArityOp(source.withRetry(policy)), release),
       withTimeout: (timeoutMs) => withReleaseOp(asArityOp(source.withTimeout(timeoutMs)), release),
       withSignal: (signal) => withReleaseOp(asArityOp(source.withSignal(signal)), release),
       withRelease: (nextRelease) => withReleaseOp(self, nextRelease),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function mapOp<T, E, A extends readonly unknown[], U>(
-  op: OpArity<T, E, A>,
-  transform: (value: T) => U,
-): OpArity<Awaited<U>, E, A> {
-  return liftArityOp(
-    op,
-    (resolved) => mapNullaryOp(resolved, transform),
-    (source, self) => ({
-      withRetry: (policy) => mapOp(asArityOp(source.withRetry(policy)), transform),
-      withTimeout: (timeoutMs) => mapOp(asArityOp(source.withTimeout(timeoutMs)), transform),
-      withSignal: (signal) => mapOp(asArityOp(source.withSignal(signal)), transform),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function mapErrOp<T, E, A extends readonly unknown[], E2>(
-  op: OpArity<T, E, A>,
-  transform: (error: E) => E2,
-): OpArity<T, E2, A> {
-  return liftArityOp(
-    op,
-    (resolved) => mapErrNullaryOp(resolved, transform),
-    (source, self) => ({
-      withRetry: (policy) => mapErrOp(asArityOp(source.withRetry(policy)), transform),
-      withTimeout: (timeoutMs) =>
-        mapErrOp(asArityOp(source.withTimeout(timeoutMs)), (error) =>
-          TimeoutError.is(error) ? error : transform(error),
-        ),
-      withSignal: (signal) => mapErrOp(asArityOp(source.withSignal(signal)), transform),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function flatMapOp<T, E, A extends readonly unknown[], U, E2>(
-  op: OpArity<T, E, A>,
-  bind: (value: T) => Op<U, E2, []>,
-): OpArity<U, E | E2, A> {
-  return liftArityOp(
-    op,
-    (resolved) => flatMapNullaryOp(resolved, bind),
-    (source, self) => ({
-      withRetry: (policy) => flatMapOp(asArityOp(source.withRetry(policy)), bind),
-      withTimeout: (timeoutMs) => flatMapOp(asArityOp(source.withTimeout(timeoutMs)), bind),
-      withSignal: (signal) => flatMapOp(asArityOp(source.withSignal(signal)), bind),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function tapOp<T, E, A extends readonly unknown[], R>(
-  op: OpArity<T, E, A>,
-  observe: (value: T) => R,
-): OpArity<T, E | InferOpErr<R>, A> {
-  return liftArityOp(
-    op,
-    (resolved) => tapNullaryOp(resolved, observe),
-    (source, self) => ({
-      withRetry: (policy) => tapOp(asArityOp(source.withRetry(policy)), observe),
-      withTimeout: (timeoutMs) => tapOp(asArityOp(source.withTimeout(timeoutMs)), observe),
-      withSignal: (signal) => tapOp(asArityOp(source.withSignal(signal)), observe),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function tapErrOp<T, E, A extends readonly unknown[], R>(
-  op: OpArity<T, E, A>,
-  observe: (error: E) => R,
-): OpArity<T, E | InferOpErr<R>, A> {
-  return liftArityOp(
-    op,
-    (resolved) => tapErrNullaryOp(resolved, observe),
-    (source, self) => ({
-      withRetry: (policy) => tapErrOp(asArityOp(source.withRetry(policy)), observe),
-      withTimeout: (timeoutMs) =>
-        tapErrOp(asArityOp(source.withTimeout(timeoutMs)), (error) =>
-          TimeoutError.is(error) ? undefined : observe(error),
-        ),
-      withSignal: (signal) => tapErrOp(asArityOp(source.withSignal(signal)), observe),
-      withRelease: (release) => withReleaseOp(self, release),
-      on: (event, finalize) => onOp(self, event, finalize),
-    }),
-  );
-}
-
-export function recoverOp<T, E, A extends readonly unknown[], R>(
-  op: OpArity<T, E, A>,
-  predicate: (error: E) => boolean,
-  handler: (error: E) => R,
-): OpArity<T | InferOpOk<R>, E | InferOpErr<R>, A> {
-  return liftArityOp(
-    op,
-    (resolved) => recoverNullaryOp(resolved, predicate, handler),
-    (source, self) => ({
-      withRetry: (policy) => recoverOp(asArityOp(source.withRetry(policy)), predicate, handler),
-      withTimeout: (timeoutMs) =>
-        recoverOp(
-          // SAFETY: `withTimeout` widens the error type to `E | TimeoutError`, so we need to cast the source op
-          // to the narrower error type `E` to match the handler type
-          cast(source.withTimeout(timeoutMs)),
-          (error) => !TimeoutError.is(error) && predicate(error),
-          handler,
-        ),
-      withSignal: (signal) => recoverOp(asArityOp(source.withSignal(signal)), predicate, handler),
-      withRelease: (release) => withReleaseOp(self, release),
       on: (event, finalize) => onOp(self, event, finalize),
     }),
   );
