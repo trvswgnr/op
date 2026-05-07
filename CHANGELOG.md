@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+### Changed
+
+- Unified operation typing around the exported `Op` contract across builders,
+  combinators, policies, and runtime internals, so public helper inference now
+  consistently reflects the same type surface users compose against.
+
 ## [0.1.56] - 2026-05-07
 
 ### Changed
