@@ -8,7 +8,6 @@ import type {
   ExitFn,
   Instruction,
   LifecycleFn,
-  _Op,
   OpHooks,
   OpLifecycleHook,
   InferOpErr,
@@ -17,6 +16,7 @@ import type {
   TrackedErr,
   WithPredicateMethod,
 } from "./types.js";
+import type { Op } from "../index.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { drive } from "./runtime.js";
 import { runOp } from "./run-op.js";
@@ -26,11 +26,11 @@ const EMPTY_ARGS: [] = [];
 
 export const NULLARY_OP_SYMBOL = Symbol("NullaryOp");
 
-export function isOp(value: unknown): value is _Op<unknown, unknown, readonly unknown[]> {
+export function isOp(value: unknown): value is Op<unknown, unknown, readonly unknown[]> {
   return typeof value === "function" && "_tag" in value && value._tag === "Op";
 }
 
-export function isNullaryOp(value: unknown): value is _Op<unknown, unknown, []> {
+export function isNullaryOp(value: unknown): value is Op<unknown, unknown, []> {
   return (
     typeof value === "function" &&
     Symbol.iterator in value &&
@@ -39,7 +39,7 @@ export function isNullaryOp(value: unknown): value is _Op<unknown, unknown, []> 
   );
 }
 
-function coerceToNullaryOp(value: unknown): _Op<unknown, unknown, []> | undefined {
+function coerceToNullaryOp(value: unknown): Op<unknown, unknown, []> | undefined {
   if (!isOp(value)) return undefined;
   if (isNullaryOp(value)) return value;
   return cast(value());
@@ -53,7 +53,7 @@ function dispatchLifecycleNullary<T, E>(
   hooks: OpHooks<T, E>,
   event: OpLifecycleHook,
   handler: LifecycleFn<T, E, []>,
-): _Op<T, E, []> {
+): Op<T, E, []> {
   if (event === "enter") {
     // Discriminant narrows runtime event, but TS cannot narrow unioned function type through generic `event`.
     return hooks.registerEnterInitialize(cast(handler));
@@ -73,7 +73,7 @@ type DefaultHooks<T, E> = Pick<
   "withRelease" | "registerEnterInitialize" | "registerExitFinalize"
 >;
 
-export function createDefaultHooks<T, E>(getSelf: () => _Op<T, E, []>): DefaultHooks<T, E> {
+export function createDefaultHooks<T, E>(getSelf: () => Op<T, E, []>): DefaultHooks<T, E> {
   return {
     withRelease: (release) => withCleanupNullaryOp(getSelf(), release),
     registerEnterInitialize: (initialize) => onEnterNullaryOp(getSelf(), initialize),
@@ -84,8 +84,8 @@ export function createDefaultHooks<T, E>(getSelf: () => _Op<T, E, []>): DefaultH
 export function makeNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
   hooks: OpHooks<T, E>,
-): _Op<T, TrackedErr<E>, []> {
-  let self: _Op<T, TrackedErr<E>, []>;
+): Op<T, TrackedErr<E>, []> {
+  let self: Op<T, TrackedErr<E>, []>;
   const hasPushThroughConfig = hooks.inner !== undefined && hooks.rebuild !== undefined;
   const pushInner = hooks.inner;
   const rebuild = hooks.rebuild;
@@ -117,7 +117,7 @@ export function makeNullaryOp<T, E>(
       dispatchLifecycleNullary(hooks, event, handler),
     map: <U>(transform: (value: T) => U) => mapNullaryOp(self, transform),
     mapErr: <E2>(transform: (error: E) => E2) => mapErrNullaryOp(self, transform),
-    flatMap: <U, E2>(bind: (value: T) => _Op<U, E2, []>) => flatMapNullaryOp(self, bind),
+    flatMap: <U, E2>(bind: (value: T) => Op<U, E2, []>) => flatMapNullaryOp(self, bind),
     tap: <R>(observe: (value: T) => R) => tapNullaryOp(self, observe),
     tapErr: <R>(observe: (error: E) => R) => tapErrNullaryOp(self, observe),
     recover: <R>(predicate: (error: E) => boolean, handler: (error: E) => R) =>
@@ -134,10 +134,7 @@ export function makeNullaryOp<T, E>(
   return self;
 }
 
-export function withCleanupNullaryOp<T, E>(
-  op: _Op<T, E, []>,
-  release: ReleaseFn<T>,
-): _Op<T, E, []> {
+export function withCleanupNullaryOp<T, E>(op: Op<T, E, []>, release: ReleaseFn<T>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
       const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -154,7 +151,7 @@ export function withCleanupNullaryOp<T, E>(
     },
     {
       inner: op,
-      rebuild: (newInner) => withCleanupNullaryOp(cast<_Op<T, E, []>>(newInner), release),
+      rebuild: (newInner) => withCleanupNullaryOp(cast<Op<T, E, []>>(newInner), release),
       withRelease: (nextRelease) =>
         withCleanupNullaryOp(withCleanupNullaryOp(op, release), nextRelease),
       registerEnterInitialize: (initialize) =>
@@ -165,7 +162,7 @@ export function withCleanupNullaryOp<T, E>(
   );
 }
 
-export function onEnterNullaryOp<T, E>(op: _Op<T, E, []>, initialize: EnterFn<[]>): _Op<T, E, []> {
+export function onEnterNullaryOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
       yield new SuspendInstruction(async (signal: AbortSignal) => {
@@ -182,7 +179,7 @@ export function onEnterNullaryOp<T, E>(op: _Op<T, E, []>, initialize: EnterFn<[]
     },
     {
       inner: op,
-      rebuild: (newInner) => onEnterNullaryOp(cast<_Op<T, E, []>>(newInner), initialize),
+      rebuild: (newInner) => onEnterNullaryOp(cast<Op<T, E, []>>(newInner), initialize),
       withRelease: (release) => withCleanupNullaryOp(onEnterNullaryOp(op, initialize), release),
       registerEnterInitialize: (nextInitialize) =>
         onEnterNullaryOp(onEnterNullaryOp(op, initialize), nextInitialize),
@@ -192,10 +189,7 @@ export function onEnterNullaryOp<T, E>(op: _Op<T, E, []>, initialize: EnterFn<[]
   );
 }
 
-export function onExitNullaryOp<T, E>(
-  op: _Op<T, E, []>,
-  finalize: ExitFn<T, E, []>,
-): _Op<T, E, []> {
+export function onExitNullaryOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, []>): Op<T, E, []> {
   return makeNullaryOp(
     function* () {
       yield new RegisterExitFinalizerInstruction(async (ctx) => {
@@ -217,10 +211,10 @@ export function onExitNullaryOp<T, E>(
     },
     {
       inner: op,
-      rebuild: (newInner) => onExitNullaryOp(cast<_Op<T, E, []>>(newInner), finalize),
+      rebuild: (newInner) => onExitNullaryOp(cast<Op<T, E, []>>(newInner), finalize),
       rebuildForTimeout: (newInner) =>
         // SAFETY: timeout push-through widens inner error type, so widen finalize accordingly.
-        onExitNullaryOp(cast<_Op<T, E | TimeoutError, []>>(newInner), cast(finalize)),
+        onExitNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), cast(finalize)),
       withRelease: (release) => withCleanupNullaryOp(onExitNullaryOp(op, finalize), release),
       registerEnterInitialize: (initialize) =>
         onEnterNullaryOp(onExitNullaryOp(op, finalize), initialize),
@@ -231,9 +225,9 @@ export function onExitNullaryOp<T, E>(
 }
 
 export function mapNullaryOp<T, E, U>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   transform: (value: T) => U,
-): _Op<Awaited<U>, E, []> {
+): Op<Awaited<U>, E, []> {
   return makeNullaryOp(
     function* () {
       const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -251,16 +245,16 @@ export function mapNullaryOp<T, E, U>(
     {
       ...createDefaultHooks(() => mapNullaryOp(op, transform)),
       inner: op,
-      rebuild: (newInner) => mapNullaryOp(cast<_Op<T, E, []>>(newInner), transform),
+      rebuild: (newInner) => mapNullaryOp(cast<Op<T, E, []>>(newInner), transform),
     },
   );
 }
 
 export function flatMapNullaryOp<T, E, U, E2>(
-  op: _Op<T, E, []>,
-  bind: (value: T) => _Op<U, E2, []>,
-): _Op<U, E | E2, []> {
-  const mapped: _Op<U, E | E2, []> = makeNullaryOp<U, E | E2 | UnhandledException>(
+  op: Op<T, E, []>,
+  bind: (value: T) => Op<U, E2, []>,
+): Op<U, E | E2, []> {
+  const mapped: Op<U, E | E2, []> = makeNullaryOp<U, E | E2 | UnhandledException>(
     function* () {
       const first: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
         (signal: AbortSignal) => drive(op, signal),
@@ -284,9 +278,9 @@ export function flatMapNullaryOp<T, E, U, E2>(
 }
 
 export function tapNullaryOp<T, E, R>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   observe: (value: T) => R,
-): _Op<T, E | InferOpErr<R>, []> {
+): Op<T, E | InferOpErr<R>, []> {
   return makeNullaryOp<T, E | InferOpErr<R> | UnhandledException>(
     function* () {
       const source: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -296,7 +290,7 @@ export function tapNullaryOp<T, E, R>(
       if (source.isErr()) return yield* source;
 
       const observed = yield new SuspendInstruction(() => Promise.resolve(observe(source.value)));
-      const observedOp: _Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
+      const observedOp: Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
         Promise.resolve(coerceToNullaryOp(observed)),
       );
 
@@ -311,15 +305,15 @@ export function tapNullaryOp<T, E, R>(
     {
       ...createDefaultHooks(() => tapNullaryOp(op, observe)),
       inner: op,
-      rebuild: (newInner) => tapNullaryOp(cast<_Op<T, E, []>>(newInner), observe),
+      rebuild: (newInner) => tapNullaryOp(cast<Op<T, E, []>>(newInner), observe),
     },
   );
 }
 
 export function tapErrNullaryOp<T, E, R>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   observe: (error: E) => R,
-): _Op<T, E | InferOpErr<R>, []> {
+): Op<T, E | InferOpErr<R>, []> {
   return makeNullaryOp<T, E | InferOpErr<R> | UnhandledException>(
     function* () {
       const source: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -332,7 +326,7 @@ export function tapErrNullaryOp<T, E, R>(
       if (UnhandledException.is(sourceError)) return yield* sourceError;
 
       const observed = yield new SuspendInstruction(() => Promise.resolve(observe(sourceError)));
-      const observedOp: _Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
+      const observedOp: Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
         Promise.resolve(coerceToNullaryOp(observed)),
       );
 
@@ -347,9 +341,9 @@ export function tapErrNullaryOp<T, E, R>(
     {
       ...createDefaultHooks(() => tapErrNullaryOp(op, observe)),
       inner: op,
-      rebuild: (newInner) => tapErrNullaryOp(cast<_Op<T, E, []>>(newInner), observe),
+      rebuild: (newInner) => tapErrNullaryOp(cast<Op<T, E, []>>(newInner), observe),
       rebuildForTimeout: (newInner) =>
-        tapErrNullaryOp(cast<_Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
+        tapErrNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
           TimeoutError.is(error) ? undefined : observe(error),
         ),
     },
@@ -357,9 +351,9 @@ export function tapErrNullaryOp<T, E, R>(
 }
 
 export function mapErrNullaryOp<T, E, E2>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   transform: (error: E) => E2,
-): _Op<T, E2, []> {
+): Op<T, E2, []> {
   return makeNullaryOp<T, E2 | UnhandledException>(
     function* () {
       const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -385,9 +379,9 @@ export function mapErrNullaryOp<T, E, E2>(
     {
       ...createDefaultHooks(() => mapErrNullaryOp(op, transform)),
       inner: op,
-      rebuild: (newInner) => mapErrNullaryOp(cast<_Op<T, E, []>>(newInner), transform),
+      rebuild: (newInner) => mapErrNullaryOp(cast<Op<T, E, []>>(newInner), transform),
       rebuildForTimeout: (newInner) =>
-        mapErrNullaryOp(cast<_Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
+        mapErrNullaryOp(cast<Op<T, E | TimeoutError, []>>(newInner), (error: E | TimeoutError) =>
           TimeoutError.is(error) ? error : transform(error),
         ),
     },
@@ -395,10 +389,10 @@ export function mapErrNullaryOp<T, E, E2>(
 }
 
 export function recoverNullaryOp<T, E, R>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   predicate: ((error: E) => boolean) | WithPredicateMethod<E>,
   handler: (error: E) => R,
-): _Op<T | InferOpOk<R>, E | InferOpErr<R>, []> {
+): Op<T | InferOpOk<R>, E | InferOpErr<R>, []> {
   return makeNullaryOp<T | InferOpOk<R>, E | InferOpErr<R> | UnhandledException>(
     function* () {
       const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
@@ -416,7 +410,7 @@ export function recoverNullaryOp<T, E, R>(
       const recovered: InferOpOk<R> = yield* new SuspendInstruction(() =>
         Promise.resolve(handler(error)),
       );
-      const recoveredOp: _Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
+      const recoveredOp: Op<unknown, unknown, []> | undefined = yield* new SuspendInstruction(() =>
         Promise.resolve(coerceToNullaryOp(recovered)),
       );
 
@@ -433,10 +427,10 @@ export function recoverNullaryOp<T, E, R>(
     {
       ...createDefaultHooks(() => recoverNullaryOp(op, predicate, handler)),
       inner: op,
-      rebuild: (newInner) => recoverNullaryOp(cast<_Op<T, E, []>>(newInner), predicate, handler),
+      rebuild: (newInner) => recoverNullaryOp(cast<Op<T, E, []>>(newInner), predicate, handler),
       rebuildForTimeout: (newInner) =>
         recoverNullaryOp(
-          cast<_Op<T, E | TimeoutError, []>>(newInner),
+          cast<Op<T, E | TimeoutError, []>>(newInner),
           (error: E | TimeoutError) =>
             !TimeoutError.is(error) && conditionalPredicate(predicate, error),
           cast(handler),

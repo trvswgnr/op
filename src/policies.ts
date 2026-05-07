@@ -1,7 +1,8 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 import { asArityOp, makeFluentArityOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { TrackedErr, type Instruction, type _Op, type OpArity } from "./core/types.js";
+import { TrackedErr, type Instruction, type OpArity } from "./core/types.js";
+import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { drive } from "./core/runtime.js";
 import { isNullaryOp, makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
@@ -77,7 +78,7 @@ export const DEFAULT_RETRY_POLICY = Object.freeze({
 
 function mapArityFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
   source: OpArity<T, EIn, A>,
-  mapNullary: (resolved: _Op<T, EIn, []>) => _Op<T, EOut, []>,
+  mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
 ): OpArity<T, EOut, A> {
   return makeFluentArityOp(
     (...args: A) => mapNullary(source(...args)),
@@ -101,9 +102,9 @@ function mapArityFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
 }
 
 function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
-  op: _Op<T, EIn, A>,
-  mapNullary: (resolved: _Op<T, EIn, []>) => _Op<T, EOut, []>,
-): _Op<T, EOut, A> {
+  op: Op<T, EIn, A>,
+  mapNullary: (resolved: Op<T, EIn, []>) => Op<T, EOut, []>,
+): Op<T, EOut, A> {
   if (isNullaryOp(op)) {
     // SAFETY: TS cannot express that `[] extends A` may collapse to the nullary branch here
     // Runtime behavior is correct: nullary input remains nullary after mapping
@@ -115,8 +116,8 @@ function mapFluentOp<T, EIn, EOut, A extends readonly unknown[]>(
 
 function makePolicyNullaryOp<T, E>(
   gen: () => Generator<Instruction<E>, T, unknown>,
-): _Op<T, TrackedErr<E>, []> {
-  const self: _Op<T, TrackedErr<E>, []> = makeNullaryOp(gen, {
+): Op<T, TrackedErr<E>, []> {
+  const self: Op<T, TrackedErr<E>, []> = makeNullaryOp(gen, {
     ...createDefaultHooks(() => self),
   });
 
@@ -154,9 +155,9 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
  * - Internally we include `UnhandledException` for runtime safety in `drive`
  */
 function withRetryNullaryOp<T, E>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
-): _Op<T, E, []> {
+): Op<T, E, []> {
   return makePolicyNullaryOp(function* () {
     let attempt = 1;
 
@@ -199,9 +200,9 @@ function withRetryNullaryOp<T, E>(
  * - We intentionally expose only he public contract of `E | TimeoutError` for fluent API stability
  */
 function withTimeoutNullaryOp<T, E>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   timeoutMs: number,
-): _Op<T, E | TimeoutError, []> {
+): Op<T, E | TimeoutError, []> {
   const clampedTimeoutMs = Math.max(0, timeoutMs);
 
   return makePolicyNullaryOp(function* () {
@@ -220,7 +221,7 @@ function withTimeoutNullaryOp<T, E>(
  *
  * - Same contract as source op: binding a signal does not widen the typed error channel
  */
-function withSignalNullaryOp<T, E>(op: _Op<T, E, []>, signal: AbortSignal): _Op<T, E, []> {
+function withSignalNullaryOp<T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> {
   return makePolicyNullaryOp(function* () {
     const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
       (outerSignal: AbortSignal) =>
@@ -233,23 +234,23 @@ function withSignalNullaryOp<T, E>(op: _Op<T, E, []>, signal: AbortSignal): _Op<
 }
 
 export function withRetryOp<T, E, A extends readonly unknown[]>(
-  op: _Op<T, E, A>,
+  op: Op<T, E, A>,
   policy: RetryPolicy = DEFAULT_RETRY_POLICY,
-): _Op<T, E, A> {
+): Op<T, E, A> {
   return mapFluentOp(op, (resolved) => withRetryNullaryOp(resolved, policy));
 }
 
 export function withTimeoutOp<T, E, A extends readonly unknown[]>(
-  op: _Op<T, E, A>,
+  op: Op<T, E, A>,
   timeoutMs: number,
-): _Op<T, E | TimeoutError, A> {
+): Op<T, E | TimeoutError, A> {
   return mapFluentOp(op, (resolved) => withTimeoutNullaryOp(resolved, timeoutMs));
 }
 
 export function withSignalOp<T, E, A extends readonly unknown[]>(
-  op: _Op<T, E, A>,
+  op: Op<T, E, A>,
   signal: AbortSignal,
-): _Op<T, E, A> {
+): Op<T, E, A> {
   return mapFluentOp(op, (resolved) => withSignalNullaryOp(resolved, signal));
 }
 

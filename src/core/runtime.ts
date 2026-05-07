@@ -5,7 +5,8 @@ import {
   RegisterExitFinalizerInstruction,
   SuspendInstruction,
 } from "./instructions.js";
-import { type ExitContext, type Instruction, type _Op } from "./types.js";
+import { type ExitContext, type Instruction } from "./types.js";
+import type { Op } from "../index.js";
 
 export function closeGenerator(iterator: Iterator<unknown, unknown, unknown>) {
   try {
@@ -33,7 +34,7 @@ export function chainCleanupFaults(faults: readonly unknown[]): unknown {
 }
 
 export async function drive<T, E>(
-  op: _Op<T, E, []>,
+  op: Op<T, E, []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<

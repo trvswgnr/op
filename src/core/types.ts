@@ -2,8 +2,8 @@ import type { TimeoutError, UnhandledException } from "../errors.js";
 import type { Err, Result } from "../result.js";
 import type { RetryPolicy } from "../policies.js";
 import type { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
-import { Tagged } from "../tagged.js";
 import { NULLARY_OP_SYMBOL } from "./nullary-ops.js";
+import type { Op } from "../index.js";
 
 export type TrackedErr<E, Excluded = never> = E extends UnhandledException
   ? never
@@ -11,8 +11,8 @@ export type TrackedErr<E, Excluded = never> = E extends UnhandledException
     ? never
     : E;
 
-export type InferOpOk<R> = R extends _Op<infer T, unknown, infer _> ? T : Awaited<R>;
-export type InferOpErr<R> = R extends _Op<unknown, infer E, infer _> ? E : never;
+export type InferOpOk<R> = R extends Op<infer T, unknown, infer _> ? T : Awaited<R>;
+export type InferOpErr<R> = R extends Op<unknown, infer E, infer _> ? E : never;
 
 /**
  * Passed to {@link ExitFn} when the run unwinds.
@@ -51,59 +51,59 @@ export type Instruction<E> =
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
   /** Wraps the operation in retry policy logic. */
-  withRetry(policy?: RetryPolicy): _Op<T, E, A>;
+  withRetry(policy?: RetryPolicy): Op<T, E, A>;
 }
 
 export interface WithTimeout<T, E, A extends readonly unknown[]> {
   /** Applies a timeout budget in milliseconds to the wrapped operation. */
-  withTimeout(timeoutMs: number): _Op<T, E | TimeoutError, A>;
+  withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
 }
 
 export interface WithSignal<T, E, A extends readonly unknown[]> {
   /** Binds an external abort signal to the wrapped operation run. */
-  withSignal(signal: AbortSignal): _Op<T, E, A>;
+  withSignal(signal: AbortSignal): Op<T, E, A>;
 }
 
 export type ReleaseFn<T> = (value: T) => unknown;
 
-/** Lifecycle channels exposed by {@link _Op}. */
+/** Lifecycle channels exposed by {@link Op}. */
 export type OpLifecycleHook = "enter" | "exit";
 
 export interface WithRelease<T, E, A extends readonly unknown[]> {
   /** Registers release logic that runs after a successful value is produced. */
-  withRelease(release: ReleaseFn<T>): _Op<T, E, A>;
+  withRelease(release: ReleaseFn<T>): Op<T, E, A>;
 }
 
 export interface WithLifecycleHooks<T, E, A extends readonly unknown[]> {
   /** Register a handler that runs before the operation body starts. */
-  on(event: "enter", initialize: EnterFn<A>): _Op<T, E, A>;
+  on(event: "enter", initialize: EnterFn<A>): Op<T, E, A>;
   /** Register a handler that runs after the operation settles. */
-  on(event: "exit", finalize: ExitFn<T, E, A>): _Op<T, E, A>;
+  on(event: "exit", finalize: ExitFn<T, E, A>): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
   /** Transforms the success value while preserving args and error channel. */
-  map<U>(transform: (value: T) => U): _Op<Awaited<U>, E, A>;
+  map<U>(transform: (value: T) => U): Op<Awaited<U>, E, A>;
 }
 
 export interface WithMapErr<T, E, A extends readonly unknown[]> {
   /** Transforms the tracked typed error channel while preserving success values. */
-  mapErr<E2>(transform: (error: TrackedErr<E>) => E2): _Op<T, E2, A>;
+  mapErr<E2>(transform: (error: TrackedErr<E>) => E2): Op<T, E2, A>;
 }
 
 export interface WithFlatMap<T, E, A extends readonly unknown[]> {
   /** Binds the success value into the next operation. */
-  flatMap<U, E2>(bind: (value: T) => _Op<U, E2, []>): _Op<U, E | E2, A>;
+  flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Op<U, E | E2, A>;
 }
 
 export interface WithTap<T, E, A extends readonly unknown[]> {
   /** Observes successful values without changing the success payload. */
-  tap<R>(observe: (value: T) => R): _Op<T, E | InferOpErr<R>, A>;
+  tap<R>(observe: (value: T) => R): Op<T, E | InferOpErr<R>, A>;
 }
 
 export interface WithTapErr<T, E, A extends readonly unknown[]> {
   /** Observes tracked errors without changing the original success payload. */
-  tapErr<R>(observe: (error: TrackedErr<E>) => R): _Op<T, TrackedErr<E> | InferOpErr<R>, A>;
+  tapErr<R>(observe: (error: TrackedErr<E>) => R): Op<T, TrackedErr<E> | InferOpErr<R>, A>;
 }
 
 export type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
@@ -113,17 +113,17 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
   recover<ECaught extends TrackedErr<E>, R>(
     predicate: (error: TrackedErr<E>) => error is ECaught,
     handler: (error: ECaught) => R,
-  ): _Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
+  ): Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
   /** Recovers typed failures selected by a tagged predicate method. */
   recover<ECaught extends TrackedErr<E>, R>(
     predicate: WithPredicateMethod<TrackedErr<ECaught>>,
     handler: (error: ECaught) => R,
-  ): _Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
+  ): Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
   /** Recovers failures selected by a boolean predicate over the error value. */
   recover<R>(
     predicate: (error: TrackedErr<E>) => boolean,
     handler: (error: TrackedErr<E>) => R,
-  ): _Op<T | InferOpOk<R>, TrackedErr<E> | InferOpErr<R>, A>;
+  ): Op<T | InferOpOk<R>, TrackedErr<E> | InferOpErr<R>, A>;
 }
 
 export interface OpNullary<T, E>
@@ -160,26 +160,21 @@ export interface OpArity<T, E, A extends readonly unknown[]>
     WithTap<T, E, A>,
     WithTapErr<T, E, A>,
     WithRecover<T, E, A> {
-  (...args: A): _Op<T, E, []>;
+  (...args: A): Op<T, E, []>;
   /** Executes the operation with runtime arguments and returns a `Result`. */
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
 }
 
-export type _Op<T, E, A extends readonly unknown[]> = (A extends []
-  ? OpNullary<T, E>
-  : OpArity<T, E, A>) &
-  Tagged<"Op">;
-
 export interface OpHooks<T, E> {
   /** Inner op to push policy wrappers to (when present with `rebuild`). */
-  inner?: _Op<unknown, unknown, []>;
+  inner?: Op<unknown, unknown, []>;
   /** Rebuild this operator around a new inner op for push-through policy behavior. */
-  rebuild?: (newInner: _Op<unknown, unknown, []>) => _Op<T, unknown, []>;
+  rebuild?: (newInner: Op<unknown, unknown, []>) => Op<T, unknown, []>;
   /** Optional timeout-specific rebuild for error-channel widening edge cases. */
-  rebuildForTimeout?: (newInner: _Op<unknown, unknown, []>) => _Op<T, unknown, []>;
-  withRelease: (release: ReleaseFn<T>) => _Op<T, E, []>;
+  rebuildForTimeout?: (newInner: Op<unknown, unknown, []>) => Op<T, unknown, []>;
+  withRelease: (release: ReleaseFn<T>) => Op<T, E, []>;
   /** Backs public `.on("enter", fn)` on ops built from these hooks. */
-  registerEnterInitialize: (initialize: EnterFn<[]>) => _Op<T, E, []>;
+  registerEnterInitialize: (initialize: EnterFn<[]>) => Op<T, E, []>;
   /** Backs public `.on("exit", fn)` on ops built from these hooks. */
-  registerExitFinalize: (finalize: ExitFn<T, E, []>) => _Op<T, E, []>;
+  registerExitFinalize: (finalize: ExitFn<T, E, []>) => Op<T, E, []>;
 }

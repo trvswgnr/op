@@ -6,12 +6,13 @@ import {
   RegisterExitFinalizerInstruction,
   SuspendInstruction,
 } from "./core/instructions.js";
-import type { Instruction, _Op } from "./core/types.js";
+import type { Instruction } from "./core/types.js";
+import type { Op } from "./index.js";
 import { UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 
-function makeRuntimeOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): _Op<T, E, []> {
-  const op: _Op<T, E, []> = makeNullaryOp(gen, {
+function makeRuntimeOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>): Op<T, E, []> {
+  const op: Op<T, E, []> = makeNullaryOp(gen, {
     withRelease: (_release) => op,
     registerEnterInitialize: (_initialize) => op,
     registerExitFinalize: (_finalize) => op,

@@ -4,13 +4,15 @@ import { ErrorGroup, TimeoutError } from "./errors.js";
 import {
   type EnterContext,
   type ExitContext,
-  type _Op,
   type OpLifecycleHook,
+  OpNullary,
+  OpArity,
 } from "./core/types.js";
 import { runOp } from "./core/run-op.js";
 import { exponentialBackoff } from "./policies.js";
+import { Tagged } from "./tagged.js";
 
-const empty: _Op<void, never, []> = succeed(undefined);
+const empty: Op<void, never, []> = succeed(undefined);
 
 /**
  * Runtime factory and namespace for building and composing operations.
@@ -48,7 +50,10 @@ export const Op = Object.assign(fromGenFn, {
  * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws)
  * @template A Argument tuple for parameterized operations
  */
-export type Op<T, E, A extends readonly unknown[]> = _Op<T, E, A>;
+export type Op<T, E, A extends readonly unknown[]> = (A extends []
+  ? OpNullary<T, E>
+  : OpArity<T, E, A>) &
+  Tagged<"Op">;
 
 export type { EnterContext, ExitContext, OpLifecycleHook };
 export type { BackoffOptions, RetryPolicy } from "./policies.js";
