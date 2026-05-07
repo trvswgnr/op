@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [0.1.57] - 2026-05-07
+
+### Added
+
 ### Changed
 
 - Unified operation typing around the exported `Op` contract across builders,
