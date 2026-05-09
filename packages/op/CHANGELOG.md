@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [0.1.59] - 2026-05-09
+
+### Changed
+
+- No user-facing changes in this release.
+
 ## [0.1.58] - 2026-05-09
 
 ### Changed
@@ -191,6 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
 
 
 
