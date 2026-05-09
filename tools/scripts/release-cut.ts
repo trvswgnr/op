@@ -30,6 +30,8 @@ class ChangelogError extends TaggedError("ChangelogError")<{ message: string }>(
 class CommandError extends TaggedError("CommandError")<{ cause: unknown; command: string }>() {}
 
 const main = Op(function* (dryRun: boolean) {
+  const repoRoot = yield* fromRepoRoot(".");
+
   const writeUtf8 = Op(function* (filepath: string, content: string) {
     if (dryRun) {
       logger.info(`${DRY_RUN_PREFIX} would write ${filepath}`);
@@ -132,7 +134,7 @@ const main = Op(function* (dryRun: boolean) {
     }
 
     return yield* Op.try(
-      () => execSync(command, { stdio: "inherit" }),
+      () => execSync(command, { stdio: "inherit", cwd: repoRoot }),
       (cause) => new CommandError({ cause, command }),
     );
   });

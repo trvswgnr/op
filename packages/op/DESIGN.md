@@ -5,9 +5,9 @@ It focuses on semantics that should remain stable across refactors.
 
 ## Scope and model
 
-`Op.run()` is driven by `drive()` in `src/core/runtime.ts`.
+`Op.run()` is driven by `drive()` in `packages/op/src/core/runtime.ts`.
 That runtime executes generator instructions, tracks registered exit finalizers, and settles to a single `Result`.
-Combinators (`Op.all`, `Op.allSettled`, `Op.any`, `Op.race`) compose multiple `drive()` calls in `src/combinators.ts`.
+Combinators (`Op.all`, `Op.allSettled`, `Op.any`, `Op.race`) compose multiple `drive()` calls in `packages/op/src/combinators.ts`.
 
 ## Invariant 1: cleanup ordering is deterministic and LIFO
 
@@ -20,15 +20,15 @@ Why this matters:
 
 Enforced by code paths:
 
-- `src/core/runtime.ts` (`runFinalizersSafely`): iterates `finalizers` from tail to head and keeps unwinding after faults
-- `src/core/runtime.ts` (`chainCleanupFaults`): folds multiple cleanup faults into a nested `Error.cause` chain in unwind order
+- `packages/op/src/core/runtime.ts` (`runFinalizersSafely`): iterates `finalizers` from tail to head and keeps unwinding after faults
+- `packages/op/src/core/runtime.ts` (`chainCleanupFaults`): folds multiple cleanup faults into a nested `Error.cause` chain in unwind order
 
 Representative tests:
 
-- `src/core.test.ts` (`registerExitFinalizer runs all handlers in LIFO order`)
-- `src/core.test.ts` (`multiple throwing finalizers are folded into a cause chain`)
-- `src/lifecycle.test.ts` (`runs multiple defers in LIFO order on success`)
-- `src/lifecycle.test.ts` (`shares LIFO stack with withRelease (release runs before defer registered earlier)`)
+- `packages/op/src/core.test.ts` (`registerExitFinalizer runs all handlers in LIFO order`)
+- `packages/op/src/core.test.ts` (`multiple throwing finalizers are folded into a cause chain`)
+- `packages/op/src/lifecycle.test.ts` (`runs multiple defers in LIFO order on success`)
+- `packages/op/src/lifecycle.test.ts` (`shares LIFO stack with withRelease (release runs before defer registered earlier)`)
 
 ## Invariant 2: registered exit-finalizer faults take precedence at settlement
 
@@ -41,14 +41,14 @@ Why this matters:
 
 Enforced by code paths:
 
-- `src/core/runtime.ts` (`settleWithCleanup`): finalizer faults override settled body result
-- `src/core/runtime.ts` (`runFinalizersSafely`): returns first unwind fault (or cause chain) for wrapping
+- `packages/op/src/core/runtime.ts` (`settleWithCleanup`): finalizer faults override settled body result
+- `packages/op/src/core/runtime.ts` (`runFinalizersSafely`): returns first unwind fault (or cause chain) for wrapping
 
 Representative tests:
 
-- `src/core.test.ts` (`finalizer throw after successful body converts to UnhandledException`)
-- `src/core.test.ts` (`cleanup fault takes precedence over typed body error`)
-- `src/lifecycle.test.ts` (`when op fails, cleanup throws: UnhandledException with cleanup error as cause`)
+- `packages/op/src/core.test.ts` (`finalizer throw after successful body converts to UnhandledException`)
+- `packages/op/src/core.test.ts` (`cleanup fault takes precedence over typed body error`)
+- `packages/op/src/lifecycle.test.ts` (`when op fails, cleanup throws: UnhandledException with cleanup error as cause`)
 
 Important edge distinction:
 
@@ -57,7 +57,7 @@ Important edge distinction:
 
 Representative test:
 
-- `src/lifecycle.test.ts` (`preserves original Err result when cleanup throws during iter.return()`)
+- `packages/op/src/lifecycle.test.ts` (`preserves original Err result when cleanup throws during iter.return()`)
 
 ## Invariant 3: chain-order semantics in combinators are stable
 
@@ -74,16 +74,16 @@ Why this matters:
 
 Enforced by code paths:
 
-- `src/combinators.ts` (`driveAll`, `driveAllSettled`, `driveAny`, `driveRace`)
-- `src/combinators.ts` (`fanOut`): isolates child cancellation and detaches parent abort listeners on settle
+- `packages/op/src/combinators.ts` (`driveAll`, `driveAllSettled`, `driveAny`, `driveRace`)
+- `packages/op/src/combinators.ts` (`fanOut`): isolates child cancellation and detaches parent abort listeners on settle
 
 Representative tests:
 
-- `src/combinators.test.ts` (`tuple of successes in input order`)
-- `src/combinators.test.ts` (`returns tuple of Result in input order`)
-- `src/combinators.test.ts` (`preserves index order when failures settle out of order`)
-- `src/combinators.test.ts` (`waits for loser finalization before returning the winner`)
-- `src/combinators.test.ts` (`waits for loser finalization before returning winner result`)
+- `packages/op/src/combinators.test.ts` (`tuple of successes in input order`)
+- `packages/op/src/combinators.test.ts` (`returns tuple of Result in input order`)
+- `packages/op/src/combinators.test.ts` (`preserves index order when failures settle out of order`)
+- `packages/op/src/combinators.test.ts` (`waits for loser finalization before returning the winner`)
+- `packages/op/src/combinators.test.ts` (`waits for loser finalization before returning winner result`)
 
 ## Guardrails for future changes
 
@@ -96,7 +96,7 @@ Before changing runtime/combinator internals, preserve these properties:
 
 Any intentional semantic change should include:
 
-- explicit test updates in `src/core.test.ts`, `src/lifecycle.test.ts`, and/or `src/combinators.test.ts`
+- explicit test updates in `packages/op/src/core.test.ts`, `packages/op/src/lifecycle.test.ts`, and/or `packages/op/src/combinators.test.ts`
 - an accompanying update to this document explaining the new invariant
 
 ## Operational notes and references
@@ -105,18 +105,18 @@ If you change the scheduler, combinators, or policy wrappers, these are the beha
 holding steady. Stuff that reads like a micro-optimization can still blow up determinism or
 what callers see when something fails.
 
-The references here are `src/core/runtime.ts`, `src/core/nullary-ops.ts`, and `src/combinators.ts`,
+The references here are `packages/op/src/core/runtime.ts`, `packages/op/src/core/nullary-ops.ts`, and `packages/op/src/combinators.ts`,
 plus the tests named inline so regressions stay obvious.
 
 ## Single-run driver (`drive`)
 
-Running an `Op` is walking an iterator over `Instruction`s. `drive` in `src/core/runtime.ts`
-passes the same `AbortSignal` into suspended work (`src/core.test.ts` "resumeSuspended path
+Running an `Op` is walking an iterator over `Instruction`s. `drive` in `packages/op/src/core/runtime.ts`
+passes the same `AbortSignal` into suspended work (`packages/op/src/core.test.ts` "resumeSuspended path
 passes the bound signal"). A typed shortcut via `yield* Result.err` settles to `Err` and still
 runs exit teardown along the usual path. Yield something that isn't a known instruction shape
 and you get `Err(UnhandledException(TypeError))` ("invalid yielded instructions...").
 
-`Op.try` mapper contract (`src/builders.ts`): `onError` returns the mapped error value (or a
+`Op.try` mapper contract (`packages/op/src/builders.ts`): `onError` returns the mapped error value (or a
 `Promise` of it). If `onError` returns an `Op`/generator object, `Op.try` uses that object as the
 error value and does not execute it.
 
@@ -124,16 +124,16 @@ error value and does not execute it.
 
 Cleanup hooks go through `RegisterExitFinalizerInstruction`. For each `drive` invocation the
 registered finalizers unwind last-in-first-out: `runFinalizersSafely` walks the array from the
-tail (`src/core/runtime.ts`). In one generator body, multiple defers unwind in reverse yield order
+tail (`packages/op/src/core/runtime.ts`). In one generator body, multiple defers unwind in reverse yield order
 (second defer runs before the first).
 
-Chained `.on("exit", ...)` builds wrappers (`onExitNullaryOp` in `src/core/nullary-ops.ts`) where the
+Chained `.on("exit", ...)` builds wrappers (`onExitNullaryOp` in `packages/op/src/core/nullary-ops.ts`) where the
 hand you attach first behaves like the inner scope, so at exit time the inner-most handler runs
-before the outer ones (`src/lifecycle.test.ts`, "chains `.on("exit")` in LIFO order with inner
+before the outer ones (`packages/op/src/lifecycle.test.ts`, "chains `.on("exit")` in LIFO order with inner
 registration running first"). That matches how people think about stacking defer-like behavior.
 
 Every registered finalizer still runs after a sibling throws (`runFinalizersSafely`). Several throws
-collapse into nested `cause` links via `chainCleanupFaults` in LIFO order (`src/core.test.ts`,
+collapse into nested `cause` links via `chainCleanupFaults` in LIFO order (`packages/op/src/core.test.ts`,
 "multiple throwing finalizers are folded into a cause chain").
 
 Once the body has picked a settlement `Result`, a fault in exit finalizers wins the observable
@@ -142,21 +142,21 @@ already settled to typed `Err` ("cleanup fault takes precedence over typed body 
 successful bodies where a finalizer throws ("finalizer throw after successful body converts to
 `UnhandledException`").
 
-`withRelease` / `withCleanupNullaryOp` is different (`src/core/nullary-ops.ts`). The release hook
+`withRelease` / `withCleanupNullaryOp` is different (`packages/op/src/core/nullary-ops.ts`). The release hook
 arms only after a successful inner completion. Typed failure short-circuits without scheduling that
-release, so primary errors stay intact (`src/lifecycle.test.ts`, "preserves primary error..." on
+release, so primary errors stay intact (`packages/op/src/lifecycle.test.ts`, "preserves primary error..." on
 `Op.fail` with `withRelease`). That isn't swapping semantics with exit finalizers registered while
 the run is unwinding inside `drive`.
 
 ### Generator finalization (`closeGenerator`)
 
 `drive` touches `iterator.return` through `closeGenerator` so native `finally` in generator code
-actually runs (`src/core/runtime.ts`). Throws from `return` are swallowed on purpose
-(`src/lifecycle.test.ts`, "preserves original Err result when cleanup throws during `iter.return()`").
+actually runs (`packages/op/src/core/runtime.ts`). Throws from `return` are swallowed on purpose
+(`packages/op/src/lifecycle.test.ts`, "preserves original Err result when cleanup throws during `iter.return()`").
 
 ## Concurrency (`Op.any`, `Op.race`)
 
-Combinator contracts live in `src/combinators.ts` alongside the fuller comment block.
+Combinator contracts live in `packages/op/src/combinators.ts` alongside the fuller comment block.
 
 `Op.any` runs children together under one outer abort umbrella. First success picks the winner and
 abort-signals the losers, but `.run()` still waits until those aborted branches finish so cleanup
@@ -175,11 +175,11 @@ chosen error ("winner error keeps precedence over loser abort-time failures").
 Method order chooses what's inside which wrapper. Putting retry first and timeout second means one
 overall clock around the retry loop ("timeout wraps the entire retried run when chained outside
 retry"). Putting timeout inside retry means timeout applies independently per retry attempt
-(`src/policies.test.ts`, "timeout applies per-attempt when chained inside retry", also the converse
+(`packages/op/src/policies.test.ts`, "timeout applies per-attempt when chained inside retry", also the converse
 scenario in the sibling test quoted there).
 
 ## Where else to read
 
 Cancellation and cooperative `AbortSignal` behavior show up wherever `SuspendInstruction` binds a
-signal, plus README's `Op.defer` / `.on("exit")` notes and checks in `src/policies.test.ts` and
-`src/lifecycle.test.ts`. Type-level contracts collected in `src/types.test.ts`.
+signal, plus README's `Op.defer` / `.on("exit")` notes and checks in `packages/op/src/policies.test.ts` and
+`packages/op/src/lifecycle.test.ts`. Type-level contracts collected in `packages/op/src/types.test.ts`.

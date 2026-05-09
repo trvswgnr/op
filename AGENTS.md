@@ -18,7 +18,7 @@
 - Wants `pnpm run check` run after completing work, before considering anything "done".
 - Does not want GitHub issues moved to `Done` without explicit approval first.
 - For issue hierarchies, prefers real GitHub parent/sub-issue links over markdown-only checklists.
-- Wants issue-work flows to keep `CHANGELOG.md` `Unreleased` updated, but prefers to handle version/tag/publish release steps personally unless explicitly delegated.
+- Wants issue-work flows to keep `packages/op/CHANGELOG.md` `Unreleased` updated, but prefers to handle version/tag/publish release steps personally unless explicitly delegated.
 - Prefers hard-cutover transitions, not gradual deprecations and migrations (this project is in alpha, so intentional breaking changes are acceptable)
 - Prefers the library to avoid throws whenever possible (normalize when able, otherwise surface as `Err(UnhandledException)` at run time).
 

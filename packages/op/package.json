@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "DESIGN.md",
     "CHANGELOG.md",
     "README.md"
   ],

@@ -23,8 +23,8 @@ const logger = createLogger();
 const SMOKE_TIMEOUT_MS_ENV = "OP_SMOKE_TIMEOUT_MS";
 
 /**
- * Controls whether apps/examples/node_modules and apps/examples/package-lock.json are deleted before install
- * Leaving this unset keeps lockfile-driven installs reproducible
+ * Legacy toggle retained for compatibility. The smoke runner now always uses
+ * isolated temp workspaces and ignores this setting.
  */
 const SMOKE_RESET_EXAMPLES_ENV = "OP_SMOKE_RESET_EXAMPLES";
 

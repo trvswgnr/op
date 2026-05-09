@@ -72,6 +72,7 @@ Use a strict two-tier model so behavior has one clear home.
   - `packages/op/src/operators.test.ts` for fluent operator semantics
   - `packages/op/src/monad-laws.test.ts` for algebraic contract checks
   - `packages/op/src/types.test.ts` for compile-time type contracts
+- Runtime invariants and execution semantics are documented in `packages/op/DESIGN.md`.
 
 You can run consumer install path checks directly:
 

@@ -613,6 +613,7 @@ For benchmark baseline modes and contributor guidance, see `apps/benchmarks/READ
 ## Contributing
 
 For local development, release flow, and publish procedures, see `CONTRIBUTING.md`.
+For runtime invariants and execution semantics, see `packages/op/DESIGN.md`.
 
 ## Publishing
 
