@@ -93,13 +93,8 @@ function collectRuntimeEntryLeaves(value: unknown, target: Set<string>): void {
   const browserField = getOwnPropertyValue(value, "browser");
 
   let sawRuntimeCondition = false;
-  for (const runtimeCondition of [
-    defaultField,
-    importField,
-    requireField,
-    nodeField,
-    browserField,
-  ]) {
+  const runtimeConditions = [defaultField, importField, requireField, nodeField, browserField];
+  for (const runtimeCondition of runtimeConditions) {
     if (runtimeCondition === undefined) continue;
     sawRuntimeCondition = true;
     collectRuntimeEntryLeaves(runtimeCondition, target);
