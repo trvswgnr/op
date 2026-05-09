@@ -1,18 +1,12 @@
 import { UnhandledException } from "./errors.js";
 import { makeFluentArityOp, onOp } from "./core/arity-ops.js";
-import type { OnErrorReturn, TrackedErr, AnyExitFn, Instruction, OpArity } from "./core/types.js";
+import type { TrackedErr, AnyExitFn, Instruction, OpArity } from "./core/types.js";
 import type { Op } from "./index.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
-import {
-  makeNullaryOp,
-  createDefaultHooks,
-  withCleanupNullaryOp,
-  coerceMapperToNullaryOp,
-} from "./core/nullary-ops.js";
+import { makeNullaryOp, createDefaultHooks, withCleanupNullaryOp } from "./core/nullary-ops.js";
 import { cast, isAwaited } from "./shared.js";
-import { drive } from "./core/runtime.js";
 
 /**
  * Lifts a value into an operation that always completes successfully
@@ -71,7 +65,7 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
  */
 export function _try<T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
-  onError?: (e: unknown) => OnErrorReturn<E>,
+  onError?: (e: unknown) => E | Promise<E>,
 ): Op<Awaited<T>, TrackedErr<Awaited<E>>, []> {
   const op: Op<Awaited<T>, TrackedErr<Awaited<E>>, []> = makeNullaryOp(
     function* () {
@@ -83,13 +77,8 @@ export function _try<T, E = UnhandledException>(
               (a) => Result.ok(a),
               async (cause) => {
                 if (!onError) return Result.err(new UnhandledException({ cause }));
-                const mappedOrProgram = await onError(cause);
-                const mappedProgram = coerceMapperToNullaryOp(mappedOrProgram);
-                if (!mappedProgram) return Result.err(mappedOrProgram as Awaited<E>);
-
-                const mappedResult = await drive(mappedProgram, signal);
-                if (mappedResult.isErr()) throw mappedResult.error;
-                return Result.err(mappedResult.value as Awaited<E>);
+                const mapped = await onError(cause);
+                return Result.err(mapped as Awaited<E>);
               },
             ),
       );

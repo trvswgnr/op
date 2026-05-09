@@ -148,31 +148,26 @@ describe("_try", () => {
     expect(result.error).toBe("mapped: boom");
   });
 
-  test("allows generator functions as onError mapper", async () => {
+  test("does not execute generator mapper return values", async () => {
+    const mapperReturn = (function* () {
+      return "mapped: boom";
+    })();
     const result = await _try(
       () => Promise.reject("boom"),
-      function* (error) {
-        return `mapped: ${String(error)}`;
-      },
+      (() => mapperReturn) as unknown as (error: unknown) => string,
     ).run();
     assert(result.isErr() === true, "should be Err");
-    expect(result.error).toBe("mapped: boom");
+    expect(result.error).toBe(mapperReturn);
   });
 
-  test("short circuits on failure with UnhandledException when using generator function as onError mapper", async () => {
-    let ran = false;
+  test("does not execute op mapper return values", async () => {
+    const mapperReturn = fail("mapped via op");
     const result = await _try(
       () => Promise.reject("boom"),
-      function* (error) {
-        yield* fail("oops" as const);
-        ran = true;
-        return `mapped: ${String(error)}` as const;
-      },
+      (() => mapperReturn) as unknown as (error: unknown) => string,
     ).run();
-    expect(ran).toBe(false);
     assert(result.isErr() === true, "should be Err");
-    assert(result.error instanceof UnhandledException);
-    expect(result.error.cause).toBe("oops");
+    expect(result.error).toBe(mapperReturn);
   });
 });
 

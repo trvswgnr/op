@@ -20,31 +20,10 @@ import type { Op } from "../index.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./instructions.js";
 import { drive } from "./runtime.js";
 import { runOp } from "./run-op.js";
-import {
-  cast,
-  coerceToNullaryOp,
-  EMPTY_TUPLE,
-  isGeneratorObject,
-  isNullaryOp,
-  isOp,
-  NULLARY_OP_SYMBOL,
-} from "../shared.js";
+import { cast, coerceToNullaryOp, EMPTY_TUPLE, NULLARY_OP_SYMBOL } from "../shared.js";
 
 function conditionalPredicate<E>(pred: ((error: E) => boolean) | WithPredicateMethod<E>, error: E) {
   return "is" in pred ? pred.is(error) : pred(error);
-}
-
-export function coerceMapperToNullaryOp(value: unknown): Op<unknown, unknown, []> | undefined {
-  if (isNullaryOp(value)) return value;
-  if (isOp(value)) return cast(value());
-  if (!isGeneratorObject(value)) return undefined;
-
-  const generatorOp: Op<unknown, unknown, []> = makeNullaryOp(
-    () => cast(value),
-    createDefaultHooks(() => generatorOp),
-  );
-
-  return generatorOp;
 }
 
 function dispatchLifecycleNullary<T, E>(

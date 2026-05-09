@@ -178,9 +178,3 @@ export interface OpHooks<T, E> {
   /** Backs public `.on("exit", fn)` on ops built from these hooks. */
   registerExitFinalize: (finalize: ExitFn<T, E, []>) => Op<T, E, []>;
 }
-
-export type OnErrorReturn<E> =
-  | E
-  | Promise<E>
-  | Op<E, unknown, []>
-  | Generator<Instruction<unknown>, E, unknown>;
