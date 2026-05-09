@@ -15,12 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- No user-facing changes in this release.
-
-## [0.1.58] - 2026-05-09
-
-### Changed
-
 - Changed `Op.try` `onError` mapper handling to pure normalization
   (`E | Promise<E>`). Returned `Op`/generator values are no longer executed;
   they are now treated as the `Err` value directly.
