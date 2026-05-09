@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import process from "node:process";
 import { Op } from "@prodkit/op";
 import * as v from "valibot";
-import { TaggedError } from "better-result";
+import { TaggedError, matchErrorPartial } from "better-result";
 import {
   createLogger,
   fromRepoRoot,
@@ -16,8 +16,6 @@ import {
 
 const logger = createLogger();
 
-const DRY_RUN_PREFIX = "[dry-run]";
-
 const NO_ENTRIES_PLACEHOLDER = "- No entries yet.";
 const NO_CHANGES_SECTION = "### Changed\n\n- No user-facing changes in this release.";
 const UNRELEASED_HEADING = "## [Unreleased]";
@@ -28,15 +26,18 @@ type BumpKind = v.InferOutput<typeof BumpKind>;
 class ChangelogError extends TaggedError("ChangelogError")<{ message: string }>() {}
 
 class CommandError extends TaggedError("CommandError")<{ cause: unknown; command: string }>() {}
+class ReleaseTagExistsError extends TaggedError("ReleaseTagExistsError")<{ tag: string }>() {}
+class DirtyWorktreeError extends TaggedError("DirtyWorktreeError")<{ details: string }>() {}
+const logReleaseAbort = (reason: string, nextStep?: string, details?: string) => {
+  logger.error(`release cut aborted: ${reason}`);
+  if (nextStep) logger.error(nextStep);
+  if (details) logger.error(`\n${details}`);
+};
 
-const main = Op(function* (dryRun: boolean) {
+const main = Op(function* (bumpKindArg: string | undefined) {
   const repoRoot = yield* fromRepoRoot(".");
 
   const writeUtf8 = Op(function* (filepath: string, content: string) {
-    if (dryRun) {
-      logger.info(`${DRY_RUN_PREFIX} would write ${filepath}`);
-      return;
-    }
     return yield* writeFile({
       filepath: new URL(filepath, import.meta.url),
       content,
@@ -128,22 +129,49 @@ const main = Op(function* (dryRun: boolean) {
   });
 
   const run = Op(function* (command: string) {
-    if (dryRun) {
-      logger.info(`${DRY_RUN_PREFIX} would run: ${command}`);
-      return;
-    }
-
     return yield* Op.try(
       () => execSync(command, { stdio: "inherit", cwd: repoRoot }),
       (cause) => new CommandError({ cause, command }),
     );
   });
 
-  const bumpKind = yield* parseBumpKind(process.argv[2]);
+  const runQuiet = Op(function* (command: string) {
+    return yield* Op.try(
+      () => execSync(command, { cwd: repoRoot, stdio: "pipe", encoding: "utf8" }).trim(),
+      (cause) => new CommandError({ cause, command }),
+    );
+  });
+
+  const ensureTagDoesNotExist = Op(function* (version: string) {
+    const tag = `v${version}`;
+    // Keep local tags up to date before checking collisions.
+    yield* run(`git fetch --force --tags origin`);
+
+    const remoteTag = yield* runQuiet(`git ls-remote --tags origin "refs/tags/${tag}"`);
+    if (remoteTag.length > 0) {
+      return yield* new ReleaseTagExistsError({ tag });
+    }
+
+    const localTag = yield* runQuiet(`git tag --list "${tag}"`);
+    if (localTag === tag) {
+      return yield* new ReleaseTagExistsError({ tag });
+    }
+  });
+
+  const ensureWorktreeClean = Op(function* () {
+    const status = yield* runQuiet("git status --porcelain");
+    if (status.length > 0) {
+      return yield* new DirtyWorktreeError({ details: status });
+    }
+  });
+
+  const bumpKind = yield* parseBumpKind(bumpKindArg);
   const currentVersion = yield* getCurrentVersion();
   const nextVersion = yield* bumpVersion(currentVersion, bumpKind);
   const releaseDate = yield* getReleaseDate();
   const changelogPath = yield* fromRepoRoot("packages/op/CHANGELOG.md");
+  yield* ensureWorktreeClean();
+  yield* ensureTagDoesNotExist(nextVersion);
 
   const changelog = yield* readFile(changelogPath);
   const updatedChangelog = yield* promoteUnreleased(changelog, nextVersion, releaseDate);
@@ -156,29 +184,54 @@ const main = Op(function* (dryRun: boolean) {
   yield* run(`git commit -m "${nextVersion}"`);
   yield* run(`git tag v${nextVersion}`);
 
-  return { nextVersion, dryRun };
+  return { nextVersion };
 });
 
 main
-  .run(
-    // defaults to dry run to avoid accidental release cuts
-    Boolean(JSON.parse(process.env.DRY_RUN || "1")),
-  )
+  .run(process.argv[2])
   .then((result) => {
     result.match({
-      ok: ({ nextVersion, dryRun }) => {
-        if (dryRun) {
-          logger.info(`${DRY_RUN_PREFIX} release cut simulation complete for v${nextVersion}`);
-          logger.info("no files, commits, or tags were changed\n");
-          logger.info("next step: run with DRY_RUN=0 to cut the release\n");
-          return;
-        }
-
+      ok: ({ nextVersion }) => {
         logger.info(`release cut complete: v${nextVersion}\n`);
         logger.info("next step: pnpm --filter @prodkit/op run release:push\n");
       },
       err: (error) => {
-        logger.error(error);
+        matchErrorPartial(
+          error,
+          {
+            DirtyWorktreeError: (e) => {
+              logReleaseAbort(
+                "git worktree is not clean.",
+                "commit/stash/discard changes and rerun release:patch.",
+                `pending changes:\n${e.details || "unknown"}`,
+              );
+            },
+            ReleaseTagExistsError: (e) => {
+              logReleaseAbort(
+                `tag ${e.tag} already exists locally or on origin.`,
+                "pick the next version, or intentionally delete/move the existing tag before retrying.",
+              );
+            },
+            ParseError: (e) => {
+              logReleaseAbort(
+                e.message ?? "invalid release kind.",
+                "usage: node ./tools/scripts/release-cut.ts <patch|minor|major>",
+              );
+            },
+            ChangelogError: (e) => {
+              logReleaseAbort(e.message);
+            },
+            CommandError: (e) => {
+              logReleaseAbort(`command failed: ${e.command}`);
+              if (e.cause instanceof Error && e.cause.message.length > 0) {
+                logger.error(e.cause.message);
+              }
+            },
+          },
+          (unknownError) => {
+            logReleaseAbort(String(unknownError));
+          },
+        );
         process.exit(1);
       },
     });
