@@ -93,7 +93,8 @@ export const PackageJson = v.object({
 });
 export type PackageJson = v.InferOutput<typeof PackageJson>;
 
-class ParseError extends TaggedError("ParseError")<{
+export class ParseError extends TaggedError("ParseError")<{
+  message?: string;
   issues: v.BaseIssue<unknown>[];
   input: unknown;
 }>() {}

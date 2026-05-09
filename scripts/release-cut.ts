@@ -3,7 +3,16 @@ import process from "node:process";
 import { Op } from "@prodkit/op";
 import * as v from "valibot";
 import { TaggedError } from "better-result";
-import { createLogger, fromRepoRoot, NonEmptyString, readFile, writeFile } from "./utils.ts";
+import {
+  createLogger,
+  fromRepoRoot,
+  NonEmptyString,
+  parse,
+  ParseError,
+  parseJson,
+  readFile,
+  writeFile,
+} from "./utils.ts";
 
 const logger = createLogger();
 
@@ -16,40 +25,11 @@ const UNRELEASED_HEADING = "## [Unreleased]";
 const BumpKind = v.union([v.literal("patch"), v.literal("minor"), v.literal("major")]);
 type BumpKind = v.InferOutput<typeof BumpKind>;
 
-class ParseError extends TaggedError("ParseError")<{
-  message?: string;
-  issues: v.BaseIssue<unknown>[];
-  input: unknown;
-}>() {}
-
-class InvalidJsonError extends TaggedError("InvalidJsonError")<{
-  cause: unknown;
-  input: string;
-}>() {}
-
 class ChangelogError extends TaggedError("ChangelogError")<{ message: string }>() {}
 
 class CommandError extends TaggedError("CommandError")<{ cause: unknown; command: string }>() {}
 
 const main = Op(function* (dryRun: boolean) {
-  const parse = <S extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
-    schema: S,
-    input: unknown,
-  ) =>
-    Op(function* () {
-      const result = v.safeParse(schema, input);
-      if (!result.success) {
-        return yield* Op.fail(new ParseError({ issues: result.issues, input }));
-      }
-      return result.output;
-    });
-
-  const parseJson = (input: string) =>
-    Op.try(
-      () => JSON.parse(input) as unknown,
-      (cause) => new InvalidJsonError({ cause, input }),
-    );
-
   const writeUtf8 = Op(function* (filepath: string, content: string) {
     if (dryRun) {
       logger.info(`${DRY_RUN_PREFIX} would write ${filepath}`);
