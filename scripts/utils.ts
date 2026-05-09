@@ -122,18 +122,19 @@ export const readPackageJson = Op(function* (filepath: string) {
   return yield* parse(PackageJson, parsedJson);
 });
 
-const hasGitFolder = Op(function* (dir: string) {
+const hasGitFolder = (dir: string) => {
   const gitFolderPath = path.join(dir, ".git");
   return existsSync(gitFolderPath);
-});
+};
 
 class FolderNotFoundError extends TaggedError("FolderNotFoundError")<{ message: string }>() {}
 export const getRepoRoot = Op(function* () {
   let currentDir = path.dirname(fileURLToPath(import.meta.url));
 
   while (true) {
-    const hasGit = yield* hasGitFolder(currentDir);
-    if (hasGit) return currentDir;
+    if (hasGitFolder(currentDir)) {
+      return currentDir;
+    }
 
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir) {
