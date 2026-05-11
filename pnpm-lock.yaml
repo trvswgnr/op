@@ -65,10 +65,11 @@ importers:
         version: 5.9.3
 
   packages/op:
-    devDependencies:
+    dependencies:
       better-result:
         specifier: 2.9.0
         version: 2.9.0
+    devDependencies:
       fast-check:
         specifier: 4.7.0
         version: 4.7.0

@@ -4,7 +4,7 @@
   "description": "Consumer-level smoke checks for @prodkit/op installation paths.",
   "type": "module",
   "scripts": {
-    "check": "pnpm run typecheck && pnpm run smoke",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
     "fmt": "oxfmt \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
     "lint": "oxlint --config ../../../oxlint.config.ts .",
