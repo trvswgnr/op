@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import {
   cp,
   mkdtemp,
@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Op } from "@prodkit/op";
 import * as v from "valibot";
 import { TaggedError, matchErrorPartial } from "better-result";
@@ -40,6 +41,10 @@ const DEFAULT_SMOKE_TIMEOUT_MS = 45 * 60_000;
 const PACK_OUTPUT_PREVIEW = 4000;
 const UPSTREAM_REPO_URL = "https://github.com/trvswgnr/prodkit.git";
 const UPSTREAM_MAIN_REF = "refs/heads/main";
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const NPM_SANDBOX_STATE_DIR = path.join(REPO_ROOT, "var", "npm-smoke");
+const NPM_SANDBOX_CACHE_DIR = path.join(NPM_SANDBOX_STATE_DIR, "cache");
+const NPM_SANDBOX_LOGS_DIR = path.join(NPM_SANDBOX_STATE_DIR, "logs");
 
 // const VALID_MODES = ["pack", "github", "npm"] as const;
 // type Mode = (typeof VALID_MODES)[number];
@@ -205,6 +210,11 @@ function buildCommandEnv(): NodeJS.ProcessEnv {
     if (!key.toLowerCase().startsWith("npm_config_")) continue;
     delete nextEnv[key];
   }
+  // Keep npm writable state inside the repo so sandboxed runs never need ~/.npm.
+  mkdirSync(NPM_SANDBOX_CACHE_DIR, { recursive: true });
+  mkdirSync(NPM_SANDBOX_LOGS_DIR, { recursive: true });
+  nextEnv["npm_config_cache"] = NPM_SANDBOX_CACHE_DIR;
+  nextEnv["npm_config_logs_dir"] = NPM_SANDBOX_LOGS_DIR;
   return nextEnv;
 }
 
@@ -472,13 +482,19 @@ async function cleanupPackOutput(tarballPath: string) {
 }
 
 const installFromPack = Op(function* () {
+  const repoRoot = yield* fromRepoRoot(".");
   const packageDir = yield* fromRepoRoot("packages/op");
   const examplesDir = yield* fromRepoRoot("examples/op");
   yield* execOp("npm", ["run", "build"], packageDir);
 
   // --ignore-scripts: we just built above, and letting `prepare` run tsdown
   // again would pollute stdout (including ANSI escapes) and corrupt --json
-  const packOutput = yield* execOp("npm", ["pack", "--json", "--ignore-scripts"], packageDir, true);
+  const packOutput = yield* execOp(
+    "npm",
+    ["pack", "--json", "--ignore-scripts", "./packages/op"],
+    repoRoot,
+    true,
+  );
   const filename = yield* parseNpmPackFilenameFromOutput(packOutput);
 
   const preview =
@@ -492,13 +508,13 @@ const installFromPack = Op(function* () {
     });
   }
 
-  const tarballPath = path.resolve(packageDir, filename);
+  const tarballPath = path.resolve(repoRoot, filename);
   yield* Op.defer(() => cleanupPackOutput(tarballPath));
 
-  const relativeToPackageDir = path.relative(path.resolve(packageDir), tarballPath);
-  if (relativeToPackageDir.startsWith("..") || path.isAbsolute(relativeToPackageDir)) {
+  const relativeToRepoRoot = path.relative(path.resolve(repoRoot), tarballPath);
+  if (relativeToRepoRoot.startsWith("..") || path.isAbsolute(relativeToRepoRoot)) {
     return yield* new SmokePackOutputError({
-      message: `npm pack filename resolves outside the package root: ${filename}`,
+      message: `npm pack filename resolves outside the repository root: ${filename}`,
     });
   }
 
