@@ -4,7 +4,7 @@ import { asArityOp, makeFluentArityOp, onOp, withReleaseOp } from "./core/arity-
 import { TrackedErr, type Instruction, type OpArity } from "./core/types.js";
 import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
-import { drive } from "./core/runtime.js";
+import { drive, driveInterruptOnAbort } from "./core/runtime.js";
 import { makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
 import { cast, isNullaryOp } from "./shared.js";
 
@@ -209,7 +209,7 @@ function withTimeoutNullaryOp<T, E>(
   return makePolicyNullaryOp(function* () {
     const result: Result<T, E | UnhandledException | TimeoutError> = yield* new SuspendInstruction(
       (outerSignal: AbortSignal) =>
-        raceTimeout((signal) => drive(op, signal), clampedTimeoutMs, outerSignal),
+        raceTimeout((signal) => driveInterruptOnAbort(op, signal), clampedTimeoutMs, outerSignal),
     );
 
     if (result.isErr()) return yield* result;
@@ -307,19 +307,26 @@ async function raceTimeout<T, E>(
   if (outerSignal.aborted) cascade();
   else outerSignal.addEventListener("abort", cascade, { once: true });
 
+  const runPromise = run(controller.signal);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timeoutError: TimeoutError | undefined;
   const timeout = new Promise<Result<T, E | TimeoutError>>((resolve) => {
     timeoutId = setTimeout(() => {
-      const e = new TimeoutError({ timeoutMs });
-      controller.abort(e);
-      resolve(Result.err(e));
+      timeoutError = new TimeoutError({ timeoutMs });
+      controller.abort(timeoutError);
+      resolve(Result.err(timeoutError));
     }, timeoutMs);
   });
 
-  const result = await Promise.race([run(controller.signal), timeout]).finally(() => {
+  const firstResult = await Promise.race([runPromise, timeout]).finally(() => {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
     outerSignal.removeEventListener("abort", cascade);
   });
 
-  return result;
+  if (timeoutError === undefined) {
+    return firstResult;
+  }
+
+  await runPromise;
+  return Result.err(timeoutError);
 }

@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- No entries yet.
+- Added lifecycle regression coverage proving `withTimeout` does not settle
+  `run()` until async `withRelease` cleanup and async `.on("exit")` finalizers
+  finish.
+
+### Fixed
+
+- Fixed `withTimeout` structured-cancellation semantics so timeout now waits for
+  aborted branch unwind/finalizers before returning `Err(TimeoutError)`, while
+  keeping timeout result precedence on the timeout path.
 
 ## [0.1.62] - 2026-05-11
 

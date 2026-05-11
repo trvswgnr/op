@@ -37,13 +37,58 @@ export async function drive<T, E>(
   op: Op<T, E, []>,
   signal: AbortSignal,
 ): Promise<Result<T, E | UnhandledException>> {
+  return driveInternal(op, signal, false);
+}
+
+export async function driveInterruptOnAbort<T, E>(
+  op: Op<T, E, []>,
+  signal: AbortSignal,
+): Promise<Result<T, E | UnhandledException>> {
+  return driveInternal(op, signal, true);
+}
+
+async function driveInternal<T, E>(
+  op: Op<T, E, []>,
+  signal: AbortSignal,
+  interruptOnAbort: boolean,
+): Promise<Result<T, E | UnhandledException>> {
   const finalizers: Array<
     (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>
   > = [];
+  const awaitWithAbortInterrupt = <TValue>(suspended: Promise<TValue>) => {
+    if (!interruptOnAbort) return suspended;
+    if (signal.aborted) return Promise.reject(signal.reason);
+
+    return new Promise<TValue>((resolve, reject) => {
+      let settled = false;
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        reject(signal.reason);
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      suspended.then(
+        (value) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
+    });
+  };
   const resumeSuspended = async (
     instruction: SuspendInstruction,
     iter: Iterator<Instruction<E>, T, unknown>,
-  ) => iter.next(await instruction.suspend(signal));
+  ) => iter.next(await awaitWithAbortInterrupt(instruction.suspend(signal)));
   const registerExitFinalizer = (
     instruction: RegisterExitFinalizerInstruction,
     iter: Iterator<Instruction<E>, T, unknown>,

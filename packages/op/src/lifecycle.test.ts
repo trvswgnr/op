@@ -67,6 +67,57 @@ describe("op.withRelease", () => {
     }
   });
 
+  test("withTimeout waits for async withRelease cleanup before run settles", async () => {
+    vi.useFakeTimers();
+    try {
+      let released = false;
+      let settled = false;
+      const op = Op(function* () {
+        yield* Op.of({
+          close: async () => {
+            await new Promise<void>((resolve) => {
+              setTimeout(() => {
+                released = true;
+                resolve();
+              }, 20);
+            });
+          },
+        }).withRelease((conn) => conn.close());
+
+        return yield* Op.try(
+          (signal) =>
+            new Promise<number>((_resolve, reject) => {
+              if (signal.aborted) {
+                reject(signal.reason);
+                return;
+              }
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            }),
+        );
+      }).withTimeout(10);
+
+      const runPromise = op.run();
+      runPromise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(10);
+      await Promise.resolve();
+
+      expect(settled).toBe(false);
+      expect(released).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(20);
+
+      const result = await runPromise;
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(released).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("fails with UnhandledException when cleanup throws after success", async () => {
     const cleanupFault = new Error("cleanup failed");
     const result = await Op.of(1)
@@ -354,6 +405,43 @@ describe('op.on("exit")', () => {
       expect(timedCtx.result).toBe(timed);
       expect(timedCtx.args).toEqual([]);
       expect(timed.error).toBeInstanceOf(TimeoutError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("withTimeout waits for async exit finalizers before run settles", async () => {
+    vi.useFakeTimers();
+    try {
+      let finalized = false;
+      let settled = false;
+      const runPromise = Op.try((_signal) => new Promise<number>(() => {}))
+        .withTimeout(10)
+        .on("exit", async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(() => {
+              finalized = true;
+              resolve();
+            }, 20);
+          });
+        })
+        .run();
+      runPromise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(10);
+      await Promise.resolve();
+
+      expect(settled).toBe(false);
+      expect(finalized).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(20);
+
+      const result = await runPromise;
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(TimeoutError);
+      expect(finalized).toBe(true);
     } finally {
       vi.useRealTimers();
     }
