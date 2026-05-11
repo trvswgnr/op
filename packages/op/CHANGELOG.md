@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [0.1.62] - 2026-05-11
+
+### Added
+
+
+
 ### Changed
 
 - Updated repository references from `trvswgnr/op` to `trvswgnr/prodkit` after the monorepo rename.
@@ -185,3 +191,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
