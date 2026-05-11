@@ -64,6 +64,6 @@
     "vitest": "4.1.0"
   },
   "peerDependencies": {
-    "better-result": "2.9.0"
+    "better-result": "^2.9.0"
   }
 }
