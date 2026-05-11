@@ -204,7 +204,7 @@ export function allSettledOp<const Ops extends readonly AnyNullaryOp[]>(
   });
 }
 
-export function settleOp<T, E>(op: Op<T, E, []>): Op<Result<T, E>, never, []> {
+export function settleOp<T, E>(op: Op<T, E, []>): Op<Result<T, E | UnhandledException>, never, []> {
   return makeCombinatorOp(function* () {
     return yield* new SuspendInstruction((outerContext) => drive(op, outerContext));
   });
