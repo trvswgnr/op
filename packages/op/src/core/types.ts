@@ -33,6 +33,12 @@ export interface EnterContext<A extends readonly unknown[] = []> {
   readonly args: A;
 }
 
+/** Runtime execution context threaded through internal driver/suspend boundaries. */
+export interface RunContext<A extends readonly unknown[] = readonly unknown[]> {
+  readonly signal: AbortSignal;
+  readonly args: A;
+}
+
 export type EnterFn<A extends readonly unknown[] = []> = (ctx: EnterContext<A>) => unknown;
 export type ExitFn<T = unknown, E = unknown, A extends readonly unknown[] = []> = (
   ctx: ExitContext<T, E, A>,

@@ -1,8 +1,8 @@
-import type { ExitContext, Instruction } from "./types.js";
+import type { ExitContext, Instruction, RunContext } from "./types.js";
 import { Tagged } from "../tagged.js";
 import { Err } from "../result.js";
 
-type SuspendFn = (signal: AbortSignal) => Promise<unknown>;
+type SuspendFn = (ctx: RunContext<readonly unknown[]>) => Promise<unknown>;
 export class SuspendInstruction extends Tagged("SuspendInstruction") {
   readonly suspend: SuspendFn;
 
@@ -22,10 +22,12 @@ export class SuspendInstruction extends Tagged("SuspendInstruction") {
 type FinalizeFn = (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>;
 export class RegisterExitFinalizerInstruction extends Tagged("RegisterExitFinalizerInstruction") {
   readonly finalize: FinalizeFn;
+  readonly args: readonly unknown[] | undefined;
 
-  constructor(finalize: FinalizeFn) {
+  constructor(finalize: FinalizeFn, args?: readonly unknown[]) {
     super();
     this.finalize = finalize;
+    this.args = args;
   }
 }
 

@@ -1,10 +1,10 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
 import { asArityOp, makeFluentArityOp, onOp, withReleaseOp } from "./core/arity-ops.js";
-import { TrackedErr, type Instruction, type OpArity } from "./core/types.js";
+import { TrackedErr, type Instruction, type OpArity, type RunContext } from "./core/types.js";
 import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
-import { drive, driveInterruptOnAbort } from "./core/runtime.js";
+import { createRunContext, drive, driveInterruptOnAbort } from "./core/runtime.js";
 import { makeNullaryOp, createDefaultHooks } from "./core/nullary-ops.js";
 import { cast, isNullaryOp } from "./shared.js";
 
@@ -164,8 +164,8 @@ function withRetryNullaryOp<T, E>(
 
     while (true) {
       type AttemptStep = { result: Result<T, E | UnhandledException>; aborted: boolean };
-      const attemptStep: AttemptStep = yield* new SuspendInstruction((signal: AbortSignal) =>
-        drive(op, signal).then((result) => ({ result, aborted: signal.aborted })),
+      const attemptStep: AttemptStep = yield* new SuspendInstruction((context) =>
+        drive(op, context).then((result) => ({ result, aborted: context.signal.aborted })),
       );
 
       const result = attemptStep.result;
@@ -182,8 +182,8 @@ function withRetryNullaryOp<T, E>(
 
       const delayMs = Math.max(0, policy.getDelay(attempt, error));
       if (delayMs > 0) {
-        const delayAborted: boolean = yield* new SuspendInstruction((signal: AbortSignal) =>
-          abortableDelay(delayMs, signal).then(() => signal.aborted),
+        const delayAborted: boolean = yield* new SuspendInstruction((context) =>
+          abortableDelay(delayMs, context.signal).then(() => context.signal.aborted),
         );
 
         if (delayAborted) return yield* result;
@@ -208,8 +208,12 @@ function withTimeoutNullaryOp<T, E>(
 
   return makePolicyNullaryOp(function* () {
     const result: Result<T, E | UnhandledException | TimeoutError> = yield* new SuspendInstruction(
-      (outerSignal: AbortSignal) =>
-        raceTimeout((signal) => driveInterruptOnAbort(op, signal), clampedTimeoutMs, outerSignal),
+      (outerContext) =>
+        raceTimeout(
+          (context) => driveInterruptOnAbort(op, context),
+          clampedTimeoutMs,
+          outerContext,
+        ),
     );
 
     if (result.isErr()) return yield* result;
@@ -225,8 +229,8 @@ function withTimeoutNullaryOp<T, E>(
 function withSignalNullaryOp<T, E>(op: Op<T, E, []>, signal: AbortSignal): Op<T, E, []> {
   return makePolicyNullaryOp(function* () {
     const result: Result<T, E | UnhandledException> = yield* new SuspendInstruction(
-      (outerSignal: AbortSignal) =>
-        runWithBoundSignal((mergedSignal) => drive(op, mergedSignal), signal, outerSignal),
+      (outerContext) =>
+        runWithBoundSignal((mergedContext) => drive(op, mergedContext), signal, outerContext),
     );
 
     if (result.isErr()) return yield* result;
@@ -265,23 +269,24 @@ export function withSignalOp<T, E, A extends readonly unknown[]>(
  * - Cleanup stays in Promise.finally so listeners are removed on success, error, or abort
  */
 async function runWithBoundSignal<T, E>(
-  run: (signal: AbortSignal) => Promise<Result<T, E>>,
+  run: (context: RunContext<readonly unknown[]>) => Promise<Result<T, E>>,
   boundSignal: AbortSignal,
-  outerSignal: AbortSignal,
+  outerContext: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E>> {
   const controller = new AbortController();
+  const runContext = createRunContext(controller.signal, outerContext.args);
 
   const forwardBoundAbort = () => controller.abort(boundSignal.reason);
   if (boundSignal.aborted) forwardBoundAbort();
   else boundSignal.addEventListener("abort", forwardBoundAbort, { once: true });
 
-  const forwardOuterAbort = () => controller.abort(outerSignal.reason);
-  if (outerSignal.aborted) forwardOuterAbort();
-  else outerSignal.addEventListener("abort", forwardOuterAbort, { once: true });
+  const forwardOuterAbort = () => controller.abort(outerContext.signal.reason);
+  if (outerContext.signal.aborted) forwardOuterAbort();
+  else outerContext.signal.addEventListener("abort", forwardOuterAbort, { once: true });
 
-  const result = await run(controller.signal).finally(() => {
+  const result = await run(runContext).finally(() => {
     boundSignal.removeEventListener("abort", forwardBoundAbort);
-    outerSignal.removeEventListener("abort", forwardOuterAbort);
+    outerContext.signal.removeEventListener("abort", forwardOuterAbort);
   });
 
   return result;
@@ -297,17 +302,18 @@ async function runWithBoundSignal<T, E>(
  * - Promise.finally clears timer + listener in every settle path to avoid timer/listener leaks
  */
 async function raceTimeout<T, E>(
-  run: (signal: AbortSignal) => Promise<Result<T, E>>,
+  run: (context: RunContext<readonly unknown[]>) => Promise<Result<T, E>>,
   timeoutMs: number,
-  outerSignal: AbortSignal,
+  outerContext: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E | TimeoutError>> {
   const controller = new AbortController();
-  const cascade = () => controller.abort(outerSignal.reason);
+  const runContext = createRunContext(controller.signal, outerContext.args);
+  const cascade = () => controller.abort(outerContext.signal.reason);
 
-  if (outerSignal.aborted) cascade();
-  else outerSignal.addEventListener("abort", cascade, { once: true });
+  if (outerContext.signal.aborted) cascade();
+  else outerContext.signal.addEventListener("abort", cascade, { once: true });
 
-  const runPromise = run(controller.signal);
+  const runPromise = run(runContext);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let timeoutError: TimeoutError | undefined;
   const timeout = new Promise<Result<T, E | TimeoutError>>((resolve) => {
@@ -320,7 +326,7 @@ async function raceTimeout<T, E>(
 
   const firstResult = await Promise.race([runPromise, timeout]).finally(() => {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
-    outerSignal.removeEventListener("abort", cascade);
+    outerContext.signal.removeEventListener("abort", cascade);
   });
 
   if (timeoutError === undefined) {

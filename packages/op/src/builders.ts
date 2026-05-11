@@ -70,9 +70,9 @@ export function _try<T, E = UnhandledException>(
   const op: Op<Awaited<T>, TrackedErr<Awaited<E>>, []> = makeNullaryOp(
     function* () {
       const result: Result<T, Awaited<E> | UnhandledException> = yield* new SuspendInstruction(
-        (signal: AbortSignal) =>
+        (context) =>
           Promise.resolve()
-            .then(() => f(signal))
+            .then(() => f(context.signal))
             .then(
               (a) => Result.ok(a),
               async (cause) => {
@@ -89,6 +89,30 @@ export function _try<T, E = UnhandledException>(
     createDefaultHooks(() => op),
   );
   return op;
+}
+
+function bindArityArgsToFinalizers<Y extends Instruction<unknown>, T>(
+  iterator: Generator<Y, T, unknown>,
+  args: readonly unknown[],
+): Generator<Y, T, unknown> {
+  const bindStep = (step: IteratorResult<Y, T>): IteratorResult<Y, T> => {
+    if (step.done) return step;
+    if (!(step.value instanceof RegisterExitFinalizerInstruction)) return step;
+    if (step.value.args !== undefined) return step;
+    return {
+      done: false,
+      value: cast(new RegisterExitFinalizerInstruction(step.value.finalize, args)),
+    };
+  };
+
+  return {
+    next: (value?: unknown) => bindStep(iterator.next(value)),
+    return: (value?: T) => bindStep(iterator.return(cast<T>(value))),
+    throw: (error?: unknown) => bindStep(iterator.throw(error)),
+    [Symbol.iterator]() {
+      return this;
+    },
+  };
 }
 
 function makeArityOp<T, E, A extends readonly unknown[]>(
@@ -116,7 +140,7 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   const op = makeArityOp((...args: A) => {
     // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast
     const bound: Op<T, InferErr<Y>, []> = makeNullaryOp(
-      () => cast<never>(f(...args)),
+      () => cast<never>(bindArityArgsToFinalizers(f(...args), args)),
       createDefaultHooks(() => bound),
     );
     return bound;

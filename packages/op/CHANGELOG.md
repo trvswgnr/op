@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `withTimeout` structured-cancellation semantics so timeout now waits for
   aborted branch unwind/finalizers before returning `Err(TimeoutError)`, while
   keeping timeout result precedence on the timeout path.
+- Fixed lifecycle exit-context arg propagation so `ExitContext.args` now reflects
+  runtime inputs for deferred/finalizer cleanup in both direct arity runs and
+  nested parameterized `yield*` composition.
 
 ## [0.1.62] - 2026-05-11
 

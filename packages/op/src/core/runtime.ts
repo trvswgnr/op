@@ -5,8 +5,17 @@ import {
   RegisterExitFinalizerInstruction,
   SuspendInstruction,
 } from "./instructions.js";
-import { type ExitContext, type Instruction } from "./types.js";
+import { type ExitContext, type Instruction, type RunContext } from "./types.js";
 import type { Op } from "../index.js";
+
+const EMPTY_ARGS: readonly unknown[] = [];
+
+export function createRunContext(
+  signal: AbortSignal,
+  args: readonly unknown[] = EMPTY_ARGS,
+): RunContext<readonly unknown[]> {
+  return { signal, args };
+}
 
 export function closeGenerator(iterator: Iterator<unknown, unknown, unknown>) {
   try {
@@ -35,23 +44,24 @@ export function chainCleanupFaults(faults: readonly unknown[]): unknown {
 
 export async function drive<T, E>(
   op: Op<T, E, []>,
-  signal: AbortSignal,
+  context: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E | UnhandledException>> {
-  return driveInternal(op, signal, false);
+  return driveInternal(op, context, false);
 }
 
 export async function driveInterruptOnAbort<T, E>(
   op: Op<T, E, []>,
-  signal: AbortSignal,
+  context: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E | UnhandledException>> {
-  return driveInternal(op, signal, true);
+  return driveInternal(op, context, true);
 }
 
 async function driveInternal<T, E>(
   op: Op<T, E, []>,
-  signal: AbortSignal,
+  context: RunContext<readonly unknown[]>,
   interruptOnAbort: boolean,
 ): Promise<Result<T, E | UnhandledException>> {
+  const { signal, args: runArgs } = context;
   const finalizers: Array<
     (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>
   > = [];
@@ -88,12 +98,19 @@ async function driveInternal<T, E>(
   const resumeSuspended = async (
     instruction: SuspendInstruction,
     iter: Iterator<Instruction<E>, T, unknown>,
-  ) => iter.next(await awaitWithAbortInterrupt(instruction.suspend(signal)));
+  ) => iter.next(await awaitWithAbortInterrupt(instruction.suspend(context)));
   const registerExitFinalizer = (
     instruction: RegisterExitFinalizerInstruction,
     iter: Iterator<Instruction<E>, T, unknown>,
   ) => {
-    finalizers.push(instruction.finalize);
+    const argsAtRegistration = instruction.args ?? runArgs;
+    finalizers.push((ctx) =>
+      instruction.finalize({
+        signal: ctx.signal,
+        result: ctx.result,
+        args: argsAtRegistration,
+      }),
+    );
     return iter.next(undefined);
   };
   /** Run every finalizer LIFO; collect faults from each (later-registered runs first; all still run even if one throws). */
@@ -126,7 +143,7 @@ async function driveInternal<T, E>(
     if (iter !== undefined) {
       closeGenerator(iter);
     }
-    const exitCtx: ExitContext<T, E, []> = { signal, args: [], result };
+    const exitCtx: ExitContext<T, E, readonly unknown[]> = { signal, args: runArgs, result };
     const cleanupFault = await runFinalizersSafely(exitCtx);
     if (cleanupFault !== undefined) {
       return Result.err(new UnhandledException({ cause: cleanupFault }));

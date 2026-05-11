@@ -628,6 +628,41 @@ describe("Op.defer error handling", () => {
 });
 
 describe("Op.defer ordering and policies", () => {
+  test("Op.defer receives runtime args for arity ops", async () => {
+    let seenCtx!: ExitContext<unknown, unknown, readonly unknown[]>;
+    const result = await Op(function* (name: string) {
+      yield* Op.defer((ctx) => {
+        seenCtx = ctx;
+      });
+      return name.length;
+    }).run("gamma");
+
+    assert(result.isOk(), "should be Ok");
+    expect(result.value).toBe(5);
+    expect(seenCtx.args).toEqual(["gamma"]);
+    expect(seenCtx.result).toBe(result);
+  });
+
+  test("Op.defer in nested arity op sees inner runtime args, not outer run args", async () => {
+    let seenCtx!: ExitContext<unknown, unknown, readonly unknown[]>;
+    const inner = Op(function* (left: string, right: number) {
+      yield* Op.defer((ctx) => {
+        seenCtx = ctx;
+      });
+      return `${left}:${right}`;
+    });
+
+    const outer = Op(function* (prefix: string) {
+      const value = yield* inner("inner", 7);
+      return `${prefix}:${value}`;
+    });
+
+    const result = await outer.run("outer");
+    assert(result.isOk(), "should be Ok");
+    expect(result.value).toBe("outer:inner:7");
+    expect(seenCtx.args).toEqual(["inner", 7]);
+  });
+
   test("runs multiple defers in LIFO order on success", async () => {
     const events: string[] = [];
     const op = Op(function* () {

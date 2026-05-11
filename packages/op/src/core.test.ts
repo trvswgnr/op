@@ -1,5 +1,5 @@
 import { assert, describe, expect, test } from "vitest";
-import { chainCleanupFaults, closeGenerator, drive } from "./core/runtime.js";
+import { chainCleanupFaults, closeGenerator, createRunContext, drive } from "./core/runtime.js";
 import { makeNullaryOp } from "./core/nullary-ops.js";
 import {
   isErrInstruction,
@@ -75,15 +75,15 @@ describe("drive runtime behavior", () => {
   test("resumeSuspended path passes the bound signal to suspend work", async () => {
     let seenSignal: AbortSignal | undefined;
     const op = makeRuntimeOp<number, never>(function* () {
-      const value = (yield new SuspendInstruction(async (signal) => {
-        seenSignal = signal;
+      const value = (yield new SuspendInstruction(async (context) => {
+        seenSignal = context.signal;
         return 69;
       })) as number;
       return value + 1;
     });
 
     const signal = new AbortController().signal;
-    const result = await drive(op, signal);
+    const result = await drive(op, createRunContext(signal));
 
     assert(result.isOk(), "result should be Ok");
     expect(result.value).toBe(70);
@@ -96,7 +96,7 @@ describe("drive runtime behavior", () => {
       return 1;
     });
 
-    const result = await drive(op, new AbortController().signal);
+    const result = await drive(op, createRunContext(new AbortController().signal));
 
     assert(result.isErr(), "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);
@@ -115,7 +115,7 @@ describe("drive runtime behavior", () => {
       return 123;
     });
 
-    const result = await drive(op, new AbortController().signal);
+    const result = await drive(op, createRunContext(new AbortController().signal));
 
     assert(result.isOk(), "result should be Ok");
     expect(result.value).toBe(123);
@@ -131,7 +131,7 @@ describe("drive runtime behavior", () => {
       return "ok";
     });
 
-    const result = await drive(op, new AbortController().signal);
+    const result = await drive(op, createRunContext(new AbortController().signal));
 
     assert(result.isErr(), "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);
@@ -148,7 +148,7 @@ describe("drive runtime behavior", () => {
       return yield* Result.err("typed-body-error");
     });
 
-    const result = await drive(op, new AbortController().signal);
+    const result = await drive(op, createRunContext(new AbortController().signal));
 
     assert(result.isErr(), "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);
@@ -169,7 +169,7 @@ describe("drive runtime behavior", () => {
       return "done";
     });
 
-    const result = await drive(op, new AbortController().signal);
+    const result = await drive(op, createRunContext(new AbortController().signal));
 
     assert(result.isErr(), "result should be Err");
     expect(result.error).toBeInstanceOf(UnhandledException);

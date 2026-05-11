@@ -2,7 +2,7 @@ import { TimeoutError } from "../errors.js";
 import type { RetryPolicy } from "../policies.js";
 import type { EnterFn, ExitFn, LifecycleFn, OpArity, OpLifecycleHook, ReleaseFn } from "./types.js";
 import type { Op } from "../index.js";
-import { drive } from "./runtime.js";
+import { createRunContext, drive } from "./runtime.js";
 import {
   flatMapNullaryOp,
   mapErrNullaryOp,
@@ -48,7 +48,8 @@ export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
   // cast restores the intended callable+methods intersection that TS cannot infer.
   const self: OpArity<T, E, A> = cast(
     Object.assign(invoke, {
-      run: (...args: A) => drive(invoke(...args), new AbortController().signal),
+      run: (...args: A) =>
+        drive(invoke(...args), createRunContext(new AbortController().signal, args)),
       // Bridge `yield* op` runtime interop for ops produced from generic wrappers
       // that erase nullary-ness at runtime but still resolve through `invoke()`.
       [Symbol.iterator]: () => invoke(...cast<A>(EMPTY_ARGS))[Symbol.iterator](),
