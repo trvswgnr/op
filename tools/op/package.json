@@ -4,7 +4,7 @@
   "description": "Project-level scripts for @prodkit/op",
   "type": "module",
   "scripts": {
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
+    "gate": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
     "examples:smoke:pack": "node ./run-examples-smoke.ts pack",
     "examples:smoke:github": "node ./run-examples-smoke.ts github",
     "examples:smoke:npm": "node ./run-examples-smoke.ts npm",

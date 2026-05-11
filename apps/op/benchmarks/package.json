@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "bench": "node ./bench.ts",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check",
+    "gate": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check",
     "fmt": "oxfmt \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
     "lint": "oxlint --config ../../../oxlint.config.ts .",

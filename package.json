@@ -13,7 +13,7 @@
     "lint": "turbo run lint --log-order=grouped",
     "fmt": "turbo run fmt --log-order=grouped",
     "fmt:check": "turbo run fmt:check --log-order=grouped",
-    "check": "turbo run check --log-order=grouped",
+    "gate": "turbo run gate --log-order=grouped",
     "bench": "turbo run bench --filter=@prodkit/op-benchmarks --log-order=grouped",
     "clean": "git clean -Xfd"
   },

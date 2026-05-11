@@ -19,7 +19,7 @@ pnpm install
 Run the same checks used before publishing:
 
 ```bash
-pnpm run check
+pnpm run gate
 ```
 
 The quality gate includes a consumer-level smoke test that installs the package from an `npm pack`

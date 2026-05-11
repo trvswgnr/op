@@ -30,7 +30,7 @@ That README is also the one shipped with the published npm package.
 Primary quality gate:
 
 ```bash
-pnpm run check
+pnpm run gate
 ```
 
 ## release flow
