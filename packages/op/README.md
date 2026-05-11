@@ -159,6 +159,8 @@ const mapped = await Op.try(
 
 Static runner for nullary ops. This is equivalent to `op.run()`, and is useful when you want to
 execute an op value passed around as data.
+`Op.run(op)` does not expose a cancel handle; if the caller needs external cancellation, compose
+the op with `.withSignal(signal)` before running it.
 
 ```ts
 const result = await Op.run(Op.of(7));

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Clarified docs that `Op.run(op)` is a quick-run helper without a caller-facing
+  cancel handle; callers that need external cancellation should compose
+  `.withSignal(signal)` before running.
+
 ### Fixed
 
 - Corrected `Op.settle` (`settleOp`) typing so the nested `Result` error type
