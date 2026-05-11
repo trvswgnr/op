@@ -2,6 +2,9 @@
 
 A runtime-agnostic, composable, and predictable library for writing operations in TypeScript, built on top of [`better-result`](https://github.com/dmmulroy/better-result).
 
+This README documents the `@prodkit/op` package API and usage.
+For monorepo/workspace orientation, see the repo root [`README.md`](https://github.com/trvswgnr/op/blob/main/README.md).
+
 > [!WARNING]
 > This library is currently in alpha. The API will almost certainly change between releases while it stabilizes.
 
@@ -553,7 +556,7 @@ const r = await Op.race([slow, fast]).run();
 ## Webhook consumer example
 
 See the repository example at
-[`apps/op/examples/webhook.ts`](https://github.com/trvswgnr/op/blob/main/apps/op/examples/webhook.ts)
+[`examples/op/webhook.ts`](https://github.com/trvswgnr/op/blob/main/examples/op/webhook.ts)
 for a complete order webhook pipeline
 that demonstrates:
 
@@ -566,7 +569,7 @@ that demonstrates:
 - retry + timeout budgets with `withRetry`/`withTimeout`
 - abort propagation into in-flight calls through `AbortSignal`
 
-Run the consumer-level checks:
+Run the consumer-level checks (repo contributors, from monorepo root):
 
 ```bash
 pnpm --filter @prodkit/op run examples:smoke:pack
@@ -574,14 +577,14 @@ pnpm --filter @prodkit/op run examples:smoke:pack
 
 ## More examples
 
-- [`apps/op/examples/simple.ts`](https://github.com/trvswgnr/op/blob/main/apps/op/examples/simple.ts):
+- [`examples/op/simple.ts`](https://github.com/trvswgnr/op/blob/main/examples/op/simple.ts):
   minimal composition and typed error walkthrough.
-- [`apps/op/examples/smoke.ts`](https://github.com/trvswgnr/op/blob/main/apps/op/examples/smoke.ts):
+- [`examples/op/smoke.ts`](https://github.com/trvswgnr/op/blob/main/examples/op/smoke.ts):
   consumer-level scenario assertions for simple + webhook flows.
 
 ## Contributing
 
-For local development, release flow, and publish procedures, see
+For monorepo setup, local development, release flow, and publish procedures, see
 [`CONTRIBUTING.md`](https://github.com/trvswgnr/op/blob/main/CONTRIBUTING.md).
 
 ## Publishing

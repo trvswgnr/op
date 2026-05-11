@@ -18,7 +18,7 @@ importers:
         specifier: ^2.9.0
         version: 2.9.12
 
-  apps/op/benchmarks:
+  benchmarks/op:
     devDependencies:
       '@types/node':
         specifier: ^24.12.2
@@ -39,11 +39,11 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-  apps/op/examples:
+  examples/op:
     dependencies:
       '@prodkit/op':
         specifier: workspace:*
-        version: link:../../../packages/op
+        version: link:../../packages/op
       better-result:
         specifier: 2.9.0
         version: 2.9.0

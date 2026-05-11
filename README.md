@@ -1,24 +1,27 @@
 # prodkit monorepo
 
-This repository hosts the `@prodkit/op` package and supporting workspace apps/scripts.
+This repository is the `prodkit` monorepo, managed with pnpm workspaces and Turborepo (`turbo`).
+It is organized for multiple publishable packages plus dedicated top-level workspaces for apps,
+examples, benchmarks, and maintainer tooling.
 
 ## canonical package docs
 
-Use [`packages/op/README.md`](packages/op/README.md) as the source of truth for:
+Use each package README under `packages/*/README.md` as the source of truth for that package's:
 
 - installation
 - API reference and semantics
 - usage examples
 - consumer smoke commands
 
-That README is also the one shipped with the published npm package.
+Example: `@prodkit/op` docs live at [`packages/op/README.md`](packages/op/README.md), and that README is shipped with the published npm package.
 
 ## workspace layout
 
-- `packages/op`: publishable library package (`@prodkit/op`)
-- `apps/op/examples` (`@prodkit/op-examples`): consumer-style examples and smoke harness for `@prodkit/op`
-- `apps/op/benchmarks`: benchmark harness and baseline tooling for `@prodkit/op`
-- `tools/op`: maintainer tooling scoped to `@prodkit/op` (release cuts, changelog/version checks, examples smoke runs)
+- `packages/*`: publishable library packages
+- `apps/*`: runnable product/demo applications
+- `examples/*`: consumer-style example and smoke workspaces
+- `benchmarks/*`: performance benchmark harnesses
+- `tools/*`: maintainer tooling workspaces
 - `.github/workflows`: CI and release automation
 
 ## development
@@ -35,9 +38,9 @@ pnpm run gate
 
 ## release flow
 
-Release commands live in `packages/op/package.json` scripts and are executed from repo root via pnpm filters.
+Release commands live in package workspace scripts and are executed from repo root via pnpm filters.
 
-Typical sequence:
+Example (`@prodkit/op`):
 
 ```bash
 pnpm --filter @prodkit/op run release:patch

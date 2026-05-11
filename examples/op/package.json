@@ -7,8 +7,8 @@
     "gate": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
     "fmt": "oxfmt \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
-    "lint": "oxlint --config ../../../oxlint.config.ts .",
-    "lint:fix": "oxlint --config ../../../oxlint.config.ts --fix .",
+    "lint": "oxlint --config ../../oxlint.config.ts .",
+    "lint:fix": "oxlint --config ../../oxlint.config.ts --fix .",
     "smoke": "node ./smoke.ts",
     "typecheck": "tsc --noEmit"
   },

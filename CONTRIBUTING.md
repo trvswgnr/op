@@ -9,6 +9,13 @@
 pnpm install
 ```
 
+## Monorepo Orientation
+
+- This repository is a pnpm workspace monorepo orchestrated by Turborepo (`turbo`).
+- Root scripts (`pnpm run build|test|lint|typecheck|gate`) run across the workspace graph.
+- `@prodkit/op` is the first package family in this repo, not the long-term only package.
+- Package-scoped scripts should stay in the owning workspace `package.json`; call them from root via `pnpm --filter <workspace> run <script>`.
+
 ## Contributor Runtime
 
 - Node `>=24.14.0` is required for local development and release tasks.
@@ -23,11 +30,11 @@ pnpm run gate
 ```
 
 The quality gate includes a consumer-level smoke test that installs the package from an `npm pack`
-tarball via `apps/op/examples/` in an isolated temp workspace.
+tarball via `examples/op/` in an isolated temp workspace.
 
 Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.yml`.
 
-All examples are consumer-level and live under `apps/op/examples/*`.
+All examples are consumer-level and live under `examples/op/*`.
 
 ## Benchmarking
 
@@ -41,7 +48,7 @@ pnpm run bench
 - For latest published package comparison, run `pnpm --filter @prodkit/op-benchmarks run bench -- --baseline=npm`.
 - Keep benchmark interpretation directional; rely on relative deltas and rerun unexpected regressions before acting.
 
-Detailed benchmark scenarios and authoring guidance live in `apps/op/benchmarks/README.md`.
+Detailed benchmark scenarios and authoring guidance live in `benchmarks/op/README.md`.
 
 ## Type Cast Policy
 
@@ -58,7 +65,7 @@ Use a strict two-tier model so behavior has one clear home.
 - If a behavior is an internal invariant of one module, keep it in the unit test; if it is a public composition/API contract, keep it in integration.
 - Avoid duplicate assertions across tiers unless each tier validates meaningfully different risk.
 
-## Source Layout
+## Source Layout (`@prodkit/op`)
 
 - Public package entrypoint stays at `packages/op/src/index.ts`.
 - Re-exports from dependencies must be explicit named exports in `packages/op/src/index.ts` (never `export *`).

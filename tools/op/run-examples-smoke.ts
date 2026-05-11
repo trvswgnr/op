@@ -473,7 +473,7 @@ async function cleanupPackOutput(tarballPath: string) {
 
 const installFromPack = Op(function* () {
   const packageDir = yield* fromRepoRoot("packages/op");
-  const examplesDir = yield* fromRepoRoot("apps/op/examples");
+  const examplesDir = yield* fromRepoRoot("examples/op");
   yield* execOp("npm", ["run", "build"], packageDir);
 
   // --ignore-scripts: we just built above, and letting `prepare` run tsdown
@@ -507,7 +507,7 @@ const installFromPack = Op(function* () {
 
 const installFromGithub = Op(function* () {
   const repoRoot = yield* fromRepoRoot(".");
-  const examplesDir = yield* fromRepoRoot("apps/op/examples");
+  const examplesDir = yield* fromRepoRoot("examples/op");
   const commitSha = yield* resolveUpstreamMainCommitSha(repoRoot);
   logger.info(`github - resolved ${UPSTREAM_MAIN_REF} to ${commitSha}`);
   yield* installAndSmoke(
@@ -522,7 +522,7 @@ const installFromNpm = Op(function* (examplesDir: string) {
 });
 
 const smoke = Op(function* (rawMode: string | undefined) {
-  const examplesDir = yield* fromRepoRoot("apps/op/examples");
+  const examplesDir = yield* fromRepoRoot("examples/op");
 
   const mode = yield* parse(Mode, rawMode);
   if (process.env[SMOKE_RESET_EXAMPLES_ENV] !== undefined) {
