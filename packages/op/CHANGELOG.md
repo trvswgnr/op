@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- No entries yet.
+- Corrected `Op.settle` (`settleOp`) typing so the nested `Result` error type
+  includes `UnhandledException`, matching `drive()` and avoiding a silent
+  `E`-only contract at the type level.
 
 ## [0.1.63] - 2026-05-11
 
