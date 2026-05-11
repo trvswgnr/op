@@ -88,7 +88,7 @@ importers:
         specifier: 4.1.0
         version: 4.1.0(@types/node@24.12.3)(vite@8.0.11(@types/node@24.12.3))
 
-  tools/scripts:
+  tools/op:
     dependencies:
       '@prodkit/op':
         specifier: workspace:*

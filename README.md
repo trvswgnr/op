@@ -18,7 +18,7 @@ That README is also the one shipped with the published npm package.
 - `packages/op`: publishable library package (`@prodkit/op`)
 - `apps/examples`: consumer-style examples and smoke harness
 - `apps/benchmarks`: benchmark harness and baseline tooling
-- `tools/scripts`: repo automation scripts (release, checks, helpers)
+- `tools/op`: maintainer tooling scoped to `@prodkit/op` (release cuts, changelog/version checks, examples smoke runs)
 - `.github/workflows`: CI and release automation
 
 ## development

@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`E | Promise<E>`). Returned `Op`/generator values are no longer executed;
   they are now treated as the `Err` value directly.
 - Migrated the project to a pnpm + Turborepo monorepo layout
-  (`packages/op`, `apps/examples`, `apps/benchmarks`, `tools/scripts`) so
+  (`packages/op`, `apps/examples`, `apps/benchmarks`, `tools/op`) so
   installs, task orchestration, and CI checks run from one workspace graph with
   a single lockfile.
 - Adapted the existing tag-based release process to the monorepo structure by
