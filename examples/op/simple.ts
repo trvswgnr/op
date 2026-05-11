@@ -48,8 +48,8 @@ export const parseUser = Op(function* (payload: unknown) {
 
 export const fetchData = Op(function* (url: string) {
   const response = yield* Op.try(
-    async () => {
-      const fetchedResponse = await fetch(url);
+    async (signal) => {
+      const fetchedResponse = await fetch(url, { signal });
       if (!fetchedResponse.ok) {
         throw new HttpError({
           status: fetchedResponse.status,

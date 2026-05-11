@@ -14,9 +14,7 @@ import {
   tapNullaryOp,
   withCleanupNullaryOp,
 } from "./nullary-ops.js";
-import { cast } from "../shared.js";
-
-const EMPTY_ARGS: readonly unknown[] = [];
+import { cast, EMPTY_TUPLE } from "../shared.js";
 
 export interface FluentArityHandlers<T, E, A extends readonly unknown[]> {
   withRetry: (policy?: RetryPolicy) => OpArity<T, E, A>;
@@ -52,7 +50,7 @@ export function makeFluentArityOp<T, E, A extends readonly unknown[]>(
         drive(invoke(...args), createRunContext(new AbortController().signal, args)),
       // Bridge `yield* op` runtime interop for ops produced from generic wrappers
       // that erase nullary-ness at runtime but still resolve through `invoke()`.
-      [Symbol.iterator]: () => invoke(...cast<A>(EMPTY_ARGS))[Symbol.iterator](),
+      [Symbol.iterator]: () => invoke(...cast<A>(EMPTY_TUPLE))[Symbol.iterator](),
       withRetry: (policy?: RetryPolicy) => makeHandlers(self).withRetry(policy),
       withTimeout: (timeoutMs: number) => makeHandlers(self).withTimeout(timeoutMs),
       withSignal: (signal: AbortSignal) => makeHandlers(self).withSignal(signal),

@@ -19,7 +19,8 @@ const empty: Op<void, never, []> = succeed(undefined);
  *
  * - Call `Op(function* (...) { ... })` to build generator-based operations.
  * - Use static helpers (`Op.of`, `Op.fail`, `Op.try`, `Op.all`, `Op.any`, etc.) for common patterns.
- * - Use `Op.run(op)` to execute a nullary operation value directly.
+ * - Use `Op.run(op)` to execute a nullary operation value directly. For external cancellation,
+ *   compose with `.withSignal(signal)` first and then run.
  */
 export const Op = Object.assign(fromGenFn, {
   _tag: "OpFactory" as const,

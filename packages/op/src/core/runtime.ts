@@ -7,12 +7,11 @@ import {
 } from "./instructions.js";
 import { type ExitContext, type Instruction, type RunContext } from "./types.js";
 import type { Op } from "../index.js";
-
-const EMPTY_ARGS: readonly unknown[] = [];
+import { EMPTY_TUPLE } from "../shared.js";
 
 export function createRunContext(
   signal: AbortSignal,
-  args: readonly unknown[] = EMPTY_ARGS,
+  args: readonly unknown[] = EMPTY_TUPLE,
 ): RunContext<readonly unknown[]> {
   return { signal, args };
 }
