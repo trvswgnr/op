@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- No entries yet.
+
+## [0.1.64] - 2026-05-12
+
 ### Changed
 
 - Clarified docs that `Op.run(op)` is a quick-run helper without a caller-facing
@@ -212,5 +218,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
 
 
