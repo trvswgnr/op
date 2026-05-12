@@ -11,6 +11,7 @@ export type TrackedErr<E, Excluded = never> = E extends UnhandledException
     : E;
 
 export type InferOpOk<R> = R extends Op<infer T, unknown, infer _> ? T : Awaited<R>;
+
 export type InferOpErr<R> = R extends Op<unknown, infer E, infer _> ? E : never;
 
 /**
@@ -131,8 +132,16 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
   ): Op<T | InferOpOk<R>, TrackedErr<E> | InferOpErr<R>, A>;
 }
 
+export interface OpBase<T, E, A extends readonly unknown[]> {
+  readonly _tag: "Op";
+  (...args: A): Op<T, E, []>;
+  /** Executes the operation with runtime arguments and returns a `Result`. */
+  run(...args: A): Promise<Result<T, E | UnhandledException>>;
+  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
+}
 export interface OpInterface<T, E, A extends readonly unknown[]>
   extends
+    OpBase<T, E, A>,
     WithRetry<T, E, A>,
     WithTimeout<T, E, A>,
     WithSignal<T, E, A>,
@@ -143,13 +152,7 @@ export interface OpInterface<T, E, A extends readonly unknown[]>
     WithFlatMap<T, E, A>,
     WithTap<T, E, A>,
     WithTapErr<T, E, A>,
-    WithRecover<T, E, A> {
-  (...args: A): Op<T, E, []>;
-  /** Executes the operation with runtime arguments and returns a `Result`. */
-  run(...args: A): Promise<Result<T, E | UnhandledException>>;
-  readonly _tag: "Op";
-  [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
-}
+    WithRecover<T, E, A> {}
 
 export interface OpHooks<T, E, TInner = unknown, EInner = unknown> {
   /** Inner op to push policy wrappers to (when present with `rebuild`). */
