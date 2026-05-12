@@ -22,17 +22,105 @@ const empty: Op<void, never, []> = succeed(undefined);
  *   compose with `.withSignal(signal)` first and then run.
  */
 export const Op = Object.assign(fromGenFn, {
+  /** Type discriminant for the `Op` factory namespace value. */
   _tag: "OpFactory" as const,
+  /**
+   * Executes a nullary operation and resolves to its `Result<T, E | UnhandledException>`.
+   *
+   * This helper is for already-constructed nullary `Op` values. For parameterized
+   * operations, call instance `.run(...args)` on the op itself.
+   *
+   * @example
+   * const value = await Op.run(Op.of(1));
+   */
   run: runOp,
+  /**
+   * Creates an operation that succeeds with the provided value.
+   *
+   * Promise inputs are awaited before producing the success value.
+   *
+   * @example
+   * const value = Op.of(42);
+   */
   of: succeed,
+  /**
+   * Creates an operation that fails with the provided typed error value.
+   *
+   * @example
+   * const failed = Op.fail("bad-input" as const);
+   */
   fail,
+  /**
+   * Registers an exit finalizer for the current run via `yield* Op.defer(...)`.
+   *
+   * @example
+   * const program = Op(function* () {
+   *   yield* Op.defer(() => console.log("cleanup"));
+   *   return 1;
+   * });
+   */
   defer,
+  /**
+   * Lifts a sync/async callback into an operation.
+   *
+   * - Fulfillment returns `Ok`.
+   * - Throw/reject is normalized to `UnhandledException` when `onError` is omitted.
+   * - With `onError`, failures are mapped to your typed error.
+   *
+   * @example
+   * const fetched = Op.try(() => fetch("/health"));
+   */
   try: _try,
+  /**
+   * Runs nullary operations concurrently and preserves input order on success.
+   *
+   * `Op.all` fails fast on the first observed error, aborts remaining siblings,
+   * and still waits for active losers to settle so cleanup/finalizers complete.
+   *
+   * @example
+   * const pair = Op.all([Op.of(1), Op.of("ok")]);
+   */
   all: allOp,
+  /**
+   * Runs all branches and returns per-branch `Result` values in input order.
+   *
+   * Branch failures do not abort siblings. Invalid `concurrency` (non-integer or
+   * less than 1) returns `Err(UnhandledException)` at run time.
+   *
+   * @example
+   * const settled = Op.allSettled([Op.of(1), Op.fail("nope" as const)]);
+   */
   allSettled: allSettledOp,
+  /**
+   * Converts one operation into an infallible wrapper that returns `Result` as data.
+   *
+   * @example
+   * const settled = Op.settle(Op.try(() => JSON.parse("{}")));
+   */
   settle: settleOp,
+  /**
+   * Resolves with the first successful branch and aborts the rest.
+   *
+   * If every branch fails, returns `Err(ErrorGroup<...>)` with errors retained
+   * in input order.
+   *
+   * @example
+   * const fastestSuccess = Op.any([Op.fail("x"), Op.of(2)]);
+   */
   any: anyOp,
+  /**
+   * Returns the first branch to settle (`Ok` or `Err`) and aborts the rest.
+   *
+   * @example
+   * const firstSettler = Op.race([Op.of(1), Op.try(() => Promise.resolve(2))]);
+   */
   race: raceOp,
+  /**
+   * Shared no-op operation that succeeds with `undefined`.
+   *
+   * @example
+   * const noop = Op.empty;
+   */
   empty,
 });
 

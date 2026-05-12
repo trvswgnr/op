@@ -56,17 +56,32 @@ export type Instruction<E> =
   | RegisterExitFinalizerInstruction;
 
 export interface WithRetry<T, E, A extends readonly unknown[]> {
-  /** Wraps the operation in retry policy logic. */
+  /**
+   * Wraps the operation in retry policy logic.
+   *
+   * @example
+   * const resilient = Op.try(() => fetch("/ping")).withRetry();
+   */
   withRetry(policy?: RetryPolicy): Op<T, E, A>;
 }
 
 export interface WithTimeout<T, E, A extends readonly unknown[]> {
-  /** Applies a timeout budget in milliseconds to the wrapped operation. */
+  /**
+   * Applies a timeout budget in milliseconds to the wrapped operation.
+   *
+   * @example
+   * const bounded = Op.try(() => fetch("/slow")).withTimeout(1000);
+   */
   withTimeout(timeoutMs: number): Op<T, E | TimeoutError, A>;
 }
 
 export interface WithSignal<T, E, A extends readonly unknown[]> {
-  /** Binds an external abort signal to the wrapped operation run. */
+  /**
+   * Binds an external abort signal to the wrapped operation run.
+   *
+   * @example
+   * const linked = Op.of(1).withSignal(new AbortController().signal);
+   */
   withSignal(signal: AbortSignal): Op<T, E, A>;
 }
 
@@ -76,56 +91,114 @@ export type ReleaseFn<T> = (value: T) => unknown;
 export type OpLifecycleHook = "enter" | "exit";
 
 export interface WithRelease<T, E, A extends readonly unknown[]> {
-  /** Registers release logic that runs after a successful value is produced. */
+  /**
+   * Registers release logic that runs after a successful value is produced.
+   *
+   * @example
+   * const managed = Op.of({ close() {} }).withRelease((r) => r.close());
+   */
   withRelease(release: ReleaseFn<T>): Op<T, E, A>;
 }
 
 export interface WithLifecycleHooks<T, E, A extends readonly unknown[]> {
-  /** Register a handler that runs before the operation body starts. */
+  /**
+   * Register a handler that runs before the operation body starts.
+   *
+   * @example
+   * const withEnter = Op.of(1).on("enter", () => console.log("start"));
+   */
   on(event: "enter", initialize: EnterFn<A>): Op<T, E, A>;
-  /** Register a handler that runs after the operation settles. */
+  /**
+   * Register a handler that runs after the operation settles.
+   *
+   * @example
+   * const withExit = Op.of(1).on("exit", () => console.log("done"));
+   */
   on(event: "exit", finalize: ExitFn<T, E, A>): Op<T, E, A>;
 }
 
 export interface WithMap<T, E, A extends readonly unknown[]> {
-  /** Transforms the success value while preserving args and error channel. */
+  /**
+   * Transforms the success value while preserving args and error channel.
+   *
+   * @example
+   * const mapped = Op.of(2).map((n) => n * 2);
+   */
   map<U>(transform: (value: T) => U): Op<Awaited<U>, E, A>;
 }
 
 export interface WithMapErr<T, E, A extends readonly unknown[]> {
-  /** Transforms the tracked typed error channel while preserving success values. */
+  /**
+   * Transforms the tracked typed error channel while preserving success values.
+   *
+   * @example
+   * const mappedError = Op.fail("x" as const).mapErr((e) => ({ code: e }));
+   */
   mapErr<E2>(transform: (error: TrackedErr<E>) => E2): Op<T, E2, A>;
 }
 
 export interface WithFlatMap<T, E, A extends readonly unknown[]> {
-  /** Binds the success value into the next operation. */
+  /**
+   * Binds the success value into the next operation.
+   *
+   * @example
+   * const chained = Op.of(1).flatMap((n) => Op.of(n + 1));
+   */
   flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Op<U, E | E2, A>;
 }
 
 export interface WithTap<T, E, A extends readonly unknown[]> {
-  /** Observes successful values without changing the success payload. */
+  /**
+   * Observes successful values without changing the success payload.
+   *
+   * @example
+   * const observed = Op.of(1).tap((n) => console.log(n));
+   */
   tap<R>(observe: (value: T) => R): Op<T, E | InferOpErr<R>, A>;
 }
 
 export interface WithTapErr<T, E, A extends readonly unknown[]> {
-  /** Observes tracked errors without changing the original success payload. */
+  /**
+   * Observes tracked errors without changing the original success payload.
+   *
+   * @example
+   * const observedError = Op.fail("x" as const).tapErr((e) => console.error(e));
+   */
   tapErr<R>(observe: (error: TrackedErr<E>) => R): Op<T, TrackedErr<E> | InferOpErr<R>, A>;
 }
 
 export type WithPredicateMethod<E> = { is: (value: unknown) => value is E };
 
 export interface WithRecover<T, E, A extends readonly unknown[]> {
-  /** Recovers selected typed failures into a fallback value or operation. */
+  /**
+   * Recovers selected typed failures into a fallback value or operation.
+   *
+   * @example
+   * const recovered = Op.fail("x" as const).recover((e): e is "x" => e === "x", () => 1);
+   */
   recover<ECaught extends TrackedErr<E>, R>(
     predicate: (error: TrackedErr<E>) => error is ECaught,
     handler: (error: ECaught) => R,
   ): Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
-  /** Recovers typed failures selected by a tagged predicate method. */
+  /**
+   * Recovers typed failures selected by a tagged predicate method.
+   *
+   * @example
+   * const recovered = Op.fail({ is: (v: unknown): v is string => typeof v === "string" }).recover(
+   *   { is: (v: unknown): v is string => typeof v === "string" },
+   *   () => 1,
+   * );
+   */
   recover<ECaught extends TrackedErr<E>, R>(
     predicate: WithPredicateMethod<TrackedErr<ECaught>>,
     handler: (error: ECaught) => R,
   ): Op<T | InferOpOk<R>, TrackedErr<E, ECaught> | InferOpErr<R>, A>;
-  /** Recovers failures selected by a boolean predicate over the error value. */
+  /**
+   * Recovers failures selected by a boolean predicate over the error value.
+   *
+   * @example
+   * const recovered = Op.fail("x" as const).recover((e) => e === "x", () => 1);
+   */
   recover<R>(
     predicate: (error: TrackedErr<E>) => boolean,
     handler: (error: TrackedErr<E>) => R,
@@ -135,7 +208,12 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
 export interface OpBase<T, E, A extends readonly unknown[]> {
   readonly _tag: "Op";
   (...args: A): Op<T, E, []>;
-  /** Executes the operation with runtime arguments and returns a `Result`. */
+  /**
+   * Executes the operation with runtime arguments and returns a `Result`.
+   *
+   * @example
+   * const result = await Op.of(1).run();
+   */
   run(...args: A): Promise<Result<T, E | UnhandledException>>;
   [Symbol.iterator](): Generator<Instruction<E>, T, unknown>;
 }
