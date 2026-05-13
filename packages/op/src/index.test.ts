@@ -382,7 +382,7 @@ describe("unsafeCoerce documentation", () => {
     );
 
   test("all unsafeCoerce calls are preceded by a SAFETY comment", () => {
-    const missingSafetyComments: string[] = [];
+    const violations: string[] = [];
 
     const hasPrecedingSafetyComment = (
       lines: readonly string[],
@@ -407,6 +407,21 @@ describe("unsafeCoerce documentation", () => {
       return false;
     };
 
+    const isValidFormatting = (
+      sourceFile: ts.SourceFile,
+      node: ts.CallExpression,
+      lines: readonly string[],
+    ): boolean => {
+      const start = node.getStart(sourceFile);
+      const { line, character } = sourceFile.getLineAndCharacterOfPosition(start);
+      const lineText = lines[line] ?? "";
+      const prefix = lineText.slice(0, character);
+      if (/^(\s|\.\.\.)*$/.test(prefix)) {
+        return true;
+      }
+      return character > 0 && lineText.charAt(character - 1) === " ";
+    };
+
     for (const sourceFile of sourceFiles) {
       const lines = sourceFile.text.split(/\r?\n/);
 
@@ -415,9 +430,15 @@ describe("unsafeCoerce documentation", () => {
           const callName = node.expression.text;
           if (callName === "unsafeCoerce") {
             const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+            const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
+            const where = `${relativePath}:${line + 1}`;
             if (!hasPrecedingSafetyComment(lines, line)) {
-              const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
-              missingSafetyComments.push(`${relativePath}:${line + 1}`);
+              violations.push(`${where} (missing // SAFETY:)`);
+            }
+            if (!isValidFormatting(sourceFile, node, lines)) {
+              violations.push(
+                `${where} (unsafeCoerce must be alone after indent or preceded by one space)`,
+              );
             }
           }
         }
@@ -428,6 +449,6 @@ describe("unsafeCoerce documentation", () => {
       visit(sourceFile);
     }
 
-    expect(missingSafetyComments).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });

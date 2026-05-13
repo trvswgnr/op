@@ -198,8 +198,11 @@ export function onExitCoreOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, []>)
       inner: op,
 
       rebuild: (newInner) =>
-        // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-        onExitCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), finalize),
+        onExitCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          finalize,
+        ),
       rebuildForTimeout: (newInner) =>
         onExitCoreOp(
           // SAFETY: timeout push-through widens inner error type, so widen finalize accordingly.
