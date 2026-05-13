@@ -9,7 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- No entries yet.
+- Added regression coverage for parameterized generator ops to make sure
+  defaulted and rest parameters receive explicit runtime args via `.run(...args)`.
+
+### Changed
+
+- Unified operation internals behind `core/ops` + `OpInterface` by removing the
+  previous nullary/arity split while preserving the public fluent API surface.
+- Expanded async contracts across core/runtime/policy paths from `Promise` to
+  `PromiseLike` and hardened thenable detection so the library remains
+  runtime-agnostic while preserving existing cancellation semantics.
+- Extended `Op.run` to accept runtime arguments (`Op.run(op, ...args)`) so the
+  factory helper matches instance `run(...args)` behavior for parameterized ops.
+- Expanded and standardized JSDoc/examples across `Op` static and instance
+  methods, with type-level coverage to prevent documentation drift.
+
+### Fixed
+
+- Replaced `Promise.prototype.finally` cleanup coupling in signal binding with
+  `try/finally`, preventing listener/timer cleanup regressions when callers pass
+  non-native thenables.
 
 ## [0.1.64] - 2026-05-12
 
@@ -218,6 +237,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
-
-
-
