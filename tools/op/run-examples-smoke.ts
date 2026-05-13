@@ -36,7 +36,7 @@ const SMOKE_TIMEOUT_MS_ENV = "OP_SMOKE_TIMEOUT_MS";
 const SMOKE_RESET_EXAMPLES_ENV = "OP_SMOKE_RESET_EXAMPLES";
 
 /** Wall-clock budget for the full smoke pipeline (covers cold npm/GitHub installs on CI). */
-const DEFAULT_SMOKE_TIMEOUT_MS = 45 * 60_000;
+const DEFAULT_SMOKE_TIMEOUT_MS = 30_000; // 30 seconds
 
 const PACK_OUTPUT_PREVIEW = 4000;
 const UPSTREAM_REPO_URL = "https://github.com/trvswgnr/prodkit.git";
@@ -315,19 +315,6 @@ function normalizeExecCause(cause: unknown): {
   return { message: String(cause) };
 }
 
-function parseSmokeTimeoutMs(raw: string | number | undefined, fallback: number): number {
-  if (raw === undefined || raw === "") return fallback;
-  const parsedTimeoutMs = Number(raw);
-  if (
-    !Number.isFinite(parsedTimeoutMs) ||
-    parsedTimeoutMs <= 0 ||
-    !Number.isInteger(parsedTimeoutMs)
-  ) {
-    throw new Error(`Invalid timeout value: ${raw}`);
-  }
-  return parsedTimeoutMs;
-}
-
 function parseGitLsRemoteSha(output: string, ref: string): string | undefined {
   for (const rawLine of output.split("\n")) {
     const line = rawLine.trimEnd();
@@ -583,8 +570,21 @@ async function main() {
     }
   });
 
+  const getEnvInt = (key: string, defaultValue?: number): number => {
+    if (defaultValue !== undefined) {
+      const schema = v.pipe(
+        v.optional(v.string()),
+        v.transform((value) => (value === undefined ? defaultValue : Number(value))),
+        v.integer(),
+      );
+      return v.parse(schema, process.env[key]);
+    }
+    const schema = v.pipe(v.string(), v.toNumber(), v.integer());
+    return v.parse(schema, process.env[key]);
+  };
+
   const smokeResult = await smoke
-    .withTimeout(parseSmokeTimeoutMs(process.env[SMOKE_TIMEOUT_MS_ENV], DEFAULT_SMOKE_TIMEOUT_MS))
+    .withTimeout(getEnvInt(SMOKE_TIMEOUT_MS_ENV, DEFAULT_SMOKE_TIMEOUT_MS))
     .withSignal(controller.signal)
     .run(process.argv[2]);
 
