@@ -244,7 +244,7 @@ export function withSignalOp<T, E, A extends readonly unknown[]>(
  * - Cleanup stays in Promise.finally so listeners are removed on success, error, or abort
  */
 async function runWithBoundSignal<T, E>(
-  run: (context: RunContext<readonly unknown[]>) => Promise<Result<T, E>>,
+  run: (context: RunContext<readonly unknown[]>) => PromiseLike<Result<T, E>>,
   boundSignal: AbortSignal,
   outerContext: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E>> {
@@ -259,10 +259,13 @@ async function runWithBoundSignal<T, E>(
   if (outerContext.signal.aborted) forwardOuterAbort();
   else outerContext.signal.addEventListener("abort", forwardOuterAbort, { once: true });
 
-  const result = await run(runContext).finally(() => {
+  let result: Result<T, E> | undefined;
+  try {
+    result = await run(runContext);
+  } finally {
     boundSignal.removeEventListener("abort", forwardBoundAbort);
     outerContext.signal.removeEventListener("abort", forwardOuterAbort);
-  });
+  }
 
   return result;
 }
@@ -277,7 +280,7 @@ async function runWithBoundSignal<T, E>(
  * - Promise.finally clears timer + listener in every settle path to avoid timer/listener leaks
  */
 async function raceTimeout<T, E>(
-  run: (context: RunContext<readonly unknown[]>) => Promise<Result<T, E>>,
+  run: (context: RunContext<readonly unknown[]>) => PromiseLike<Result<T, E>>,
   timeoutMs: number,
   outerContext: RunContext<readonly unknown[]>,
 ): Promise<Result<T, E | TimeoutError>> {

@@ -22,7 +22,7 @@ function makeCombinatorOp<T, E>(gen: () => Generator<Instruction<E>, T, unknown>
 }
 
 type FanOut<T, E> = {
-  runs: readonly Promise<Result<T, E | UnhandledException>>[];
+  runs: readonly PromiseLike<Result<T, E | UnhandledException>>[];
   controllers: readonly AbortController[];
   detach: () => void;
 };

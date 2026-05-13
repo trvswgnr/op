@@ -406,11 +406,11 @@ async function runRuntimeBenchmarks(opFactoryInput: unknown): Promise<RuntimeRep
   const report: Partial<RuntimeReport> = {};
 
   report["singleOp.rawAsync"] = await runVariant("singleOp.rawAsync", async () => {
-    await Promise.resolve(42);
+    await Promise.resolve(69);
   });
 
   report["singleOp.opRun"] = await runVariant("singleOp.opRun", async () => {
-    const result = await Op.of(42).run();
+    const result = await Op.of(69).run();
     if (!result.isOk()) throw new Error("singleOp.opRun failed unexpectedly.");
   });
 

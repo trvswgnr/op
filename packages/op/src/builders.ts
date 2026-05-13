@@ -8,10 +8,7 @@ import { Result, type InferErr } from "./result.js";
 import { makeCoreOp, createDefaultHooks, withCleanupCoreOp } from "./core/ops.js";
 import { unsafeCoerce, isAwaited } from "./shared.js";
 
-/**
- * Lifts a value into an operation that always completes successfully
- */
-export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
+export function succeed<T>(value: T | PromiseLike<T>): Op<Awaited<T>, never, []> {
   if (!isAwaited(value)) {
     return _try(() => value);
   }
@@ -26,7 +23,7 @@ export function succeed<T>(value: T | Promise<T>): Op<Awaited<T>, never, []> {
   return op;
 }
 
-/**
+/*
  * Lifts a value into an operation that always fails
  */
 export function fail<E>(value: E): Op<never, E, []> {
@@ -40,11 +37,6 @@ export function fail<E>(value: E): Op<never, E, []> {
   return op;
 }
 
-/**
- * Registers deferred cleanup for the current op run. Use as `yield* Op.defer((ctx) => ...)`
- * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
- * whose `cause` is a nested {@link Error} chain (`.cause`), **first LIFO failure outermost**
- */
 export function defer(finalize: AnyExitFn): Op<void, never, []> {
   const op: Op<void, never, []> = makeCoreOp(
     function* () {
@@ -57,7 +49,7 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
   return op;
 }
 
-/**
+/*
  * Suspends until a promise settles, then continues with its value or a mapped failure
  *
  * `onError` may return a value, promise, nullary `Op`, or generator object. Program-shaped
@@ -65,14 +57,14 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
  */
 export function _try<T, E = UnhandledException>(
   f: (signal: AbortSignal) => T,
-  onError?: (e: unknown) => E | Promise<E>,
+  onError?: (e: unknown) => E | PromiseLike<E>,
 ): Op<Awaited<T>, TrackedErr<Awaited<E>>, []> {
   const op: Op<Awaited<T>, TrackedErr<Awaited<E>>, []> = makeCoreOp(
     function* () {
       const result: Result<
         Awaited<T>,
         Awaited<E> | UnhandledException
-      > = yield* new SuspendInstruction((context) =>
+      > = yield* new SuspendInstruction(async (context) =>
         Promise.resolve()
           .then(() => f(context.signal))
           .then(

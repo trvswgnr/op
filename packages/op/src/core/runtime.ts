@@ -62,9 +62,9 @@ async function driveInternal<T, E>(
 ): Promise<Result<T, E | UnhandledException>> {
   const { signal, args: runArgs } = context;
   const finalizers: Array<
-    (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>
+    (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => PromiseLike<void>
   > = [];
-  const awaitWithAbortInterrupt = <TValue>(suspended: Promise<TValue>) => {
+  const awaitWithAbortInterrupt = <TValue>(suspended: PromiseLike<TValue>) => {
     if (!interruptOnAbort) return suspended;
     if (signal.aborted) return Promise.reject(signal.reason);
 

@@ -24,8 +24,19 @@ export function coerceToNullaryOp(value: unknown): Op<unknown, unknown, []> | un
   return value();
 }
 
-export function isAwaited<T>(value: T | Promise<T>): value is Awaited<T> {
-  return !(value instanceof Promise);
+export function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  if (value instanceof Promise) return true;
+
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
+}
+
+export function isAwaited<T>(value: T | PromiseLike<T> | Awaited<T>): value is Awaited<T> {
+  return !isPromiseLike(value);
 }
 
 export function isGeneratorObject(

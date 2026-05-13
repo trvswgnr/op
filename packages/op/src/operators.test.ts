@@ -437,13 +437,13 @@ describe("operator combinators", () => {
         return yield* new MissingConfigError();
       }).recover(MissingConfigError.is, () =>
         Op(function* () {
-          return 42;
+          return 69;
         }),
       );
 
       const result = await recovered.run();
       assert(result.isOk(), "should be Ok");
-      expect(result.value).toBe(42);
+      expect(result.value).toBe(69);
     });
 
     test("recover propagates failures from Op(function*) handlers", async () => {

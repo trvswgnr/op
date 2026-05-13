@@ -206,7 +206,9 @@ export interface WithRecover<T, E, A extends readonly unknown[]> {
 }
 
 export interface OpBase<T, E, A extends readonly unknown[]> {
+  /** Type discriminant for an `Op` instance. */
   readonly _tag: "Op";
+  /** Provides the operation with runtime arguments. */
   (...args: A): Op<T, E, []>;
   /**
    * Executes the operation with runtime arguments and returns a `Result`.

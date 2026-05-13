@@ -240,7 +240,7 @@ describe('op.on("enter")', () => {
       const base = Op.try(() => {
         attempts += 1;
         if (attempts < 3) throw new Error(`fail-${attempts}`);
-        return 42;
+        return 69;
       });
       const op =
         order === "before-retry"
@@ -248,7 +248,7 @@ describe('op.on("enter")', () => {
           : base.withRetry(policy).on("enter", enter);
       const result = await op.run();
       assert(result.isOk(), "should be Ok");
-      expect(result.value).toBe(42);
+      expect(result.value).toBe(69);
       expect(enter).toHaveBeenCalledTimes(1);
     };
 

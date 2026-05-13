@@ -1,6 +1,6 @@
 import { defer, fail, fromGenFn, succeed, _try } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
-import { ErrorGroup, TimeoutError } from "./errors.js";
+import { ErrorGroup, TimeoutError, type UnhandledException } from "./errors.js";
 import {
   type EnterContext,
   type ExitContext,
@@ -10,41 +10,57 @@ import {
 import { runOp } from "./core/run-op.js";
 import { exponentialBackoff } from "./policies.js";
 import { Tagged } from "./tagged.js";
+import { type Result } from "./result.js";
 
 const empty: Op<void, never, []> = succeed(undefined);
 
 /**
- * Runtime factory and namespace for building and composing operations.
+ * An operation that can be run and composed with other operations.
  *
+ * - Runtime factory and namespace for building and composing operations.
  * - Call `Op(function* (...) { ... })` to build generator-based operations.
- * - Use static helpers (`Op.of`, `Op.fail`, `Op.try`, `Op.all`, `Op.any`, etc.) for common patterns.
- * - Use `Op.run(op)` to execute a nullary operation value directly. For external cancellation,
+ * - Use static helpers (`Op.of`, `Op.fail`, `Op.try`, `Op.all`, `Op.any`, etc.)
+ *   for common patterns.
+ *
+ * Use `Op.run(op)` to execute an operation directly. For external cancellation,
  *   compose with `.withSignal(signal)` first and then run.
+ *
+ * @example
+ * const op = Op(function* () {
+ *   if (Math.random() > 0.5) {
+ *     return yield* Op.fail("error");
+ *   }
+ *   return yield* Op.of(69);
+ * });
+ * const result = await op.run();
+ * console.log(result);
  */
 export const Op = Object.assign(fromGenFn, {
   /** Type discriminant for the `Op` factory namespace value. */
   _tag: "OpFactory" as const,
   /**
-   * Executes a nullary operation and resolves to its `Result<T, E | UnhandledException>`.
-   *
-   * This helper is for already-constructed nullary `Op` values. For parameterized
-   * operations, call instance `.run(...args)` on the op itself.
+   * Executes an operation with its runtime arguments and resolves to its `Result<T, E | UnhandledException>`.
    *
    * @example
    * const value = await Op.run(Op.of(1));
    */
-  run: runOp,
+  run: <T, E, A extends readonly unknown[]>(
+    op: Op<T, E, A>,
+    ...args: A
+  ): Promise<Result<T, E | UnhandledException>> => {
+    return runOp(op(...args));
+  },
   /**
-   * Creates an operation that succeeds with the provided value.
+   * Creates an operation that always succeeds with the provided value.
    *
    * Promise inputs are awaited before producing the success value.
    *
    * @example
-   * const value = Op.of(42);
+   * const value = Op.of(69);
    */
   of: succeed,
   /**
-   * Creates an operation that fails with the provided typed error value.
+   * Creates an operation that always fails with the provided typed error value.
    *
    * @example
    * const failed = Op.fail("bad-input" as const);
@@ -52,6 +68,14 @@ export const Op = Object.assign(fromGenFn, {
   fail,
   /**
    * Registers an exit finalizer for the current run via `yield* Op.defer(...)`.
+   *
+   * If several callbacks throw during the same unwind, `run` fails with {@link UnhandledException}
+   * whose `cause` is a nested {@link Error} chain (`.cause`) with the **first LIFO
+   * failure as the outermost error**.
+   *
+   * **Important**: Op.defer *must* be `yield*`ed or it will do nothing
+   *
+   * @note Should always be used inside an `Op(function* () { ... })` body.
    *
    * @example
    * const program = Op(function* () {
@@ -61,7 +85,7 @@ export const Op = Object.assign(fromGenFn, {
    */
   defer,
   /**
-   * Lifts a sync/async callback into an operation.
+   * Lifts a sync or async callback into an operation.
    *
    * - Fulfillment returns `Ok`.
    * - Throw/reject is normalized to `UnhandledException` when `onError` is omitted.
@@ -69,6 +93,12 @@ export const Op = Object.assign(fromGenFn, {
    *
    * @example
    * const fetched = Op.try(() => fetch("/health"));
+   *
+   * @example
+   * const fetched = Op.try(
+   *   () => fetch("/health"),
+   *   (cause) => new FetchError({ cause }),
+   * );
    */
   try: _try,
   /**
@@ -124,20 +154,6 @@ export const Op = Object.assign(fromGenFn, {
   empty,
 });
 
-/**
- * Operation: a generator-based program with success type `T`, error type `E`, and parameter tuple `A`
- * `A` for `Op((...args: A) => function* { ... })`. Use `[]` when the generator has no parameters
- *
- * Call `run(...args)` to execute and get `Result<T, E>`. Compose behavior with
- * `withRetry(policy)`, `withTimeout(ms)`, `withSignal(signal)`, `withRelease(release)`,
- * `.on("enter", initialize)`, `.on("exit", finalize)`, and `Op.defer(finalize)` inside generators.
- * Enter handlers receive {@link EnterContext} (`signal` + runtime `args`); exit handlers receive
- * {@link ExitContext} (`signal` + runtime `args` + same `result` as `.run()`).
- *
- * @template T Value returned when the operation succeeds
- * @template E Error type from yielded failures (not counting {@link UnhandledException} from throws)
- * @template A Argument tuple for parameterized operations
- */
 export type Op<T, E, A extends readonly unknown[]> = OpInterface<T, E, A> & Tagged<"Op">;
 
 export type { EnterContext, ExitContext, OpLifecycleHook };

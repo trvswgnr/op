@@ -2,7 +2,7 @@ import type { ExitContext, Instruction, RunContext } from "./types.js";
 import { Tagged } from "../tagged.js";
 import { Err } from "../result.js";
 
-type SuspendFn = (ctx: RunContext<readonly unknown[]>) => Promise<unknown>;
+type SuspendFn = (ctx: RunContext<readonly unknown[]>) => PromiseLike<unknown>;
 export class SuspendInstruction extends Tagged("SuspendInstruction") {
   readonly suspend: SuspendFn;
 
@@ -19,7 +19,7 @@ export class SuspendInstruction extends Tagged("SuspendInstruction") {
   }
 }
 
-type FinalizeFn = (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => Promise<void>;
+type FinalizeFn = (ctx: ExitContext<unknown, unknown, readonly unknown[]>) => PromiseLike<void>;
 export class RegisterExitFinalizerInstruction extends Tagged("RegisterExitFinalizerInstruction") {
   readonly finalize: FinalizeFn;
   readonly args: readonly unknown[] | undefined;
