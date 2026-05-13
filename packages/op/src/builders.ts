@@ -106,8 +106,7 @@ function bindArityArgsToFinalizers<T>(
     return: (value?: T) =>
       bindStep(
         iterator.return(
-          // SAFETY: `Iterator.return` requires the generator return type, but callers may close without
-          // a payload; the value is only forwarded to generator finalization.
+          // SAFETY: value is only forwarded to generator finalization during close.
           unsafeCoerce<T>(value),
         ),
       ),
@@ -160,9 +159,9 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   // We intentionally always build through the tuple-arity lifting path, including for `A = []`.
   // This keeps runtime behavior uniform while preserving exact tuple signatures at the type level.
   const invoke = (...args: A) => {
-    // TS cannot model `Generator<Y, T, unknown>` as the internal instruction-supertype without this bridge cast
     const bound: Op<T, InferErr<Y>, []> = makeCoreOp(
       () =>
+        // SAFETY: TS cannot model `Generator<Y, T, unknown>` as the internal instruction supertype.
         unsafeCoerce<Generator<Instruction<InferErr<Y>>, T, unknown>>(
           bindArityArgsToFinalizers(f(...args), args),
         ),
@@ -172,9 +171,15 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
   };
   const op = makeArityOp(
     invoke,
-    // SAFETY: only generator functions with zero declared parameters expose the nullary iterator path.
-    f.length === 0 ? () => invoke(...unsafeCoerce<A>([])) : undefined,
+    f.length === 0
+      ? () =>
+          invoke(
+            // SAFETY: only generator functions with zero declared parameters expose the nullary iterator path.
+            ...unsafeCoerce<A>([]),
+          )
+      : undefined,
   );
+
   // SAFETY: `makeArityOp` returns an OpInterface<T, E, A>, so we need to cast it to an Op<T, E, A>
   return unsafeCoerce(op);
 }

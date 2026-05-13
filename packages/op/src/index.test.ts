@@ -365,3 +365,70 @@ describe("Op API JSDoc coverage", () => {
     expect(withExamples).toEqual(instanceMethodNames);
   });
 });
+
+describe("unsafeCoerce documentation", () => {
+  const packageRoot = ts.sys.getCurrentDirectory();
+  const tsconfigPath = `${packageRoot}/tsconfig.json`;
+  const tsconfig = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(tsconfig.config, ts.sys, packageRoot);
+  const program = ts.createProgram(parsed.fileNames, parsed.options);
+  const sourceFiles = program
+    .getSourceFiles()
+    .filter(
+      (sourceFile) =>
+        sourceFile.fileName.startsWith(`${packageRoot}/src/`) &&
+        !sourceFile.fileName.endsWith(".d.ts") &&
+        !sourceFile.fileName.endsWith(".test.ts"),
+    );
+
+  test("all unsafeCoerce calls are preceded by a SAFETY comment", () => {
+    const missingSafetyComments: string[] = [];
+
+    const hasPrecedingSafetyComment = (
+      lines: readonly string[],
+      callLine0Based: number,
+    ): boolean => {
+      let i = callLine0Based - 1;
+      while (i >= 0) {
+        const trimmed = lines[i]?.trim() ?? "";
+        if (trimmed === "") {
+          i -= 1;
+          continue;
+        }
+        if (trimmed.startsWith("//")) {
+          if (trimmed.startsWith("// SAFETY:")) {
+            return true;
+          }
+          i -= 1;
+          continue;
+        }
+        return false;
+      }
+      return false;
+    };
+
+    for (const sourceFile of sourceFiles) {
+      const lines = sourceFile.text.split(/\r?\n/);
+
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+          const callName = node.expression.text;
+          if (callName === "unsafeCoerce") {
+            const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+            if (!hasPrecedingSafetyComment(lines, line)) {
+              const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
+              missingSafetyComments.push(`${relativePath}:${line + 1}`);
+            }
+          }
+        }
+
+        ts.forEachChild(node, visit);
+      };
+
+      visit(sourceFile);
+    }
+
+    expect(missingSafetyComments).toEqual([]);
+  });
+});
+

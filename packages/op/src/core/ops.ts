@@ -32,18 +32,17 @@ function dispatchLifecycleCore<T, E>(
   event: OpLifecycleHook,
   handler: LifecycleFn<T, E, []>,
 ): Op<T, E, []> {
-  if (event === "enter") {
-    // Discriminant narrows runtime event, but TS cannot narrow unioned function type through generic `event`.
-    return hooks.registerEnterInitialize(unsafeCoerce(handler));
+  const hookName = event === "enter" ? "registerEnterInitialize" : "registerExitFinalize";
+  const hook = hooks[hookName];
+
+  if (hook === undefined) {
+    throw new Error(`Invalid event: ${event}`);
   }
 
-  if (event === "exit") {
-    // Discriminant narrows runtime event, but TS cannot narrow unioned function type through generic `event`.
-    return hooks.registerExitFinalize(unsafeCoerce(handler));
-  }
-
-  const _: never = event;
-  return _;
+  return hook(
+    // SAFETY: runtime event discriminant selects the exit handler overload.
+    unsafeCoerce(handler),
+  );
 }
 
 type DefaultHooks<T, E> = Pick<
@@ -160,8 +159,13 @@ export function onEnterCoreOp<T, E>(op: Op<T, E, []>, initialize: EnterFn<[]>): 
     },
     {
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => onEnterCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), initialize),
+
+      rebuild: (newInner) =>
+        onEnterCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          initialize,
+        ),
       withRelease: (release) => withCleanupCoreOp(onEnterCoreOp(op, initialize), release),
       registerEnterInitialize: (nextInitialize) =>
         onEnterCoreOp(onEnterCoreOp(op, initialize), nextInitialize),
@@ -192,11 +196,17 @@ export function onExitCoreOp<T, E>(op: Op<T, E, []>, finalize: ExitFn<T, E, []>)
     },
     {
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => onExitCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), finalize),
+
+      rebuild: (newInner) =>
+        // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
+        onExitCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), finalize),
       rebuildForTimeout: (newInner) =>
-        // SAFETY: timeout push-through widens inner error type, so widen finalize accordingly.
-        onExitCoreOp(unsafeCoerce<Op<T, E | TimeoutError, []>>(newInner), unsafeCoerce(finalize)),
+        onExitCoreOp(
+          // SAFETY: timeout push-through widens inner error type, so widen finalize accordingly.
+          unsafeCoerce<Op<T, E | TimeoutError, []>>(newInner),
+          // SAFETY: TimeoutError is filtered before `finalize`, so it still only receives `E`.
+          unsafeCoerce(finalize),
+        ),
       withRelease: (release) => withCleanupCoreOp(onExitCoreOp(op, finalize), release),
       registerEnterInitialize: (initialize) =>
         onEnterCoreOp(onExitCoreOp(op, finalize), initialize),
@@ -227,8 +237,13 @@ export function mapCoreOp<T, E, U>(
     {
       ...createDefaultHooks(() => mapCoreOp(op, transform)),
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => mapCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), transform),
+
+      rebuild: (newInner) =>
+        mapCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          transform,
+        ),
     },
   );
 }
@@ -288,8 +303,12 @@ export function tapCoreOp<T, E, R>(
     {
       ...createDefaultHooks(() => tapCoreOp(op, observe)),
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => tapCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), observe),
+      rebuild: (newInner) =>
+        tapCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          observe,
+        ),
     },
   );
 }
@@ -327,8 +346,12 @@ export function tapErrCoreOp<T, E, R>(
     {
       ...createDefaultHooks(() => tapErrCoreOp(op, observe)),
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => tapErrCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), observe),
+      rebuild: (newInner) =>
+        tapErrCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          observe,
+        ),
       rebuildForTimeout: (newInner) =>
         tapErrCoreOp(
           // SAFETY: timeout push-through widens only the error channel with TimeoutError.
@@ -363,8 +386,12 @@ export function mapErrCoreOp<T, E, E2>(
     {
       ...createDefaultHooks(() => mapErrCoreOp(op, transform)),
       inner: op,
-      // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-      rebuild: (newInner) => mapErrCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), transform),
+      rebuild: (newInner) =>
+        mapErrCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          transform,
+        ),
       rebuildForTimeout: (newInner) =>
         mapErrCoreOp(
           // SAFETY: timeout push-through widens only the error channel with TimeoutError.
@@ -415,8 +442,12 @@ export function recoverCoreOp<T, E, R>(
       ...createDefaultHooks(() => recoverCoreOp(op, predicate, handler)),
       inner: op,
       rebuild: (newInner) =>
-        // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook.
-        recoverCoreOp(unsafeCoerce<Op<T, E, []>>(newInner), predicate, handler),
+        recoverCoreOp(
+          // SAFETY: rebuild callbacks are only used with the `inner` op they declared in this hook
+          unsafeCoerce<Op<T, E, []>>(newInner),
+          predicate,
+          handler,
+        ),
       rebuildForTimeout: (newInner) =>
         recoverCoreOp(
           // SAFETY: timeout push-through widens only the error channel with TimeoutError.
@@ -554,9 +585,13 @@ export function liftOp<TIn, EIn, A extends readonly unknown[], TOut, EOut>(
       withRelease: (release) => withReleaseOp(self, release),
       on: (event, handler) => onOp(self, event, handler),
     }),
-    // SAFETY: `isIterableOp` proves `op` has the nullary iterator surface; calling it resolves
-    // the underlying core op before applying the lifted mapper.
-    isIterableOp(op) ? () => mapCore(unsafeCoerce<Op<TIn, EIn, []>>(op)()) : undefined,
+    isIterableOp(op)
+      ? () =>
+          mapCore(
+            // SAFETY: `isIterableOp` proves `op` has the nullary iterator surface.
+            unsafeCoerce<Op<TIn, EIn, []>>(op)(),
+          )
+      : undefined,
   );
 }
 
@@ -631,13 +666,19 @@ export function onOp<T, E, A extends readonly unknown[]>(
   handler: LifecycleFn<T, E, A>,
 ): OpInterface<T, E, A> {
   if (event === "enter") {
-    // SAFETY: runtime event discriminant selects the enter handler overload.
-    return onEnterOp(op, unsafeCoerce(handler));
+    return onEnterOp(
+      op,
+      // SAFETY: runtime event discriminant selects the enter handler overload
+      unsafeCoerce(handler),
+    );
   }
 
   if (event === "exit") {
-    // SAFETY: runtime event discriminant selects the exit handler overload.
-    return onExitOp(op, unsafeCoerce(handler));
+    return onExitOp(
+      op,
+      // SAFETY: runtime event discriminant selects the exit handler overload.
+      unsafeCoerce(handler),
+    );
   }
 
   event satisfies never;
@@ -660,8 +701,12 @@ export function withReleaseOp<T, E, A extends readonly unknown[]>(
       on: (event, handler) => onOp(self, event, handler),
     }),
     isIterableOp(source)
-      ? // SAFETY: `isIterableOp` proves `source` has the nullary iterator surface.
-        () => withCleanupCoreOp(unsafeCoerce<Op<T, E, []>>(source)(), release)
+      ? () =>
+          withCleanupCoreOp(
+            // SAFETY: `isIterableOp` proves `source` has the nullary iterator surface.
+            unsafeCoerce<Op<T, E, []>>(source)(),
+            release,
+          )
       : undefined,
   );
 }
