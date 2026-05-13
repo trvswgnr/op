@@ -384,10 +384,7 @@ describe("unsafeCoerce documentation", () => {
   test("all unsafeCoerce calls are preceded by a SAFETY comment", () => {
     type Violation = {
       message: string;
-      location: {
-        file: string;
-        line: number;
-      };
+      location: string;
     };
     const violations: Violation[] = [];
 
@@ -433,24 +430,28 @@ describe("unsafeCoerce documentation", () => {
       const lines = sourceFile.text.split(/\r?\n/);
 
       const visit = (node: ts.Node): void => {
-        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-          const callName = node.expression.text;
-          if (callName === "unsafeCoerce") {
-            const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-            const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
-            if (!hasPrecedingSafetyComment(lines, line)) {
-              violations.push({
-                message: `missing '// SAFETY:' comment`,
-                location: { file: relativePath, line: line + 1 },
-              });
-            }
-            if (!isValidFormatting(sourceFile, node, lines)) {
-              violations.push({
-                message: `unsafeCoerce must be alone after indent or preceded by either a space or '...'`,
-                location: { file: relativePath, line: line + 1 },
-              });
-            }
-          }
+        if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) {
+          return ts.forEachChild(node, visit);
+        }
+        const callName = node.expression.text;
+        if (callName !== "unsafeCoerce") {
+          return ts.forEachChild(node, visit);
+        }
+
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
+        if (!hasPrecedingSafetyComment(lines, line)) {
+          violations.push({
+            message: `missing '// SAFETY:' comment`,
+            location: `${relativePath}:${line + 1}`,
+          });
+        }
+
+        if (!isValidFormatting(sourceFile, node, lines)) {
+          violations.push({
+            message: `unsafeCoerce must be alone after indent or preceded by either a space or '...'`,
+            location: `${relativePath}:${line + 1}`,
+          });
         }
 
         ts.forEachChild(node, visit);
