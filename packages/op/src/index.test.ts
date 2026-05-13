@@ -382,7 +382,14 @@ describe("unsafeCoerce documentation", () => {
     );
 
   test("all unsafeCoerce calls are preceded by a SAFETY comment", () => {
-    const violations: string[] = [];
+    type Violation = {
+      message: string;
+      location: {
+        file: string;
+        line: number;
+      };
+    };
+    const violations: Violation[] = [];
 
     const hasPrecedingSafetyComment = (
       lines: readonly string[],
@@ -431,14 +438,17 @@ describe("unsafeCoerce documentation", () => {
           if (callName === "unsafeCoerce") {
             const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
             const relativePath = sourceFile.fileName.slice(packageRoot.length + 1);
-            const where = `${relativePath}:${line + 1}`;
             if (!hasPrecedingSafetyComment(lines, line)) {
-              violations.push(`${where} (missing // SAFETY:)`);
+              violations.push({
+                message: `missing '// SAFETY:' comment`,
+                location: { file: relativePath, line: line + 1 },
+              });
             }
             if (!isValidFormatting(sourceFile, node, lines)) {
-              violations.push(
-                `${where} (unsafeCoerce must be alone after indent or preceded by one space)`,
-              );
+              violations.push({
+                message: `unsafeCoerce must be alone after indent or preceded by either a space or '...'`,
+                location: { file: relativePath, line: line + 1 },
+              });
             }
           }
         }
