@@ -25,6 +25,7 @@
 ## Learned Workspace Facts
 
 - `pnpm install` must be run outside the sandbox (request full permissions / non-sandbox); it hangs or fails reliably in the default sandbox.
+- `pnpm run gate` smoke creates a temp examples workspace and runs `npm install`; restricted/no-network sandboxes can hang there until the smoke timeout.
 - Contributors need Node >=24.14.0.
 - Contributors should use `pnpm@10` locally (CI/release stays pinned to `10.11.0`).
 - npm publishing is configured with GitHub Actions trusted publishing (OIDC + provenance), not long-lived `NPM_TOKEN` auth.
