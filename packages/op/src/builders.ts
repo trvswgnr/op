@@ -1,11 +1,11 @@
 import { UnhandledException } from "./errors.js";
-import { makeFluentOp, onOp } from "./core/ops.js";
+import { makeFluentOp, onOp } from "./core/fluent.js";
 import type { TrackedErr, AnyExitFn, Instruction, OpInterface } from "./core/types.js";
 import type { Op } from "./index.js";
 import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/instructions.js";
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
-import { makeCoreOp, createDefaultHooks, withCleanupCoreOp } from "./core/ops.js";
+import { makeCoreOp, createDefaultHooks, withCleanupCoreOp } from "./core/fluent.js";
 import { unsafeCoerce, isAwaited, sleepWithSignal } from "./shared.js";
 
 export function succeed<T>(value: T | PromiseLike<T>): Op<Awaited<T>, never, []> {

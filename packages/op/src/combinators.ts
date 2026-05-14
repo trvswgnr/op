@@ -9,7 +9,7 @@ import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { createRunContext, drive } from "./core/runtime.js";
 import { Result, type Err } from "./result.js";
-import { makeCoreOp, createDefaultHooks } from "./core/ops.js";
+import { makeCoreOp, createDefaultHooks } from "./core/fluent.js";
 
 type AnyNullaryOp = Op<unknown, unknown, []>;
 

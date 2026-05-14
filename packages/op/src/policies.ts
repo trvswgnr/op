@@ -1,11 +1,11 @@
 import { TimeoutError, UnhandledException } from "./errors.js";
 import { Result } from "./result.js";
-import { makeFluentOp, onOp, withCleanupCoreOp } from "./core/ops.js";
+import { makeFluentOp, onOp, withCleanupCoreOp } from "./core/fluent.js";
 import { TrackedErr, type Instruction, type OpInterface, type RunContext } from "./core/types.js";
 import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { createRunContext, drive, driveInterruptOnAbort } from "./core/runtime.js";
-import { makeCoreOp, createDefaultHooks } from "./core/ops.js";
+import { makeCoreOp, createDefaultHooks } from "./core/fluent.js";
 import { isIterableOp, unsafeCoerce, sleepWithSignal } from "./shared.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
