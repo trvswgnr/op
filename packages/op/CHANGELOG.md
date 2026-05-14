@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- No entries yet.
+
+## [0.1.66] - 2026-05-14
+
 ### Changed
 
 - Hardened workspace installs by disabling npm lifecycle scripts by default.
@@ -275,3 +281,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
