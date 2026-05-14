@@ -181,6 +181,11 @@ retry"). Putting timeout inside retry means timeout applies independently per re
 (`packages/op/src/policies.test.ts`, "timeout applies per-attempt when chained inside retry", also the converse
 scenario in the sibling test quoted there).
 
+Retry delay and public `Op.sleep(ms)` share the same timer adapter, so timer cleanup and abort
+listener cleanup stay consistent. `Op.sleep` rejects on abort so cancellation flows through the
+normal runtime `UnhandledException` channel; retry delay catches that abort and preserves its
+existing "stop retrying and return the last result" behavior.
+
 ## Where else to read
 
 Cancellation and cooperative `AbortSignal` behavior show up wherever `SuspendInstruction` binds a

@@ -1,4 +1,4 @@
-import { defer, fail, fromGenFn, succeed, _try } from "./builders.js";
+import { defer, fail, fromGenFn, sleep, succeed, _try } from "./builders.js";
 import { allOp, allSettledOp, anyOp, raceOp, settleOp } from "./combinators.js";
 import { ErrorGroup, TimeoutError, type UnhandledException } from "./errors.js";
 import {
@@ -84,6 +84,21 @@ export const Op = Object.assign(fromGenFn, {
    * });
    */
   defer,
+  /**
+   * Suspends the current operation for `ms` milliseconds.
+   *
+   * Negative durations are normalized to `0`. Non-finite durations fail at run time
+   * with `UnhandledException`.
+   * The sleep observes surrounding cancellation from `.withSignal(...)`,
+   * `.withTimeout(...)`, and combinators.
+   *
+   * @example
+   * const delayed = Op(function* () {
+   *   yield* Op.sleep(100);
+   *   return "ready";
+   * });
+   */
+  sleep,
   /**
    * Lifts a sync or async callback into an operation.
    *

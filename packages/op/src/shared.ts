@@ -46,3 +46,28 @@ export function isPromiseLike<T>(value: T | PromiseLike<T>): value is PromiseLik
 export function isAwaited<T>(value: T | PromiseLike<T> | Awaited<T>): value is Awaited<T> {
   return !isPromiseLike(value);
 }
+
+export function sleepWithSignal(ms: number, signal: AbortSignal): Promise<void> {
+  if (!Number.isFinite(ms)) {
+    return Promise.reject(new RangeError("sleep duration must be a finite number"));
+  }
+
+  const durationMs = Math.max(0, ms);
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, durationMs);
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}

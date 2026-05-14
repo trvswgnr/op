@@ -18,6 +18,10 @@ describe("OpFactory", () => {
     expect(Op.of).toBeInstanceOf(Function);
   });
 
+  test("sleep is a function", () => {
+    expect(Op.sleep).toBeInstanceOf(Function);
+  });
+
   test("empty is a stable singleton op", async () => {
     expect(Op.empty).toBe(Op.empty);
 

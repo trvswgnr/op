@@ -1,5 +1,5 @@
-import { describe, expect, test, assert } from "vitest";
-import { fail, fromGenFn, succeed, _try } from "./builders.js";
+import { describe, expect, test, assert, vi } from "vitest";
+import { fail, fromGenFn, sleep, succeed, _try } from "./builders.js";
 import { UnhandledException } from "./errors.js";
 
 describe("succeed", () => {
@@ -72,6 +72,74 @@ describe("fail", () => {
     const result = await program.run();
     expect(result.isErr()).toBe(true);
     expect(executed).toBe(false);
+  });
+});
+
+describe("sleep", () => {
+  test("suspends until the requested duration elapses", async () => {
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const runPromise = sleep(25).run();
+      runPromise.then(() => {
+        settled = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(24);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await runPromise;
+
+      assert(result.isOk(), "should be Ok");
+      expect(result.value).toBeUndefined();
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("normalizes negative durations to zero", async () => {
+    vi.useFakeTimers();
+    try {
+      const negative = sleep(-1).run();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect((await negative).isOk()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("fails at run time for non-finite durations", async () => {
+    const result = await sleep(Number.POSITIVE_INFINITY).run();
+
+    assert(result.isErr(), "should be Err");
+    expect(result.error).toBeInstanceOf(UnhandledException);
+    if (result.error instanceof UnhandledException) {
+      expect(result.error.cause).toBeInstanceOf(RangeError);
+    }
+  });
+
+  test("observes external cancellation", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const runPromise = sleep(100).withSignal(controller.signal).run();
+
+      controller.abort("cancelled");
+      await vi.advanceTimersByTimeAsync(0);
+
+      const result = await runPromise;
+      assert(result.isErr(), "should be Err");
+      expect(result.error).toBeInstanceOf(UnhandledException);
+      if (result.error instanceof UnhandledException) {
+        expect(result.error.cause).toBe("cancelled");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -6,7 +6,7 @@ import type { Op } from "./index.js";
 import { SuspendInstruction } from "./core/instructions.js";
 import { createRunContext, drive, driveInterruptOnAbort } from "./core/runtime.js";
 import { makeCoreOp, createDefaultHooks } from "./core/ops.js";
-import { isIterableOp, unsafeCoerce } from "./shared.js";
+import { isIterableOp, unsafeCoerce, sleepWithSignal } from "./shared.js";
 
 /** Retry policy for `op.withRetry(policy)`. */
 export interface RetryPolicy {
@@ -124,24 +124,7 @@ function makePolicyCoreOp<T, E>(
  * Creates a promise that resolves when the given delay is complete or the given signal is aborted
  */
 function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise<void>((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
+  return sleepWithSignal(ms, signal).catch(() => {});
 }
 
 /**

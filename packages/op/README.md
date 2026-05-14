@@ -133,6 +133,26 @@ For releasing the **success value** of a single op, `.withRelease` on that op is
 For lifecycle hooks at op boundaries, `.on("enter", fn)` runs setup when a wrapper starts and
 `.on("exit", fn)` runs teardown when the run unwinds.
 
+### `Op.sleep(ms)`
+
+Creates an op that waits for `ms` milliseconds and then succeeds with `void`.
+Negative durations are normalized to `0`. Non-finite durations fail at run time with
+`UnhandledException`.
+
+`Op.sleep` observes surrounding cancellation policy. If a run is cancelled by `.withSignal(...)`,
+`.withTimeout(...)`, or a combinator abort while sleeping, the sleep stops early and the run surfaces
+the cancellation through the normal `UnhandledException` channel.
+
+```ts
+const poll = Op(function* () {
+  while (true) {
+    const job = yield* loadJob;
+    if (job.ready) return job;
+    yield* Op.sleep(250);
+  }
+});
+```
+
 ### `Op.try(f, onError?)`
 
 Runs an async or sync function and converts failures into `Err`.
@@ -350,6 +370,7 @@ Runtime guarantees:
 
 - `.withTimeout(...)`, `.withSignal(...)`, and short-circuiting combinators (`Op.all`, `Op.any`,
   `Op.race`) propagate abort through `AbortSignal`.
+- `Op.sleep(ms)` observes abort signals and stops waiting early when its enclosing run is cancelled.
 - When a combinator decides its final result early, in-flight siblings are aborted and the
   combinator waits for them to settle before returning.
 - Scheduled teardown still runs (`Op.defer`, `.withRelease`, `.on("exit", ...)`) even when a run

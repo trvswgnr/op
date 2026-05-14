@@ -20,6 +20,10 @@ describe("type inference contracts", () => {
     expectTypeOf(p3).toEqualTypeOf<Op<never, string, []>>();
     expectTypeOf(p3.run()).toEqualTypeOf<Promise<Result<never, string | UnhandledException>>>();
 
+    const p4 = Op.sleep(1);
+    expectTypeOf(p4).toEqualTypeOf<Op<void, never, []>>();
+    expectTypeOf(p4.run()).toEqualTypeOf<Promise<Result<void, UnhandledException>>>();
+
     // @ts-expect-error - nullary run does not accept arguments
     p1.run(1);
     // @ts-expect-error - parameterized run requires argument

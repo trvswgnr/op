@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `Op.sleep(ms)` as a cancellation-aware core operation for timer
+  delays and polling loops, with non-finite durations surfaced as run-time
+  `UnhandledException` failures.
 - Added regression coverage for parameterized generator ops to make sure
   defaulted and rest parameters receive explicit runtime args via `.run(...args)`.
 
@@ -28,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Reworked the polling example to use an abort-aware loop instead of recovering
-  an internal retry sentinel, so external cancellation no longer becomes a
+- Reworked the polling example to use `Op.sleep` instead of recovering an
+  internal retry sentinel, so external cancellation no longer becomes a
   successful stale value.
 - Registered the polling example interval cleanup with `Op.defer` so it runs
   when the example exits through success, failure, timeout, or cancellation.

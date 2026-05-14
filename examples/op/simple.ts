@@ -75,28 +75,6 @@ export const userProgram = Op(function* (id: string) {
   return user;
 });
 
-const delay = (ms: number) =>
-  Op.try(
-    (signal) =>
-      new Promise<void>((resolve, reject) => {
-        if (signal.aborted) {
-          reject(signal.reason);
-          return;
-        }
-
-        const onAbort = () => {
-          clearTimeout(timer);
-          reject(signal.reason);
-        };
-        const timer = setTimeout(() => {
-          signal.removeEventListener("abort", onAbort);
-          resolve();
-        }, ms);
-
-        signal.addEventListener("abort", onAbort, { once: true });
-      }),
-  );
-
 export const pollUntil = <T, E>(
   op: Op<T, E, []>,
   opts: { until: (value: T) => boolean; intervalMs: number },
@@ -106,7 +84,7 @@ export const pollUntil = <T, E>(
       const value = yield* op;
       if (opts.until(value)) return value;
 
-      yield* delay(opts.intervalMs);
+      yield* Op.sleep(opts.intervalMs);
     }
   });
 };

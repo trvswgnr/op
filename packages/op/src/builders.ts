@@ -6,7 +6,7 @@ import { RegisterExitFinalizerInstruction, SuspendInstruction } from "./core/ins
 import { withRetryOp, withTimeoutOp, withSignalOp } from "./policies.js";
 import { Result, type InferErr } from "./result.js";
 import { makeCoreOp, createDefaultHooks, withCleanupCoreOp } from "./core/ops.js";
-import { unsafeCoerce, isAwaited } from "./shared.js";
+import { unsafeCoerce, isAwaited, sleepWithSignal } from "./shared.js";
 
 export function succeed<T>(value: T | PromiseLike<T>): Op<Awaited<T>, never, []> {
   if (!isAwaited(value)) {
@@ -47,6 +47,10 @@ export function defer(finalize: AnyExitFn): Op<void, never, []> {
     createDefaultHooks(() => op),
   );
   return op;
+}
+
+export function sleep(ms: number): Op<void, never, []> {
+  return _try((signal) => sleepWithSignal(ms, signal));
 }
 
 /*
@@ -180,6 +184,5 @@ export function fromGenFn<Y extends Instruction<unknown>, T, A extends readonly 
       : undefined,
   );
 
-  // SAFETY: `makeArityOp` returns an OpInterface<T, E, A>, so we need to cast it to an Op<T, E, A>
-  return unsafeCoerce(op);
+  return op;
 }
