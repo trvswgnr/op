@@ -3,7 +3,7 @@ import { Op } from "./index.js";
 import { TaggedError, TimeoutError, UnhandledException } from "./errors.js";
 import { TRUE } from "./test-utils.js";
 
-describe("instance combinators", () => {
+describe("fluent methods", () => {
   describe("op.map", () => {
     test("map transforms success values and preserves arity", async () => {
       const op = Op(function* (n: number) {
