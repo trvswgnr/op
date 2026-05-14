@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- No entries yet.
+
+## [0.1.65] - 2026-05-14
+
+### Added
+
 - Added `Op.sleep(ms)` as a cancellation-aware core operation for timer
   delays and polling loops, with non-finite durations surfaced as run-time
   `UnhandledException` failures.
@@ -264,3 +270,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry timing, and composed operation semantics).
 - Improved examples and parsing validation in places where earlier behavior
   could produce weaker diagnostics or drift from production expectations.
+
