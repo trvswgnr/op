@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pinned GitHub Actions workflow dependencies to full commit SHAs.
 - Hardened the npm release workflow by removing pnpm cache restore from the
   publish path.
+- Hardened GitHub Actions checkout steps so workflow tokens are not persisted
+  after checkout.
 
 ## [0.1.65] - 2026-05-14
 
