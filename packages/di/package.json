@@ -1,0 +1,65 @@
+{
+  "name": "@prodkit/di",
+  "version": "0.1.0",
+  "description": "Typed dependency injection for @prodkit/op programs.",
+  "keywords": [
+    "dependency injection",
+    "effect",
+    "operations",
+    "runtime-agnostic",
+    "typescript"
+  ],
+  "homepage": "https://github.com/trvswgnr/prodkit#readme",
+  "bugs": {
+    "url": "https://github.com/trvswgnr/prodkit/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trvswgnr/prodkit"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "gate": "pnpm run build && pnpm run typecheck && pnpm run test && pnpm run lint && pnpm run fmt:check",
+    "fix": "pnpm run lint:fix && pnpm run fmt",
+    "fmt": "oxfmt \"src/**/*.ts\" \"*.ts\"",
+    "fmt:check": "oxfmt --check \"src/**/*.ts\" \"*.ts\"",
+    "lint": "oxlint --config ../../oxlint.config.ts",
+    "lint:fix": "oxlint --config ../../oxlint.config.ts --fix",
+    "prepare": "pnpm run build",
+    "prepublishOnly": "pnpm -C ../.. run gate",
+    "release:prepare": "pnpm -C ../.. run gate && npm pack --dry-run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prodkit/op": "workspace:*"
+  },
+  "devDependencies": {
+    "oxfmt": "0.48.0",
+    "oxlint": "1.55.0",
+    "tsdown": "0.21.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.0"
+  },
+  "peerDependencies": {
+    "better-result": "^2.9.0"
+  }
+}

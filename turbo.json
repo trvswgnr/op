@@ -32,7 +32,7 @@
       "inputs": ["src/**/*.ts", "**/*.ts"]
     },
     "gate": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^gate"],
       "cache": false
     },
     "smoke": {

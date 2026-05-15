@@ -39,6 +39,31 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  examples/di:
+    dependencies:
+      '@prodkit/di':
+        specifier: workspace:*
+        version: link:../../packages/di
+      '@prodkit/op':
+        specifier: workspace:*
+        version: link:../../packages/op
+      better-result:
+        specifier: 2.9.0
+        version: 2.9.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.12.3
+      oxfmt:
+        specifier: 0.48.0
+        version: 0.48.0
+      oxlint:
+        specifier: 1.55.0
+        version: 1.55.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   examples/op:
     dependencies:
       '@prodkit/op':
@@ -63,6 +88,31 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+
+  packages/di:
+    dependencies:
+      '@prodkit/op':
+        specifier: workspace:*
+        version: link:../op
+      better-result:
+        specifier: ^2.9.0
+        version: 2.9.0
+    devDependencies:
+      oxfmt:
+        specifier: 0.48.0
+        version: 0.48.0
+      oxlint:
+        specifier: 1.55.0
+        version: 1.55.0
+      tsdown:
+        specifier: 0.21.2
+        version: 0.21.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)(typescript@5.9.3)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.0
+        version: 4.1.0(@types/node@24.12.3)(vite@8.0.11(@types/node@24.12.3))
 
   packages/op:
     dependencies:

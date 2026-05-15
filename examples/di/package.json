@@ -1,0 +1,29 @@
+{
+  "name": "@prodkit/di-examples",
+  "private": true,
+  "description": "Consumer-level examples for @prodkit/di.",
+  "type": "module",
+  "scripts": {
+    "gate": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
+    "fmt": "oxfmt \"**/*.ts\"",
+    "fmt:check": "oxfmt --check \"**/*.ts\"",
+    "lint": "oxlint --config ../../oxlint.config.ts .",
+    "lint:fix": "oxlint --config ../../oxlint.config.ts --fix .",
+    "smoke": "node ./smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prodkit/di": "workspace:*",
+    "@prodkit/op": "workspace:*",
+    "better-result": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "oxfmt": "0.48.0",
+    "oxlint": "1.55.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=24.14.0"
+  }
+}
