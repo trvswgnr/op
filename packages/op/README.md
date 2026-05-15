@@ -23,7 +23,9 @@ npm i @prodkit/op
 ```
 
 Runtime support for consumers: any JavaScript runtime with `Promise` and `AbortController`.
-For Node consumers specifically, this package is tested on Node `24.14.0`.
+For Node consumers specifically, this package is tested on Node `24.14.0`. CI also runs
+packed-package smoke checks on Bun `1.3.13`, Deno `2.7.14`, and a Cloudflare Workers-like
+Miniflare environment.
 
 This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
 operation model.
@@ -607,6 +609,16 @@ Run the consumer-level checks (repo contributors, from monorepo root):
 ```bash
 pnpm --filter @prodkit/op-scripts run examples:smoke:pack
 ```
+
+Run all cross-runtime smoke checks for Bun, Deno, and a Cloudflare Workers-like runtime
+when both `bun` and `deno` are on `PATH`:
+
+```bash
+pnpm --filter @prodkit/op-scripts run runtime:smoke
+```
+
+You can also run one runtime at a time with `runtime:smoke:bun`, `runtime:smoke:deno`,
+or `runtime:smoke:edge`.
 
 ## More examples
 

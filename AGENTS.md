@@ -30,6 +30,7 @@
 - Contributors should use `pnpm@10` locally (CI/release stays pinned to `10.11.0`).
 - npm publishing is configured with GitHub Actions trusted publishing (OIDC + provenance), not long-lived `NPM_TOKEN` auth.
 - The library is designed to be runtime-agnostic, not Node-specific in behavior.
+- CI verifies the runtime-agnostic claim with a separate Bun, Deno, and Miniflare runtime smoke matrix.
 - The project is currently alpha-stage with no production users, so intentional breaking changes are acceptable.
 - Workspace taxonomy: `packages/*` (publishable), `examples/*` (consumer examples), `benchmarks/*` (performance harnesses), `tools/*` (maintainer scripts), and `apps/*` reserved for runnable product/demo apps.
 - GitHub repository canonical path is `trvswgnr/prodkit` (renamed from `trvswgnr/op`).

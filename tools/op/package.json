@@ -9,6 +9,10 @@
     "examples:smoke:github": "node ./run-examples-smoke.ts github",
     "examples:smoke:npm": "node ./run-examples-smoke.ts npm",
     "examples:smoke:all": "pnpm run examples:smoke:pack && pnpm run examples:smoke:github && pnpm run examples:smoke:npm",
+    "runtime:smoke": "node ./run-runtime-smoke.ts all",
+    "runtime:smoke:bun": "node ./run-runtime-smoke.ts bun",
+    "runtime:smoke:deno": "node ./run-runtime-smoke.ts deno",
+    "runtime:smoke:edge": "node ./run-runtime-smoke.ts edge",
     "smoke": "pnpm run examples:smoke:pack",
     "fmt": "oxfmt \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
@@ -23,6 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
+    "miniflare": "^4.20260511.0",
     "oxfmt": "0.48.0",
     "oxlint": "1.55.0",
     "typescript": "^5.9.3"
