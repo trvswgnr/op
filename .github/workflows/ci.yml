@@ -42,6 +42,16 @@ jobs:
       - name: Run project quality gate
         run: pnpm run gate
 
+      - name: Publish coverage report
+        run: pnpm --filter @prodkit/op run coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: op-coverage
+          path: packages/op/coverage
+          if-no-files-found: error
+
   runtime-smoke:
     name: runtime smoke / ${{ matrix.runtime }}
     runs-on: ubuntu-latest

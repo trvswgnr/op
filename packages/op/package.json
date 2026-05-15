@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "COMPARISON.md",
     "DESIGN.md",
     "CHANGELOG.md",
     "README.md"
@@ -52,10 +53,12 @@
     "release:patch": "node ../../tools/op/release-cut.ts patch",
     "release:publish:manual": "npm publish --access public --provenance",
     "release:push": "git push && git push --tags",
+    "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.0",
     "fast-check": "4.7.0",
     "oxfmt": "0.48.0",
     "oxlint": "1.55.0",

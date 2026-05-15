@@ -4,6 +4,8 @@ A runtime-agnostic, composable, and predictable library for writing operations i
 
 This README documents the `@prodkit/op` package API and usage.
 For monorepo/workspace orientation, see the repo root [`README.md`](https://github.com/trvswgnr/prodkit/blob/main/README.md).
+For tradeoffs against Effect, neverthrow, `fp-ts`, native `Promise`, and `ResultAsync`, see
+[`COMPARISON.md`](https://github.com/trvswgnr/prodkit/blob/main/packages/op/COMPARISON.md).
 
 > [!WARNING]
 > This library is currently in alpha. The API will almost certainly change between releases while it stabilizes.
@@ -29,6 +31,10 @@ Miniflare environment.
 
 This project is designed to be runtime-agnostic: no Node-specific APIs are required by the public
 operation model.
+
+CI publishes a Vitest coverage artifact for this package. The test suite includes unit,
+integration, type-level, and property-based law checks, plus separate packed-package smoke checks
+for Node, Bun, Deno, and a Cloudflare Workers-like runtime.
 
 `@prodkit/op` pairs naturally with `better-result` and declares it as a peer dependency.
 

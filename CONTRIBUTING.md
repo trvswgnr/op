@@ -33,6 +33,8 @@ The quality gate includes a consumer-level smoke test that installs the package 
 tarball via `examples/op/` in an isolated temp workspace.
 
 Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.yml`.
+CI also publishes the `@prodkit/op` Vitest coverage report as a workflow artifact so reviewers
+can audit unit, integration, type, and property-law coverage evidence from the run.
 
 All examples are consumer-level and live under `examples/op/*`.
 

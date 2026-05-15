@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a comparison page covering tradeoffs against Effect, neverthrow, `fp-ts`,
+  native `Promise`, and `ResultAsync`.
+- Added CI-published Vitest coverage artifacts for `@prodkit/op` so correctness
+  evidence is easier to audit from workflow runs.
 - Added packed-package runtime smoke coverage for Bun, Deno, and a Cloudflare Workers-like
   Miniflare environment, with CI matrix coverage for each runtime.
 - Added dependency signature auditing to CI and release-runner network auditing
