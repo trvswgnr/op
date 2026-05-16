@@ -1,7 +1,7 @@
 {
-  "name": "@prodkit/op-scripts",
+  "name": "@prodkit/tools",
   "private": true,
-  "description": "Project-level scripts for @prodkit/op",
+  "description": "Maintainer tooling for the prodkit monorepo",
   "type": "module",
   "scripts": {
     "gate": "pnpm run typecheck && pnpm run lint && pnpm run fmt:check && pnpm run smoke",
@@ -16,8 +16,8 @@
     "smoke": "pnpm run examples:smoke:pack",
     "fmt": "oxfmt \"**/*.ts\"",
     "fmt:check": "oxfmt --check \"**/*.ts\"",
-    "lint": "oxlint --config ../../oxlint.config.ts .",
-    "lint:fix": "oxlint --config ../../oxlint.config.ts --fix .",
+    "lint": "oxlint --config ../oxlint.config.ts .",
+    "lint:fix": "oxlint --config ../oxlint.config.ts --fix .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

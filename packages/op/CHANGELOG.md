@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidated consumer examples into `examples/` (`@prodkit/examples`); consumer smoke now
+  validates packed installs for both `@prodkit/op` and `@prodkit/std`.
+- Flattened maintainer scripts workspace from `tools/op` to `tools/` and renamed it to
+  `@prodkit/tools` (was `@prodkit/op-scripts`).
 - Changed fluent callback sequencing to drive only bound nullary ops, so returned generator-built
   op factories are treated as plain values unless they are explicitly invoked.
 

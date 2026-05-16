@@ -6,29 +6,28 @@ examples, benchmarks, and maintainer tooling.
 
 ## canonical package docs
 
-Use each package README under `packages/*/README.md` as the source of truth for that package's:
+Use each publishable package README under `packages/*/README.md` as the source of truth for that package's installation, API reference, usage examples, and consumer-facing commands:
 
-- installation
-- API reference and semantics
-- usage examples
-- consumer smoke commands
+- [`@prodkit/op`](packages/op/README.md) (published to npm with the package)
+- [`@prodkit/std`](packages/std/README.md), including the `@prodkit/std/di` entrypoint
 
-Example: `@prodkit/op` docs live at [`packages/op/README.md`](packages/op/README.md), and that README is shipped with the published npm package.
+Other workspace roots are maintainer- or CI-oriented: [`examples`](examples/) (`@prodkit/examples`), [`tools`](tools/) (`@prodkit/tools`), and [`benchmarks`](benchmarks/).
 
 ## workspace layout
 
 - `packages/*`: publishable library packages
 - `apps/*`: runnable product/demo applications
-- `examples/*`: consumer-style example and smoke workspaces
+- `examples`: consumer examples and smoke workspace (`@prodkit/examples`)
 - `benchmarks/*`: performance benchmark harnesses
-- `tools/*`: maintainer tooling workspaces
+- `tools`: maintainer tooling workspace (`@prodkit/tools`)
 - `.github/workflows`: CI and release automation
 
 ## development
 
 - contributor guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- runtime/design notes: [`packages/op/DESIGN.md`](packages/op/DESIGN.md)
-- package changelog: [`packages/op/CHANGELOG.md`](packages/op/CHANGELOG.md)
+- `@prodkit/op` runtime/design notes: [`packages/op/DESIGN.md`](packages/op/DESIGN.md)
+- `@prodkit/op` changelog: [`packages/op/CHANGELOG.md`](packages/op/CHANGELOG.md)
+- `@prodkit/std` changelog: [`packages/std/CHANGELOG.md`](packages/std/CHANGELOG.md)
 
 Primary quality gate:
 
@@ -38,16 +37,14 @@ pnpm run gate
 
 ## release flow
 
-Release commands live in package workspace scripts and are executed from repo root via pnpm filters.
-
-Example (`@prodkit/op`):
+Pushing a semver tag (`v*`) triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which today publishes **`@prodkit/op`** only (trusted publishing + provenance). Release helpers live on that package:
 
 ```bash
 pnpm --filter @prodkit/op run release:patch
 pnpm --filter @prodkit/op run release:push
 ```
 
-Pushing the version tag triggers `.github/workflows/release.yml`, which performs trusted npm publishing.
+`@prodkit/std` can be published manually from a clean `main` when needed (`pnpm --filter @prodkit/std publish ...` after version bump and changelog); there is no separate tag-driven workflow for it yet.
 
 ## license
 

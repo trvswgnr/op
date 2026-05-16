@@ -22,15 +22,7 @@ import {
   ServiceCallError,
   createApp,
 } from "./webhook.ts";
-
-class AssertionError extends Error {
-  name = "AssertionError";
-}
-
-type Assert = (condition: unknown, message: string) => asserts condition;
-const assert: Assert = (condition, message) => {
-  if (!condition) throw new AssertionError(message);
-};
+import { assert } from "../assert.ts";
 
 function isNamedUser(value: unknown): value is { name: string } {
   return (
@@ -359,6 +351,8 @@ async function runWebhookExampleSmoke() {
   assert(inventoryAborted, "inventory abort propagation check failed");
 }
 
-await runCoreApiSmoke();
-await runSimpleExampleSmoke();
-await runWebhookExampleSmoke();
+export async function runOpExamplesSmoke() {
+  await runCoreApiSmoke();
+  await runSimpleExampleSmoke();
+  await runWebhookExampleSmoke();
+}

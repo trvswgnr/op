@@ -40,7 +40,7 @@
   },
   "scripts": {
     "build": "tsdown",
-    "changelog:check": "node ../../tools/op/check-changelog-version.ts",
+    "changelog:check": "node ../../tools/check-changelog-version.ts",
     "gate": "pnpm run build && pnpm run typecheck && pnpm run test && pnpm run lint && pnpm run fmt:check",
     "fix": "pnpm run lint:fix && pnpm run fmt",
     "fmt": "oxfmt \"src/**/*.ts\" \"*.ts\"",
@@ -50,7 +50,7 @@
     "prepare": "pnpm run build",
     "prepublishOnly": "pnpm -C ../.. run gate && pnpm run changelog:check",
     "release:prepare": "pnpm -C ../.. run gate && pnpm run changelog:check && npm pack --dry-run",
-    "release:patch": "node ../../tools/op/release-cut.ts patch",
+    "release:patch": "node ../../tools/release-cut.ts patch",
     "release:publish:manual": "npm publish --access public --provenance",
     "release:push": "git push && git push --tags",
     "coverage": "vitest run --coverage",

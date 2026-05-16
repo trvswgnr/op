@@ -49,7 +49,7 @@ const main = Op(function* (bumpKindArg: string | undefined) {
     const result = v.safeParse(BumpKind, arg);
     if (!result.success) {
       return yield* new ParseError({
-        message: "usage: node ./tools/op/release-cut.ts <patch|minor|major>",
+        message: "usage: node ./tools/release-cut.ts <patch|minor|major>",
         issues: result.issues,
         input: arg,
       });
@@ -237,7 +237,7 @@ main.run(process.argv[2]).then((result) => {
             handledKnownError = true;
             logReleaseAbort(
               e.message ?? "invalid release kind.",
-              "usage: node ./tools/op/release-cut.ts <patch|minor|major>",
+              "usage: node ./tools/release-cut.ts <patch|minor|major>",
             );
           },
           ChangelogError: (e) => {

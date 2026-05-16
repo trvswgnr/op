@@ -624,14 +624,14 @@ that demonstrates:
 Run the consumer-level checks (repo contributors, from monorepo root):
 
 ```bash
-pnpm --filter @prodkit/op-scripts run examples:smoke:pack
+pnpm --filter @prodkit/tools run examples:smoke:pack
 ```
 
 Run all cross-runtime smoke checks for Bun, Deno, and a Cloudflare Workers-like runtime
 when both `bun` and `deno` are on `PATH`:
 
 ```bash
-pnpm --filter @prodkit/op-scripts run runtime:smoke
+pnpm --filter @prodkit/tools run runtime:smoke
 ```
 
 You can also run one runtime at a time with `runtime:smoke:bun`, `runtime:smoke:deno`,
@@ -641,8 +641,11 @@ or `runtime:smoke:edge`.
 
 - [`examples/op/simple.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/op/simple.ts):
   minimal composition and typed error walkthrough.
-- [`examples/op/smoke.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/op/smoke.ts):
-  consumer-level scenario assertions for simple + webhook flows.
+- [`examples/std/onboarding.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/std/onboarding.ts):
+  `@prodkit/std/di` wiring with `Ctx` services.
+- [`examples/smoke.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/smoke.ts):
+  consumer-level scenario assertions for Op flows (`examples/op/smoke.ts`) and DI onboarding
+  (`examples/std/smoke.ts`).
 
 ## Contributing
 

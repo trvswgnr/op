@@ -28,3 +28,7 @@ import * as std from "@prodkit/std";
 
 const Service = std.di.Ctx.Service("Service");
 ```
+
+## Examples in this repo
+
+End-to-end DI wiring with `Ctx` services lives in [`examples/std/onboarding.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/std/onboarding.ts) (consumer smoke covers it via [`examples/smoke.ts`](https://github.com/trvswgnr/prodkit/blob/main/examples/smoke.ts)).

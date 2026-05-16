@@ -25,14 +25,14 @@
 ## Learned Workspace Facts
 
 - `pnpm install` must be run outside the sandbox (request full permissions / non-sandbox); it hangs or fails reliably in the default sandbox.
-- Run `pnpm run gate` outside the sandbox by default; its smoke step builds a temporary mini-pnpm workspace (reuses the repo `catalog:` block), runs `pnpm install` there, then `pnpm --filter @prodkit/op-examples run smoke`, which reliably times out or hangs in restricted/no-network sandboxes.
+- Run `pnpm run gate` outside the sandbox by default; its smoke step builds a temporary mini-pnpm workspace (reuses the repo `catalog:` block), runs `pnpm install` there, then `pnpm --filter @prodkit/examples run smoke`, which reliably times out or hangs in restricted/no-network sandboxes.
 - Contributors need Node >=24.14.0.
 - Contributors should use `pnpm@10` locally (CI/release stays pinned to `10.11.0`).
-- Shared workspace dev-tool versions (`typescript`, `vitest`, `oxfmt`, `oxlint`, `tsdown`, `@vitest/coverage-v8`) are declared once under `catalog:` in `pnpm-workspace.yaml`; workspace packages (including `packages/*`, repo root, `examples/*`, `tools/*`, `benchmarks/*`) reference them as `"catalog:"`. Pack/runtime smoke harnesses also use `pnpm` so those manifests stay valid outside the main workspace checkout.
+- Shared workspace dev-tool versions (`typescript`, `vitest`, `oxfmt`, `oxlint`, `tsdown`, `@vitest/coverage-v8`) are declared once under `catalog:` in `pnpm-workspace.yaml`; workspace packages (including `packages/*`, repo root, `examples`, `tools`, `benchmarks/*`) reference them as `"catalog:"`. Pack/runtime smoke harnesses also use `pnpm` so those manifests stay valid outside the main workspace checkout.
 - npm publishing is configured with GitHub Actions trusted publishing (OIDC + provenance), not long-lived `NPM_TOKEN` auth.
 - The library is designed to be runtime-agnostic, not Node-specific in behavior.
 - CI verifies the runtime-agnostic claim with a separate Bun, Deno, and Miniflare runtime smoke matrix.
 - The project is currently alpha-stage with no production users, so intentional breaking changes are acceptable.
-- Workspace taxonomy: `packages/*` (publishable), `examples/*` (consumer examples), `benchmarks/*` (performance harnesses), `tools/*` (maintainer scripts), and `apps/*` reserved for runnable product/demo apps.
+- Workspace taxonomy: `packages/*` (publishable), `examples` (`@prodkit/examples`, consumer smoke workspace), `benchmarks/*` (performance harnesses), `tools` (`@prodkit/tools`, maintainer scripts), and `apps/*` reserved for runnable product/demo apps.
 - `@prodkit/std` is the standard-library package; dependency-injection helpers are imported directly from `@prodkit/std/di` and exposed as `di` on root namespace imports.
 - GitHub repository canonical path is `trvswgnr/prodkit` (renamed from `trvswgnr/op`).

@@ -39,10 +39,10 @@ const DEFAULT_SMOKE_TIMEOUT_MS = 30_000; // 30 seconds
 const PACK_OUTPUT_PREVIEW = 4000;
 const UPSTREAM_REPO_URL = "https://github.com/trvswgnr/prodkit.git";
 const UPSTREAM_MAIN_REF = "refs/heads/main";
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-/** Temp workspace layout: `pnpm-workspace.yaml` + this folder (copied from `examples/op`). */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** Temp workspace layout: `pnpm-workspace.yaml` + this folder (copied from `examples/`). */
 const EXAMPLES_CONSUMER_DIR = "examples-consumer";
-const EXAMPLES_PACKAGE_NAME = "@prodkit/op-examples";
+const EXAMPLES_PACKAGE_NAME = "@prodkit/examples";
 const EXAMPLES_SMOKE_STATE_DIR = path.join(REPO_ROOT, "var", "examples-smoke");
 const PNPM_STORE_DIR = path.join(EXAMPLES_SMOKE_STATE_DIR, "store");
 
@@ -324,48 +324,61 @@ const resolveUpstreamMainCommitSha = Op(function* (repoRoot: string) {
   return sha;
 });
 
-function resolveInstalledProdkitOpDir(workspaceRoot: string): string {
-  const nested = path.join(workspaceRoot, EXAMPLES_CONSUMER_DIR, "node_modules", "@prodkit", "op");
-  const hoisted = path.join(workspaceRoot, "node_modules", "@prodkit", "op");
+function resolveInstalledProdkitPackageDir(workspaceRoot: string, packageBaseName: string): string {
+  const nested = path.join(
+    workspaceRoot,
+    EXAMPLES_CONSUMER_DIR,
+    "node_modules",
+    "@prodkit",
+    packageBaseName,
+  );
+  const hoisted = path.join(workspaceRoot, "node_modules", "@prodkit", packageBaseName);
   if (existsSync(path.join(nested, "package.json"))) return nested;
   return hoisted;
 }
 
-const ensureInstalledPackageReady = Op(function* (workspaceRoot: string, sourceLabel: string) {
-  const installedPkgDir = resolveInstalledProdkitOpDir(workspaceRoot);
-  const packageJson = yield* readPackageJson(path.join(installedPkgDir, "package.json"));
-  const entryCandidates = new Set<string>(["./dist/index.mjs"]);
+const EXAMPLES_DIST_CHECK_PACKAGES = ["op", "std"] as const;
 
-  const mainField = getOwnPropertyValue(packageJson, "main");
-  if (typeof mainField === "string" && mainField.length > 0) entryCandidates.add(mainField);
+const ensureInstalledPackagesReady = Op(function* (workspaceRoot: string, sourceLabel: string) {
+  for (const pkg of EXAMPLES_DIST_CHECK_PACKAGES) {
+    const installedPkgDir = resolveInstalledProdkitPackageDir(workspaceRoot, pkg);
+    const packageJson = yield* readPackageJson(path.join(installedPkgDir, "package.json"));
+    const entryCandidates = new Set<string>(["./dist/index.mjs"]);
 
-  const moduleField = getOwnPropertyValue(packageJson, "module");
-  if (typeof moduleField === "string" && moduleField.length > 0) entryCandidates.add(moduleField);
+    const mainField = getOwnPropertyValue(packageJson, "main");
+    if (typeof mainField === "string" && mainField.length > 0) entryCandidates.add(mainField);
 
-  const exportsField = getOwnPropertyValue(packageJson, "exports");
-  if (getOwnPropertyValue(exportsField, ".") !== undefined) {
-    collectRuntimeEntryLeaves(getOwnPropertyValue(exportsField, "."), entryCandidates);
-  } else {
-    collectRuntimeEntryLeaves(exportsField, entryCandidates);
-  }
+    const moduleField = getOwnPropertyValue(packageJson, "module");
+    if (typeof moduleField === "string" && moduleField.length > 0) entryCandidates.add(moduleField);
 
-  const entryPaths = Array.from(entryCandidates)
-    .map((candidate) => path.resolve(installedPkgDir, candidate.replace(/^\.\/+/, "")))
-    .filter((candidatePath) => {
-      const relative = path.relative(installedPkgDir, candidatePath);
-      return !relative.startsWith("..") && !path.isAbsolute(relative);
+    const exportsField = getOwnPropertyValue(packageJson, "exports");
+    if (getOwnPropertyValue(exportsField, ".") !== undefined) {
+      collectRuntimeEntryLeaves(getOwnPropertyValue(exportsField, "."), entryCandidates);
+    } else {
+      collectRuntimeEntryLeaves(exportsField, entryCandidates);
+    }
+
+    const entryPaths = Array.from(entryCandidates)
+      .map((candidate) => path.resolve(installedPkgDir, candidate.replace(/^\.\/+/, "")))
+      .filter((candidatePath) => {
+        const relative = path.relative(installedPkgDir, candidatePath);
+        return !relative.startsWith("..") && !path.isAbsolute(relative);
+      });
+
+    if (entryPaths.some((entryPath) => existsSync(entryPath))) continue;
+
+    return yield* new SmokeMissingDistError({
+      message: `Installed @prodkit/${pkg} from ${sourceLabel} is missing expected entry artifacts (${Array.from(entryCandidates).join(", ")}). This usually means the dependency was installed from source without prebuilt artifacts.`,
     });
-
-  if (entryPaths.some((entryPath) => existsSync(entryPath))) return;
-
-  return yield* new SmokeMissingDistError({
-    message: `Installed package from ${sourceLabel} is missing expected entry artifacts (${Array.from(entryCandidates).join(", ")}). This usually means the dependency was installed from source without prebuilt artifacts.`,
-  });
+  }
 });
 
-const createTempExamplesWorkspace = Op(function* (examplesDir: string, opInstallTarget: string) {
+const createTempExamplesWorkspace = Op(function* (
+  examplesDir: string,
+  dependencyOverrides: Record<string, string>,
+) {
   const tempRoot = yield* Op.try(
-    () => mkdtemp(path.join(os.tmpdir(), "op-examples-smoke-")),
+    () => mkdtemp(path.join(os.tmpdir(), "prodkit-examples-smoke-")),
     (cause) =>
       new SmokeWorkspaceError({ message: "Failed to create temporary examples workspace", cause }),
   );
@@ -459,7 +472,9 @@ const createTempExamplesWorkspace = Op(function* (examplesDir: string, opInstall
 
   const currentDependencies = getOwnPropertyValue(parsedPackageJson, "dependencies");
   const nextDependencies = isRecord(currentDependencies) ? { ...currentDependencies } : {};
-  nextDependencies["@prodkit/op"] = opInstallTarget;
+  for (const [depName, depSpec] of Object.entries(dependencyOverrides)) {
+    nextDependencies[depName] = depSpec;
+  }
 
   const nextPackageJson: Record<string, unknown> = {
     ...parsedPackageJson,
@@ -480,12 +495,12 @@ const createTempExamplesWorkspace = Op(function* (examplesDir: string, opInstall
 
 const installAndSmoke = Op(function* (
   examplesDir: string,
-  installTarget: string,
+  dependencyOverrides: Record<string, string>,
   sourceLabel: string,
 ) {
-  const smokeWorkspaceDir = yield* createTempExamplesWorkspace(examplesDir, installTarget);
+  const smokeWorkspaceDir = yield* createTempExamplesWorkspace(examplesDir, dependencyOverrides);
   yield* execOp("pnpm", ["install", `--store-dir=${PNPM_STORE_DIR}`], smokeWorkspaceDir);
-  yield* ensureInstalledPackageReady(smokeWorkspaceDir, sourceLabel);
+  yield* ensureInstalledPackagesReady(smokeWorkspaceDir, sourceLabel);
   yield* execOp("pnpm", ["--filter", EXAMPLES_PACKAGE_NAME, "run", "smoke"], smokeWorkspaceDir);
 });
 
@@ -496,59 +511,111 @@ async function cleanupPackOutput(tarballPath: string) {
 
 const installFromPack = Op(function* () {
   const repoRoot = yield* fromRepoRoot(".");
-  const examplesDir = yield* fromRepoRoot("examples/op");
+  const examplesDir = yield* fromRepoRoot("examples");
   yield* execOp("pnpm", ["--filter", "@prodkit/op", "run", "build"], repoRoot);
+  yield* execOp("pnpm", ["--filter", "@prodkit/std", "run", "build"], repoRoot);
 
-  const packOutput = yield* execOp(
+  const packOpOutput = yield* execOp(
     "pnpm",
     ["--filter", "@prodkit/op", "pack", "--json"],
     repoRoot,
     true,
   );
-  const filename = parsePnpmPackFilename(packOutput);
+  const opFilename = parsePnpmPackFilename(packOpOutput);
 
-  const preview =
-    packOutput.length > PACK_OUTPUT_PREVIEW
-      ? `${packOutput.slice(0, PACK_OUTPUT_PREVIEW)}...`
-      : packOutput;
+  const opPreview =
+    packOpOutput.length > PACK_OUTPUT_PREVIEW
+      ? `${packOpOutput.slice(0, PACK_OUTPUT_PREVIEW)}...`
+      : packOpOutput;
 
-  if (!filename) {
+  if (!opFilename) {
     return yield* new SmokePackOutputError({
-      message: `Unable to read tarball filename from pnpm pack --json (preview):\n${preview}`,
+      message: `Unable to read @prodkit/op tarball filename from pnpm pack --json (preview):\n${opPreview}`,
     });
   }
 
-  const tarballPath = path.isAbsolute(filename) ? filename : path.resolve(repoRoot, filename);
-  yield* Op.defer(() => cleanupPackOutput(tarballPath));
+  const opTarballPath = path.isAbsolute(opFilename)
+    ? opFilename
+    : path.resolve(repoRoot, opFilename);
+  yield* Op.defer(() => cleanupPackOutput(opTarballPath));
 
-  const relativeToRepoRoot = path.relative(path.resolve(repoRoot), tarballPath);
-  if (relativeToRepoRoot.startsWith("..") || path.isAbsolute(relativeToRepoRoot)) {
+  const opRelativeToRepoRoot = path.relative(path.resolve(repoRoot), opTarballPath);
+  if (opRelativeToRepoRoot.startsWith("..") || path.isAbsolute(opRelativeToRepoRoot)) {
     return yield* new SmokePackOutputError({
-      message: `pnpm pack filename resolves outside the repository root: ${filename}`,
+      message: `pnpm pack filename resolves outside the repository root: ${opFilename}`,
     });
   }
 
-  yield* installAndSmoke(examplesDir, tarballPath, "pnpm pack tarball");
+  const packStdOutput = yield* execOp(
+    "pnpm",
+    ["--filter", "@prodkit/std", "pack", "--json"],
+    repoRoot,
+    true,
+  );
+  const stdFilename = parsePnpmPackFilename(packStdOutput);
+
+  const stdPreview =
+    packStdOutput.length > PACK_OUTPUT_PREVIEW
+      ? `${packStdOutput.slice(0, PACK_OUTPUT_PREVIEW)}...`
+      : packStdOutput;
+
+  if (!stdFilename) {
+    return yield* new SmokePackOutputError({
+      message: `Unable to read @prodkit/std tarball filename from pnpm pack --json (preview):\n${stdPreview}`,
+    });
+  }
+
+  const stdTarballPath = path.isAbsolute(stdFilename)
+    ? stdFilename
+    : path.resolve(repoRoot, stdFilename);
+  yield* Op.defer(() => cleanupPackOutput(stdTarballPath));
+
+  const stdRelativeToRepoRoot = path.relative(path.resolve(repoRoot), stdTarballPath);
+  if (stdRelativeToRepoRoot.startsWith("..") || path.isAbsolute(stdRelativeToRepoRoot)) {
+    return yield* new SmokePackOutputError({
+      message: `pnpm pack filename resolves outside the repository root: ${stdFilename}`,
+    });
+  }
+
+  yield* installAndSmoke(
+    examplesDir,
+    {
+      "@prodkit/op": opTarballPath,
+      "@prodkit/std": stdTarballPath,
+    },
+    "pnpm pack tarballs",
+  );
 });
 
 const installFromGithub = Op(function* () {
   const repoRoot = yield* fromRepoRoot(".");
-  const examplesDir = yield* fromRepoRoot("examples/op");
+  const examplesDir = yield* fromRepoRoot("examples");
   const commitSha = yield* resolveUpstreamMainCommitSha(repoRoot);
   logger.info(`github - resolved ${UPSTREAM_MAIN_REF} to ${commitSha}`);
+  const tarballUrl = `https://codeload.github.com/trvswgnr/prodkit/tar.gz/${commitSha}`;
   yield* installAndSmoke(
     examplesDir,
-    `@prodkit/op@https://codeload.github.com/trvswgnr/prodkit/tar.gz/${commitSha}`,
+    {
+      "@prodkit/op": `@prodkit/op@${tarballUrl}`,
+      "@prodkit/std": `@prodkit/std@${tarballUrl}`,
+    },
     `GitHub dependency (${UPSTREAM_MAIN_REF}@${commitSha})`,
   );
 });
 
 const installFromNpm = Op(function* (examplesDir: string) {
-  yield* installAndSmoke(examplesDir, "@prodkit/op@latest", "npm registry");
+  yield* installAndSmoke(
+    examplesDir,
+    {
+      "@prodkit/op": "@prodkit/op@latest",
+      "@prodkit/std": "@prodkit/std@latest",
+    },
+    "npm registry",
+  );
 });
 
 const smoke = Op(function* (rawMode: string | undefined) {
-  const examplesDir = yield* fromRepoRoot("examples/op");
+  const examplesDir = yield* fromRepoRoot("examples");
 
   const mode = yield* parse(Mode, rawMode);
   if (process.env[SMOKE_RESET_EXAMPLES_ENV] !== undefined) {

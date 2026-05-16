@@ -13,8 +13,10 @@ pnpm install
 
 - This repository is a pnpm workspace monorepo orchestrated by Turborepo (`turbo`).
 - Root scripts (`pnpm run build|test|lint|typecheck|gate`) run across the workspace graph.
-- `@prodkit/op` is the first package family in this repo, not the long-term only package.
-- Package-scoped scripts should stay in the owning workspace `package.json`; call them from root via `pnpm --filter <workspace> run <script>`.
+- Publishable libraries today: **`@prodkit/op`** and **`@prodkit/std`** (see `packages/op`, `packages/std`).
+- Supporting workspaces: **`@prodkit/examples`** (`examples/`), **`@prodkit/tools`** (`tools/`), **`@prodkit/op-benchmarks`** (`benchmarks/op`).
+- `@prodkit/op` landed first historically; the repo is intentionally multi-package.
+- Package-scoped scripts stay in the owning workspace `package.json`; invoke them with `pnpm --filter <workspace> run <script>`.
 
 ## Contributor Runtime
 
@@ -29,14 +31,14 @@ Run the same checks used before publishing:
 pnpm run gate
 ```
 
-The quality gate includes a consumer-level smoke test that installs the package from an `npm pack`
-tarball via `examples/op/` in an isolated temp workspace.
+The quality gate includes a consumer-level smoke test that installs `@prodkit/op` and `@prodkit/std`
+from `npm pack` tarballs via `examples/` in an isolated temp workspace.
 
 Pull requests and pushes to `main` run the same gate in `.github/workflows/ci.yml`.
 CI also publishes the `@prodkit/op` Vitest coverage report as a workflow artifact so reviewers
 can audit unit, integration, type, and property-law coverage evidence from the run.
 
-All examples are consumer-level and live under `examples/op/*`.
+All runnable consumer examples and smoke entrypoints live in the **`examples/`** workspace (`@prodkit/examples`): Op-oriented samples under [`examples/op/`](examples/op/), std/di samples under [`examples/std/`](examples/std/), with root [`examples/smoke.ts`](examples/smoke.ts) running both suites.
 
 ## Benchmarking
 
@@ -60,12 +62,14 @@ Detailed benchmark scenarios and authoring guidance live in `benchmarks/op/READM
 
 ## Testing Strategy
 
-Use a strict two-tier model so behavior has one clear home.
+Use a strict two-tier model so behavior has one clear home. **`@prodkit/op`** uses:
 
 - Unit tests (`packages/op/src/<module>.test.ts`) verify module-local invariants, edge cases, and implementation details by importing the module under test directly.
 - Integration tests (`packages/op/src/index.test.ts`) verify public API shape, re-exports, and cross-module composition contracts by importing only from `./index.js`.
 - If a behavior is an internal invariant of one module, keep it in the unit test; if it is a public composition/API contract, keep it in integration.
 - Avoid duplicate assertions across tiers unless each tier validates meaningfully different risk.
+
+**`@prodkit/std`** uses Vitest alongside implementation under `packages/std/src/` (for example `packages/std/src/di/index.test.ts`).
 
 ## Source Layout (`@prodkit/op`)
 
@@ -92,22 +96,28 @@ Use a strict two-tier model so behavior has one clear home.
   - `packages/op/src/types.test.ts` for compile-time type contracts
 - Runtime invariants and execution semantics are documented in `packages/op/DESIGN.md`.
 
-You can run consumer install path checks directly. Each mode builds a temporary mini-pnpm workspace (reusing the repo `catalog:` from `pnpm-workspace.yaml`), installs `@prodkit/op` from the chosen source, then runs `examples/op` smoke:
+## Source layout (`@prodkit/std`)
+
+- Source under `packages/std/src/`; published entrypoints are `@prodkit/std` and `@prodkit/std/di`.
+- Package docs: [`packages/std/README.md`](packages/std/README.md). Ship changelog: [`packages/std/CHANGELOG.md`](packages/std/CHANGELOG.md).
+
+You can run consumer install path checks directly. Each mode builds a temporary mini-pnpm workspace (reusing the repo `catalog:` from `pnpm-workspace.yaml`), installs `@prodkit/op` and `@prodkit/std` from the chosen source, then runs `examples/` smoke:
 
 ```bash
-pnpm --filter @prodkit/op-scripts run examples:smoke:pack
-pnpm --filter @prodkit/op-scripts run examples:smoke:github
-pnpm --filter @prodkit/op-scripts run examples:smoke:npm
+pnpm --filter @prodkit/tools run examples:smoke:pack
+pnpm --filter @prodkit/tools run examples:smoke:github
+pnpm --filter @prodkit/tools run examples:smoke:npm
 pnpm --filter @prodkit/op run test
+pnpm --filter @prodkit/std run test
 ```
 
 ## Release Workflow (Recommended)
 
-Use this flow every time:
+Use this flow for **`@prodkit/op`** releases. Pushing the `v*` tag created in step 3 triggers `.github/workflows/release.yml`, which publishes **`@prodkit/op`** only (not `@prodkit/std`).
 
 1. Keep `packages/op/CHANGELOG.md` updated under `## [Unreleased]` as work lands.
 
-1. Cut a release (this promotes `Unreleased`, bumps npm version in
+2. Cut a release (this promotes `Unreleased`, bumps npm version in
    `packages/op/package.json`, runs release checks, commits, and
    creates git tag `vX.Y.Z`):
 
@@ -115,23 +125,25 @@ Use this flow every time:
 pnpm --filter @prodkit/op run release:patch
 ```
 
-_note:_ `release:minor` and `release:major` will be added when needed.
+*Note:* `release:minor` and `release:major` will be added when needed.
 
 If `Unreleased` is empty, the cut script writes a minimal
 "No user-facing changes" note for the new version.
 The changelog/version updates must be committed before tag creation because
 release validation runs against the tagged commit.
 
-1. Push commit and tag:
+3. Push commit and tag:
 
 ```bash
 pnpm --filter @prodkit/op run release:push
 ```
 
-1. Pushing tags like `v0.1.1` triggers `.github/workflows/release.yml`, which:
+4. The workflow (for tags like `v0.1.1`) then:
 
-- installs with `pnpm install --frozen-lockfile`
-- publishes with npm trusted publishing (OIDC) and provenance (`pnpm --filter @prodkit/op publish --provenance --access public --no-git-checks`)
+   - installs with `pnpm install --frozen-lockfile`
+   - publishes with npm trusted publishing (OIDC) and provenance (`pnpm --filter @prodkit/op publish --provenance --access public --no-git-checks`)
+
+For **`@prodkit/std`**, bump `packages/std/package.json`, update `packages/std/CHANGELOG.md`, run `pnpm run gate`, and publish manually (`pnpm --filter @prodkit/std publish --access public --provenance --no-git-checks`) when you cut a std release—there is no shared tag workflow for it yet.
 
 ## Release Failure Recovery
 
@@ -139,14 +151,14 @@ If a release tag is pushed but the release workflow fails (for example,
 changelog/version mismatch), use a forward-fix workflow:
 
 1. Leave the failed tag as-is (do not rewrite tag history by default).
-1. Add the missing changelog note under `packages/op/CHANGELOG.md` under `## [Unreleased]`.
-1. Cut the next patch release:
+2. Add the missing changelog note under `packages/op/CHANGELOG.md` under `## [Unreleased]`.
+3. Cut the next patch release:
 
 ```bash
 pnpm --filter @prodkit/op run release:patch
 ```
 
-1. Push commit and tag:
+4. Push commit and tag:
 
 ```bash
 pnpm --filter @prodkit/op run release:push
@@ -159,7 +171,16 @@ approved.
 
 ## Manual Publish Fallback
 
+`@prodkit/op`:
+
 ```bash
 pnpm --filter @prodkit/op run release:prepare
 pnpm --filter @prodkit/op publish --access public --provenance --no-git-checks
+```
+
+`@prodkit/std` (after version + changelog updates):
+
+```bash
+pnpm --filter @prodkit/std run release:prepare
+pnpm --filter @prodkit/std publish --access public --provenance --no-git-checks
 ```

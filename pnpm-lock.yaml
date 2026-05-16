@@ -63,42 +63,20 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
-  examples/op:
+  examples:
     dependencies:
       '@prodkit/op':
         specifier: workspace:*
-        version: link:../../packages/op
+        version: link:../packages/op
+      '@prodkit/std':
+        specifier: workspace:*
+        version: link:../packages/std
       better-result:
         specifier: 2.9.0
         version: 2.9.0
       valibot:
         specifier: ^1.3.1
         version: 1.4.0(typescript@6.0.3)
-    devDependencies:
-      '@types/node':
-        specifier: ^24.12.2
-        version: 24.12.3
-      oxfmt:
-        specifier: 'catalog:'
-        version: 0.48.0
-      oxlint:
-        specifier: 'catalog:'
-        version: 1.55.0
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-
-  examples/std:
-    dependencies:
-      '@prodkit/op':
-        specifier: workspace:*
-        version: link:../../packages/op
-      '@prodkit/std':
-        specifier: workspace:*
-        version: link:../../packages/std
-      better-result:
-        specifier: 2.9.0
-        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^24.12.2
@@ -169,11 +147,11 @@ importers:
         specifier: 'catalog:'
         version: 4.1.0(@types/node@24.12.3)(vite@8.0.11(@types/node@24.12.3))
 
-  tools/op:
+  tools:
     dependencies:
       '@prodkit/op':
         specifier: workspace:*
-        version: link:../../packages/op
+        version: link:../packages/op
       better-result:
         specifier: 2.9.0
         version: 2.9.0

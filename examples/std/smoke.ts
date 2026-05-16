@@ -8,15 +8,7 @@ import {
   registerUser,
   runnableRegisterUser,
 } from "./onboarding.ts";
-
-class AssertionError extends Error {
-  name = "AssertionError";
-}
-
-type Assert = (condition: unknown, message: string) => asserts condition;
-const assert: Assert = (condition, message) => {
-  if (!condition) throw new AssertionError(message);
-};
+import { assert } from "../assert.ts";
 
 async function runSuccessfulRegistrationSmoke() {
   const { op, services } = runnableRegisterUser();
@@ -58,5 +50,7 @@ async function runDuplicateRegistrationSmoke() {
   );
 }
 
-await runSuccessfulRegistrationSmoke();
-await runDuplicateRegistrationSmoke();
+export async function runStdExamplesSmoke() {
+  await runSuccessfulRegistrationSmoke();
+  await runDuplicateRegistrationSmoke();
+}
