@@ -1,5 +1,5 @@
 import { assert, describe, expect, expectTypeOf, test } from "vitest";
-import { Op } from "@prodkit/op";
+import { Op, TimeoutError } from "@prodkit/op";
 import { UnhandledException } from "better-result";
 import * as std from "../index.js";
 import { Ctx, InferContextRequirements, MissingContextError, type Value } from "./index.js";
@@ -115,6 +115,34 @@ describe("Ctx", () => {
       .run();
 
     expect(result.unwrap()).toBe("hello abc");
+  });
+
+  test("policy wrappers can be configured before or after provisioning", async () => {
+    const db: Database = {
+      query: Op(function* (_sql: string, params: unknown[]) {
+        return { id: String(params[0]) };
+      }).mapErr((error): DatabaseError => error),
+    };
+    const findUser = Ctx.Op(function* (id: string) {
+      const service = yield* Ctx.require(DatabaseService);
+      return yield* service.query("user", [id]);
+    });
+
+    const policyBeforeProvisioning = findUser.withTimeout(1_000).use(DatabaseService.of(db));
+    expectTypeOf(policyBeforeProvisioning).toEqualTypeOf<
+      Ctx.Op<User, DatabaseError | TimeoutError, [id: string], never>
+    >();
+
+    const policyAfterProvisioning = findUser.use(DatabaseService.of(db)).withTimeout(1_000);
+    expectTypeOf(policyAfterProvisioning).toEqualTypeOf<
+      Ctx.Op<User, DatabaseError | TimeoutError, [id: string], never>
+    >();
+
+    const before = await policyBeforeProvisioning.run("before");
+    const after = await policyAfterProvisioning.run("after");
+
+    expect(before.unwrap()).toEqual({ id: "before" });
+    expect(after.unwrap()).toEqual({ id: "after" });
   });
 
   test("all services are required", async () => {
