@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Renamed DI yield and wrapper types for clarity (`RequireContext`, `EmbedCtxOp`, `CtxOpBase`, `ContextReq`), aligned runtime `_tag` / brand with `Ctx.Op`, and renamed internal helpers (`toPlainOp`, `createContextOp`, `resolveIfCtxOp`, etc.).
 - Removed the local abort-signal stub; `.withSignal` uses `AbortSignalLike` from `@prodkit/op/internal`.
 - Replaced local `unsafeCoerce` usage with `@prodkit/op/internal` so helpers stay centralized.
 - Changed `@prodkit/op` to a peer dependency so consumers install a single compatible `@prodkit/op` alongside `@prodkit/std`.

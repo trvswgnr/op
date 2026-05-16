@@ -3,7 +3,8 @@ import ts from "typescript";
 import { Op, TimeoutError } from "@prodkit/op";
 import { UnhandledException } from "better-result";
 import * as std from "../index.js";
-import { Ctx, InferContextRequirements, MissingContextError, type Value } from "./index.js";
+import { InferContextRequirements, MissingContextError, type Value } from "./internal.js";
+import { Ctx } from "./index.js";
 
 class DatabaseError extends Error {
   readonly _tag = "DatabaseError";
@@ -245,8 +246,11 @@ describe("Ctx", () => {
       err: (err: unknown) => err,
     });
     assert(UnhandledException.is(error));
+    // @ts-expect-error - console is not defined in the test environment
+    // oxlint-disable-next-line no-console
+    console.log(error.cause);
     expect(error.cause).toBeInstanceOf(TypeError);
-    expect(String(error.cause)).toContain("Use Ctx.require(Requirement) to require a context");
+    expect(String(error.cause)).toContain("Use Ctx.require(service) to require a context binding");
   });
 });
 
