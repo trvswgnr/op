@@ -1,7 +1,8 @@
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { assert, describe, expect, expectTypeOf, test } from "vitest";
 import { Op } from "@prodkit/op";
+import { UnhandledException } from "better-result";
 import * as std from "../index.js";
-import { Context, InferContextRequirements, type ContextValue } from "./index.js";
+import { Ctx, InferContextRequirements, MissingContextError, type Value } from "./index.js";
 
 class DatabaseError extends Error {
   readonly _tag = "DatabaseError";
@@ -15,29 +16,28 @@ interface Database {
   query: Op<User, DatabaseError, [sql: string, params: unknown[]]>;
 }
 
-class DatabaseService extends Context("DatabaseService")<Database> {}
+class DatabaseService extends Ctx.Service("DatabaseService")<Database> {}
 
-describe("withContext", () => {
+describe("Ctx", () => {
   test("keeps service names as discriminators", () => {
-    const service: Context<Database, "DatabaseService"> = DatabaseService;
-    expectTypeOf(service).toEqualTypeOf<Context<Database, "DatabaseService">>();
-    expectTypeOf<ContextValue<typeof DatabaseService>>().toEqualTypeOf<Database>();
+    expectTypeOf(DatabaseService).toExtend<Ctx<Database, "DatabaseService">>();
+    expectTypeOf<Value<typeof DatabaseService>>().toEqualTypeOf<Database>();
   });
 
   test("exports dependency injection helpers from the root namespace", () => {
-    expect(std.di.Context).toBe(Context);
-    expect(std.di.Context.Op).toBe(Context.Op);
+    expect(std.di.Ctx).toBe(Ctx);
+    expect(std.di.Ctx.Service).toBe(Ctx.Service);
   });
 
   test("infers context requirements from yielded services", () => {
-    const op = Context.Op(function* () {
-      const db = yield* Context.require(DatabaseService);
+    const op = Ctx.Op(function* () {
+      const db = yield* Ctx.require(DatabaseService);
       return yield* db.query("select * from users where id = ?", ["1"]);
     });
 
-    expectTypeOf(op).toEqualTypeOf<Context.Op<User, DatabaseError, [], DatabaseService>>();
+    expectTypeOf(op).toEqualTypeOf<Ctx.Op<User, DatabaseError, [], DatabaseService>>();
 
-    const provided = op.provide(
+    const provided = op.use(
       DatabaseService.of({
         query: Op(function* (_sql: string, _params: unknown[]) {
           return { id: "1" };
@@ -45,7 +45,7 @@ describe("withContext", () => {
       }),
     );
 
-    expectTypeOf(provided).toEqualTypeOf<Context.Op<User, DatabaseError, [], never>>();
+    expectTypeOf(provided).toEqualTypeOf<Ctx.Op<User, DatabaseError, [], never>>();
     expectTypeOf(provided.run()).toEqualTypeOf<ReturnType<Op<User, DatabaseError, []>["run"]>>();
   });
 
@@ -57,10 +57,10 @@ describe("withContext", () => {
         return { id: String(params[0]) };
       }).mapErr((error): DatabaseError => error),
     };
-    const op = Context.Op(function* (id: string) {
-      const service = yield* Context.require(DatabaseService);
+    const op = Ctx.Op(function* (id: string) {
+      const service = yield* Ctx.require(DatabaseService);
       return yield* service.query("user", [id]);
-    }).provide(DatabaseService.of(db));
+    }).use(DatabaseService.of(db));
 
     const result = await op.run("123");
 
@@ -70,15 +70,15 @@ describe("withContext", () => {
   });
 
   test("composes context-aware operations", async () => {
-    const findUser = Context.Op(function* (id: string) {
-      const db = yield* Context.require(DatabaseService);
+    const findUser = Ctx.Op(function* (id: string) {
+      const db = yield* Ctx.require(DatabaseService);
       return yield* db.query("user", [id]);
     });
-    const greet = Context.Op(function* (id: string) {
+    const greet = Ctx.Op(function* (id: string) {
       const user = yield* findUser(id);
       return `hello ${user.id}`;
     });
-    const runnable = greet.provide(
+    const runnable = greet.use(
       DatabaseService.of({
         query: Op(function* (_sql: string, params: unknown[]) {
           return { id: String(params[0]) };
@@ -92,27 +92,25 @@ describe("withContext", () => {
   });
 
   test("all services are required", async () => {
-    class TestService1 extends Context("TestService1")<{}> {}
-    class TestService2 extends Context("TestService2")<{}> {}
-    class TestService3 extends Context("TestService3")<{}> {}
+    class TestService1 extends Ctx.Service("TestService1")<{}> {}
+    class TestService2 extends Ctx.Service("TestService2")<{}> {}
+    class TestService3 extends Ctx.Service("TestService3")<{}> {}
 
-    const op = Context.Op(function* () {
-      yield* Context.require(TestService1);
-      yield* Context.require(TestService2);
-      yield* Context.require(TestService3);
+    const op = Ctx.Op(function* () {
+      yield* Ctx.require(TestService1);
+      yield* Ctx.require(TestService2);
+      yield* Ctx.require(TestService3);
     });
 
     expectTypeOf(op).toEqualTypeOf<
-      Context.Op<void, never, [], TestService1 | TestService2 | TestService3>
+      Ctx.Op<void, never, [], TestService1 | TestService2 | TestService3>
     >();
 
     type OpRequirements = InferContextRequirements<typeof op>;
     expectTypeOf<OpRequirements>().toEqualTypeOf<TestService1 | TestService2 | TestService3>();
 
-    const provided = op.provide(TestService1.of({}));
-    expectTypeOf(provided).toEqualTypeOf<
-      Context.Op<void, never, [], TestService2 | TestService3>
-    >();
+    const provided = op.use(TestService1.of({}));
+    expectTypeOf(provided).toEqualTypeOf<Ctx.Op<void, never, [], TestService2 | TestService3>>();
 
     type ProvidedRequirements = InferContextRequirements<typeof provided>;
     expectTypeOf<ProvidedRequirements>().toEqualTypeOf<TestService2 | TestService3>();
@@ -120,24 +118,24 @@ describe("withContext", () => {
     // @ts-expect-error - still missing TestService2 and TestService3
     void (await provided.run());
 
-    const provided2 = op.provide(TestService1.of({}), TestService2.of({}));
-    expectTypeOf(provided2).toEqualTypeOf<Context.Op<void, never, [], TestService3>>();
+    const provided2 = op.use(TestService1.of({}), TestService2.of({}));
+    expectTypeOf(provided2).toEqualTypeOf<Ctx.Op<void, never, [], TestService3>>();
     type Provided2Requirements = InferContextRequirements<typeof provided2>;
     expectTypeOf<Provided2Requirements>().toEqualTypeOf<TestService3>();
 
     // @ts-expect-error - still missing TestService3
     void (await provided2.run());
 
-    const provided3 = provided2.provide(TestService3.of({}));
-    expectTypeOf(provided3).toEqualTypeOf<Context.Op<void, never, [], never>>();
+    const provided3 = provided2.use(TestService3.of({}));
+    expectTypeOf(provided3).toEqualTypeOf<Ctx.Op<void, never, [], never>>();
 
     const result = await provided3.run();
     expect(result.isOk()).toBe(true);
   });
 
   test("missing services surface as unhandled runtime failures", async () => {
-    const op = Context.Op(function* () {
-      yield* Context.require(DatabaseService);
+    const op = Ctx.Op(function* () {
+      yield* Ctx.require(DatabaseService);
       return "unreachable";
     });
 
@@ -149,6 +147,28 @@ describe("withContext", () => {
       ok: () => undefined,
       err: (err) => err,
     });
-    expect(String(error?.cause)).toContain("Missing context: DatabaseService");
+    assert(UnhandledException.is(error));
+    assert(MissingContextError.is(error.cause));
+    expect(error.cause.key).toBe("DatabaseService");
+  });
+
+  test("yielding a context class without Ctx.require surfaces the static iterator guard", async () => {
+    const op = Ctx.Op(function* () {
+      // @ts-expect-error - DatabaseService does not have a [Symbol.iterator] method
+      const _db = yield* DatabaseService;
+      return "unreachable";
+    });
+
+    // @ts-expect-error - requirements are unknown
+    const result = await op.run();
+
+    expect(result.isErr()).toBe(true);
+    const error = result.match({
+      ok: () => undefined,
+      err: (err: unknown) => err,
+    });
+    assert(UnhandledException.is(error));
+    expect(error.cause).toBeInstanceOf(TypeError);
+    expect(String(error.cause)).toContain("Use Ctx.require(Requirement) to require a context");
   });
 });

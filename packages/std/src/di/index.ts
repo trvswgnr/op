@@ -9,7 +9,21 @@ import {
 } from "@prodkit/op";
 import type { AbortSignal } from "../platform.js";
 
-type RunResult<T, E, A extends readonly unknown[]> = ReturnType<WrappedOp<T, E, A>["run"]>;
+export class MissingContextError extends Error {
+  override readonly name = "MissingContextError";
+  readonly _tag = "MissingContextError";
+  readonly key: string;
+  constructor(key: string) {
+    super(`Missing context: ${key}`);
+    this.key = key;
+  }
+
+  static is(value: unknown): value is MissingContextError {
+    return value instanceof MissingContextError;
+  }
+}
+
+type RunResult<T, E, A extends readonly unknown[]> = ReturnType<Op<T, E, A>["run"]>;
 
 const CONTEXT_TOKEN = Symbol("prodkit.std.di.context");
 const CONTEXT_REQUIREMENT = Symbol("prodkit.std.di.requirement");
@@ -19,18 +33,22 @@ function unsafeCoerce<T>(value: unknown): T {
   return value as T;
 }
 
-export type AnyContext = Context<unknown, string>;
+type AnyContext = Ctx<unknown, string>;
 
-export type ContextValue<C> = C extends abstract new (...args: never[]) => Context<infer T, string>
+export type Value<C> = C extends abstract new (...args: never[]) => Ctx<infer T, string>
   ? T
-  : C extends Context<infer T, string>
+  : C extends Ctx<infer T, string>
     ? T
     : never;
-type ContextRequirement<C> = C extends abstract new (...args: never[]) => infer I ? I : C;
-type AnyProvider = Context.Provider<AnyContext>;
+export type Provider<C extends AnyContext> = {
+  readonly _tag: "ContextProvider";
+  readonly context: C;
+  readonly value: Value<C>;
+};
+type AnyProvider = Provider<AnyContext>;
 
 export type InferContextRequirements<C> =
-  C extends Context.Op<infer _T, infer _E, infer _A, infer R> ? R : never;
+  C extends Ctx.Op<infer _T, infer _E, infer _A, infer R> ? R : never;
 
 export class ContextInstruction<_T, _R> {
   readonly _tag = "ContextInstruction";
@@ -43,43 +61,32 @@ export class ContextInstruction<_T, _R> {
   }
 }
 
-export interface Context<T, Name extends string = string> {
+export interface Ctx<T, Name extends string = string> {
   readonly _tag: "Context";
   readonly key: Name;
   readonly [CONTEXT_TOKEN]: T;
-  [Symbol.iterator](): Generator<ContextInstruction<T, this>, T, unknown>;
 }
 
-export namespace Context {
+export namespace Ctx {
   export type Op<T, E, A extends readonly unknown[], R> = _WithContext<T, E, A, R>;
-  export type Provider<C extends AnyContext> = {
-    readonly _tag: "ContextProvider";
-    readonly context: C;
-    readonly value: ContextValue<C>;
-  };
-  export type ProviderRequirement<P> = P extends Provider<infer C> ? ContextRequirement<C> : never;
 }
+
+export const Ctx = Object.freeze({
+  Op: withContext,
+  Service: createContext,
+  require: requireContext,
+});
 
 type ContextBuilder<Name extends string> = {
   readonly _tag: "Context";
   readonly key: Name;
   readonly [CONTEXT_TOKEN]: never;
-  [Symbol.iterator](): Generator<never, never, unknown>;
-  of<C extends AnyContext>(this: C, value: ContextValue<C>): Context.Provider<C>;
-  new <T>(): Context<T, Name>;
+
+  of<C extends AnyContext>(this: C, value: Value<C>): Provider<C>;
+  new <T>(): Ctx<T, Name>;
 };
 
-export interface ContextFactory {
-  <const Name extends string>(key: Name): ContextBuilder<Name>;
-  require<C extends AnyContext>(
-    context: C,
-  ): Generator<
-    ContextInstruction<ContextValue<C>, ContextRequirement<C>>,
-    ContextValue<C>,
-    unknown
-  >;
-  Op: typeof withContext;
-}
+type _Requirement<C> = C extends abstract new (...args: never[]) => infer I ? I : C;
 
 function createContext<const Name extends string>(key: Name): ContextBuilder<Name> {
   class ServiceContext<T> {
@@ -96,50 +103,42 @@ function createContext<const Name extends string>(key: Name): ContextBuilder<Nam
     static readonly _tag = "Context";
     static readonly key = key;
     static readonly [CONTEXT_TOKEN] = unsafeCoerce<never>(undefined);
-    static of<C extends AnyContext>(this: C, value: ContextValue<C>): Context.Provider<C> {
+    static of<C extends AnyContext>(this: C, value: Value<C>): Provider<C> {
       return {
         _tag: "ContextProvider",
         context: this,
         value,
       };
     }
+
     static *[Symbol.iterator](): Generator<never, never, unknown> {
-      throw new TypeError("Use Context.require(Service) to require a service");
+      throw new TypeError("Use Ctx.require(Requirement) to require a context");
     }
   }
 
   return unsafeCoerce<ContextBuilder<Name>>(ServiceContext);
 }
 
-function requireContext<C extends AnyContext>(
+function* requireContext<C extends AnyContext>(
   context: C,
-): Generator<ContextInstruction<ContextValue<C>, ContextRequirement<C>>, ContextValue<C>, unknown> {
-  return (function* () {
-    return unsafeCoerce<ContextValue<C>>(
-      yield new ContextInstruction<ContextValue<C>, ContextRequirement<C>>(context),
-    );
-  })();
+): Generator<ContextInstruction<Value<C>, _Requirement<C>>, Value<C>, unknown> {
+  return unsafeCoerce<Value<C>>(yield new ContextInstruction<Value<C>, _Requirement<C>>(context));
 }
-
-export const Context: ContextFactory = Object.assign(createContext, {
-  require: requireContext,
-  Op: withContext,
-});
 
 export class WithContextInstruction<T, E, R> {
   readonly _tag = "WithContextInstruction";
-  readonly op: Context.Op<T, E, [], R>;
+  readonly op: Ctx.Op<T, E, [], R>;
 
-  constructor(op: Context.Op<T, E, [], R>) {
+  constructor(op: Ctx.Op<T, E, [], R>) {
     this.op = op;
   }
 }
 
-type AnyNullaryWithContext = Context.Op<unknown, unknown, [], unknown>;
+export type Requirement<P> = P extends Provider<infer C> ? _Requirement<C> : never;
+
+type AnyNullaryWithContext = Ctx.Op<unknown, unknown, [], unknown>;
 type AnyNullaryOp = Op<unknown, unknown, []>;
 type Env = ReadonlyMap<AnyContext, unknown>;
-
-type WrappedOp<T, E, A extends readonly unknown[]> = Op<T, E, A>;
 
 type InferContext<Y> =
   | (Y extends ContextInstruction<unknown, infer R> ? R : never)
@@ -148,67 +147,61 @@ type SimplifyRequirement<R> = R extends unknown ? R : never;
 
 type InferContextErr<Y> = Y extends WithContextInstruction<unknown, infer E, unknown> ? E : never;
 
-type ObserverContext<R> =
-  R extends Context.Op<unknown, unknown, [], infer RContext> ? RContext : never;
+type ObserverContext<R> = R extends Ctx.Op<unknown, unknown, [], infer RContext> ? RContext : never;
 type ObserverErr<R> =
   R extends Op<unknown, infer E, []>
     ? E
-    : R extends Context.Op<unknown, infer E, [], unknown>
+    : R extends Ctx.Op<unknown, infer E, [], unknown>
       ? E
       : never;
 type ObserverOk<R> =
   R extends Op<infer T, unknown, []>
     ? T
-    : R extends Context.Op<infer T, unknown, [], unknown>
+    : R extends Ctx.Op<infer T, unknown, [], unknown>
       ? T
       : Awaited<R>;
 
-type MaybeOp<T, E> = Op<T, E, []> | Context.Op<T, E, [], unknown>;
+type MaybeOp<T, E> = Op<T, E, []> | Ctx.Op<T, E, [], unknown>;
 
 export interface WithContextBase<T, E, A extends readonly unknown[], R> {
   readonly _tag: "WithContext";
   readonly [WITH_CONTEXT]: true;
 
-  (...args: A): Context.Op<T, E, [], R>;
-
-  /** Lowers a fully-provided wrapper back to a normal `Op`. */
-  toOp(this: Context.Op<T, E, A, never>): Op<T, E, A>;
+  (...args: A): Ctx.Op<T, E, [], R>;
 
   /** Runs a fully-provided wrapper with the same argument shape as the wrapped `Op`. */
   readonly run: [R] extends [never] ? (...args: A) => RunResult<T, E, A> : never;
 
   /** Provides services and removes them from the remaining requirement type. */
-  provide<const Providers extends readonly AnyProvider[]>(
+  use<const Providers extends readonly AnyProvider[]>(
     ...providers: Providers
-  ): Context.Op<T, E, A, Exclude<R, Context.ProviderRequirement<Providers[number]>>>;
+  ): Ctx.Op<T, E, A, Exclude<R, Requirement<Providers[number]>>>;
 
-  withRetry(policy?: RetryPolicy): Context.Op<T, E, A, R>;
-  withTimeout(timeoutMs: number): Context.Op<T, E | TimeoutError, A, R>;
-  withSignal(signal: AbortSignal): Context.Op<T, E, A, R>;
-  withRelease(release: (value: T) => unknown): Context.Op<T, E, A, R>;
+  withRetry(policy?: RetryPolicy): Ctx.Op<T, E, A, R>;
+  withTimeout(timeoutMs: number): Ctx.Op<T, E | TimeoutError, A, R>;
+  withSignal(signal: AbortSignal): Ctx.Op<T, E, A, R>;
+  withRelease(release: (value: T) => unknown): Ctx.Op<T, E, A, R>;
 
-  on(event: "enter", initialize: (ctx: EnterContext<A>) => unknown): Context.Op<T, E, A, R>;
-  on(event: "exit", finalize: (ctx: ExitContext<T, E, A>) => unknown): Context.Op<T, E, A, R>;
+  on(event: "enter", initialize: (ctx: EnterContext<A>) => unknown): Ctx.Op<T, E, A, R>;
+  on(event: "exit", finalize: (ctx: ExitContext<T, E, A>) => unknown): Ctx.Op<T, E, A, R>;
 
-  map<U>(transform: (value: T) => U): Context.Op<Awaited<U>, E, A, R>;
-  mapErr<E2>(transform: (error: E) => E2): Context.Op<T, E2, A, R>;
+  map<U>(transform: (value: T) => U): Ctx.Op<Awaited<U>, E, A, R>;
+  mapErr<E2>(transform: (error: E) => E2): Ctx.Op<T, E2, A, R>;
 
-  flatMap<U, E2, R2>(
-    bind: (value: T) => Context.Op<U, E2, [], R2>,
-  ): Context.Op<U, E | E2, A, R | R2>;
-  flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Context.Op<U, E | E2, A, R>;
+  flatMap<U, E2, R2>(bind: (value: T) => Ctx.Op<U, E2, [], R2>): Ctx.Op<U, E | E2, A, R | R2>;
+  flatMap<U, E2>(bind: (value: T) => Op<U, E2, []>): Ctx.Op<U, E | E2, A, R>;
 
   tap<RObserved>(
     observe: (value: T) => RObserved,
-  ): Context.Op<T, E | ObserverErr<RObserved>, A, R | ObserverContext<RObserved>>;
+  ): Ctx.Op<T, E | ObserverErr<RObserved>, A, R | ObserverContext<RObserved>>;
   tapErr<RObserved>(
     observe: (error: E) => RObserved,
-  ): Context.Op<T, E | ObserverErr<RObserved>, A, R | ObserverContext<RObserved>>;
+  ): Ctx.Op<T, E | ObserverErr<RObserved>, A, R | ObserverContext<RObserved>>;
 
   recover<ECaught extends E, RRecovered>(
     predicate: (error: E) => error is ECaught,
     handler: (error: ECaught) => RRecovered,
-  ): Context.Op<
+  ): Ctx.Op<
     T | ObserverOk<RRecovered>,
     Exclude<E, ECaught> | ObserverErr<RRecovered>,
     A,
@@ -217,7 +210,7 @@ export interface WithContextBase<T, E, A extends readonly unknown[], R> {
   recover<RRecovered>(
     predicate: (error: E) => boolean,
     handler: (error: E) => RRecovered,
-  ): Context.Op<
+  ): Ctx.Op<
     T | ObserverOk<RRecovered>,
     E | ObserverErr<RRecovered>,
     A,
@@ -269,19 +262,19 @@ function resolveObserved(value: unknown, env: Env): unknown {
 }
 
 function lower<T, E, A extends readonly unknown[]>(
-  value: Context.Op<T, E, A, unknown>,
+  value: Ctx.Op<T, E, A, unknown>,
   env: Env,
 ): Op<T, E, A> {
   return (value as unknown as { toOp: (env?: Env) => Op<T, E, A> }).toOp(env);
 }
 
-function wrapped<T, E, A extends readonly unknown[]>(op: Op<T, E, A>): WrappedOp<T, E, A> {
-  return unsafeCoerce<WrappedOp<T, E, A>>(op);
+function wrapped<T, E, A extends readonly unknown[]>(op: Op<T, E, A>): Op<T, E, A> {
+  return unsafeCoerce<Op<T, E, A>>(op);
 }
 
 function makeWithContext<T, E, A extends readonly unknown[], R>(
   state: WithContextState<T, E, A>,
-): Context.Op<T, E, A, R> {
+): Ctx.Op<T, E, A, R> {
   const self = Object.assign(
     (...args: A) =>
       makeWithContext<T, E, [], R>({
@@ -294,7 +287,7 @@ function makeWithContext<T, E, A extends readonly unknown[], R>(
       [WITH_CONTEXT]: true as const,
       toOp: (envOverride?: Env) => state.build(envOverride ?? state.env),
       run: (...args: A) => wrapped(state.build(state.env)).run(...args),
-      provide: (...providers: readonly AnyProvider[]) =>
+      use: (...providers: readonly AnyProvider[]) =>
         makeWithContext({
           ...state,
           env: providers.reduce(
@@ -392,7 +385,7 @@ function makeWithContext<T, E, A extends readonly unknown[], R>(
     });
   }
 
-  return unsafeCoerce<Context.Op<T, E, A, R>>(self);
+  return unsafeCoerce<Ctx.Op<T, E, A, R>>(self);
 }
 
 function buildContextOp<Y, T, A extends readonly unknown[]>(
@@ -415,7 +408,7 @@ function buildContextOp<Y, T, A extends readonly unknown[]>(
             continue;
           }
 
-          throw new Error(`Missing context: ${instruction.context.key}`);
+          throw new MissingContextError(instruction.context.key);
         }
 
         if (isWithContextInstruction(instruction)) {
@@ -434,9 +427,7 @@ function withContext<
   T,
   A extends readonly unknown[],
   R extends InferContext<Y> = SimplifyRequirement<InferContext<Y>>,
->(
-  f: (...args: A) => Generator<Y, T, unknown>,
-): Context.Op<T, InferErr<Y> | InferContextErr<Y>, A, R> {
+>(f: (...args: A) => Generator<Y, T, unknown>): Ctx.Op<T, InferErr<Y> | InferContextErr<Y>, A, R> {
   const makeIterable =
     f.length === 0 ? (env: Env) => unsafeCoerce<AnyNullaryOp>(buildContextOp(f, env)) : undefined;
 
